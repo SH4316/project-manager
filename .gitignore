@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.sqlite3
+*.sqlite
+.env
+staticfiles/
+.pytest_cache/
+.ruff_cache/
+/data/
+
+# 대화 업로드 캐시·미리보기 (소스 아님)
+/uploads/
+.thumbnail

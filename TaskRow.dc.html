@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<li class="task-row" style="list-style:none;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;min-height:56px;padding:12px;border-bottom:1px solid var(--border);border-radius:8px;background:{{ bg }};transition:background 150ms cubic-bezier(0.3,0,0.2,1)">
+  <div style="min-width:0;flex:1 1 240px;display:flex;flex-direction:column;gap:4px">
+    <sc-if value="{{ showNext }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:20px;line-height:28px;font-weight:600;color:var(--text-primary);letter-spacing:-0.02em">{{ task.nextAction }}</div>
+    </sc-if>
+    <button onClick="{{ select }}" style="font:inherit;white-space:normal;flex:1 1 auto;background:none;border:0;padding:0;text-align:left;cursor:pointer;font-size:17px;line-height:26px;color:var(--text-primary);text-decoration:{{ deco }};display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+      <span style="font-size:14px;line-height:20px;color:var(--text-secondary)">{{ task.number }}</span>
+      <span>{{ task.title }}</span>
+    </button>
+    <div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:15px;line-height:22px;color:var(--text-secondary)">
+      <span>{{ task.projectName }}</span>
+      <span aria-hidden="true">·</span>
+      <span>{{ task.assigneeName }}</span>
+      <span aria-hidden="true">·</span>
+      <span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border);color:{{ task.dueColor }}">{{ task.dueLabel }}</span>
+      <sc-if value="{{ task.isHigh }}" hint-placeholder-val="{{ false }}"><span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border);color:var(--text-secondary)">중요도 높음</span></sc-if>
+      <sc-if value="{{ task.isBlocked }}" hint-placeholder-val="{{ false }}"><span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border);color:var(--warning)">막힘</span></sc-if>
+      <sc-if value="{{ task.hasChecklist }}" hint-placeholder-val="{{ false }}"><span>체크리스트 {{ task.checkLabel }}</span></sc-if>
+    </div>
+    <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}"><div style="font-size:15px;line-height:22px;color:var(--danger)">{{ task.error }}</div></sc-if>
+  </div>
+  <div class="task-actions" style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;flex:1 1 100%">
+    <select value="{{ task.status }}" onChange="{{ status }}" aria-label="상태" style="font-family:inherit;white-space:nowrap;flex:none;min-width:108px;height:44px;padding:0 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px;cursor:pointer">
+      <option value="todo">시작 전</option>
+      <option value="doing">진행 중</option>
+      <option value="review">검토 대기</option>
+      <option value="done">완료</option>
+      <option value="cancelled">취소</option>
+    </select>
+    <button onClick="{{ today }}" aria-pressed="{{ task.inToday }}" style="font-family:inherit;white-space:nowrap;flex:none;min-width:100px;height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:{{ todayBg }};color:{{ todayColor }};font-size:15px;cursor:pointer">{{ todayLabel }}</button>
+    <details style="flex:1 1 84px;min-width:84px">
+      <summary style="width:max-content;white-space:nowrap;min-height:44px;padding:10px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);font-size:15px;line-height:22px;cursor:pointer">더보기</summary>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:8px">
+    <button onClick="{{ memo }}" style="font-family:inherit;white-space:nowrap;flex:none;min-width:64px;height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-size:15px;cursor:pointer">메모</button>
+    <sc-if value="{{ task.hasDoc }}" hint-placeholder-val="{{ false }}"><a href="{{ task.docUrl }}" target="_blank" rel="noopener" style="display:inline-flex;white-space:nowrap;flex:none;align-items:center;height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--primary);font-size:15px;text-decoration:none">문서</a></sc-if>
+    <sc-if value="{{ showMove }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ up }}" aria-label="업무 순서 위로" style="white-space:nowrap;flex:none;height:44px;width:44px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-size:15px;cursor:pointer">↑</button>
+      <button onClick="{{ down }}" aria-label="업무 순서 아래로" style="white-space:nowrap;flex:none;height:44px;width:44px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-size:15px;cursor:pointer">↓</button>
+    </sc-if>
+      </div>
+    </details>
+  </div>
+</li>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:720,&quot;height&quot;:128},&quot;task&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;Task&quot;},&quot;showNext&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showMove&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onSelect&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number, focus:string)=&gt;void&quot;},&quot;onStatus&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number, status:string)=&gt;void&quot;},&quot;onToday&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number)=&gt;void&quot;},&quot;onMove&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number, dir:string)=&gt;void&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props, t = p.task || {};
+    return {
+      bg: t.selected ? 'var(--primary-bg)' : 'transparent',
+      deco: t.isClosed ? 'line-through' : 'none',
+      showNext: !!(p.showNext && t.nextAction),
+      hasError: !!t.error,
+      todayLabel: t.inToday ? '오늘에 있음' : '오늘',
+      todayBg: t.inToday ? 'var(--primary-bg)' : 'var(--bg-surface)',
+      todayColor: t.inToday ? 'var(--primary)' : 'var(--text-primary)',
+      showMove: !!p.showMove,
+      select: () => p.onSelect && p.onSelect(t.id, ''),
+      memo: () => p.onSelect && p.onSelect(t.id, 'comment'),
+      status: (e) => p.onStatus && p.onStatus(t.id, e.target.value),
+      today: () => p.onToday && p.onToday(t.id),
+      up: () => p.onMove && p.onMove(t.id, 'up'),
+      down: () => p.onMove && p.onMove(t.id, 'down'),
+    };
+  }
+}
+</script>
+</body>
+</html>

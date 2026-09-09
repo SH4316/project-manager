@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<li class="task-row2" onClick="{{ selectCard }}" aria-label="{{ task.title }} 상세 보기" style="list-style:none;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;min-height:56px;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface);box-shadow:{{ shadow }};cursor:pointer;transition:background 150ms cubic-bezier(0.3,0,0.2,1)" style-hover="background:var(--bg-secondary)">
+  <div style="min-width:0;flex:1 1 240px;display:flex;flex-direction:column;gap:4px">
+    <sc-if value="{{ showNext }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:16px;line-height:24px;font-weight:600;color:var(--text-primary)">{{ task.nextAction }}</div>
+    </sc-if>
+    <div style="font-size:12px;line-height:16px;color:var(--text-secondary)">{{ task.projectName }}</div>
+    <button onClick="{{ select }}" style="font:inherit;white-space:normal;flex:1 1 auto;background:none;border:0;padding:0;text-align:left;cursor:pointer;font-size:{{ titleSize }};line-height:24px;font-weight:{{ titleWeight }};color:var(--text-primary);text-decoration:{{ deco }}">{{ task.title }}</button>
+    <div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:13px;line-height:19px;color:var(--text-secondary)">
+      <sc-if value="{{ showAssignee }}" hint-placeholder-val="{{ true }}"><span>{{ task.assigneeName }}</span></sc-if>
+      <span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:12px;line-height:18px;border:1px solid var(--border);color:var(--text-secondary);font-weight:{{ prioWeight }}">중요도 {{ task.priorityLabel }}</span>
+      <sc-if value="{{ task.isStopped }}" hint-placeholder-val="{{ false }}"><span style="color:{{ stopColor }}">{{ task.stopLabel }}</span></sc-if>
+      <sc-if value="{{ task.hasChecklist }}" hint-placeholder-val="{{ false }}"><span>체크리스트 {{ task.checkLabel }}</span></sc-if>
+    </div>
+    <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}"><div style="font-size:15px;line-height:22px;color:var(--danger)">{{ task.error }}</div></sc-if>
+  </div>
+  <div onClick="{{ stop }}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:100%">
+    <span style="font-size:13px;line-height:19px;white-space:nowrap;color:{{ task.dueColor }}">{{ task.dueLabel }}</span>
+      <select value="{{ task.status }}" onChange="{{ status }}" disabled="{{ readOnly }}" aria-label="상태" style="height:36px;padding:0 10px;border-radius:999px;border:0;background:{{ pillBg }};color:{{ pillColor }};font-size:13px;font-weight:700;cursor:pointer">
+      <option value="todo">시작 전</option>
+      <option value="doing">진행 중</option>
+      <option value="paused">일시정지</option>
+      <option value="blocked">막힘</option>
+      <option value="review">검토 대기</option>
+      <option value="done">완료</option>
+      <option value="cancelled">취소</option>
+    </select>
+    <sc-if value="{{ showToday }}" hint-placeholder-val="{{ true }}"><button onClick="{{ today }}" title="{{ todayTitle }}" style="height:36px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:{{ todayBg }};color:{{ todayColor }};font-size:13px;font-weight:600;cursor:pointer">{{ todayLabel }}</button></sc-if>
+    <button onClick="{{ copyLink }}" aria-label="바로가기 링크 복사" title="바로가기 링크 복사" style="height:36px;width:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);cursor:pointer"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 014 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 01-4-4L5 7.5"></path></svg></button>
+    <sc-if value="{{ showMove }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ up }}" aria-label="위로" style="height:36px;width:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-size:15px;cursor:pointer">↑</button>
+      <button onClick="{{ down }}" aria-label="아래로" style="height:36px;width:36px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-size:15px;cursor:pointer">↓</button>
+    </sc-if>
+  </div>
+</li>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:720,&quot;height&quot;:80},&quot;task&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;Task&quot;},&quot;showNext&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showMove&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;hideAssignee&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;hideToday&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;readOnly&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onSelect&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number, focus:string)=&gt;void&quot;},&quot;onStatus&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number, status:string)=&gt;void&quot;},&quot;onToday&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number)=&gt;void&quot;},&quot;onCopyLink&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number)=&gt;void&quot;},&quot;onMove&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;(id:number, dir:string)=&gt;void&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props, t = p.task || {};
+    return {
+      shadow: t.selected ? 'inset 3px 0 0 var(--primary)' : 'none',
+      copyLink: (e) => { e.stopPropagation(); p.onCopyLink && p.onCopyLink(t.id); },
+      pillBg: ({ todo: 'var(--bg-fill)', doing: '#F5A623', paused: 'var(--bg-fill)', blocked: '#F6C9C4', review: '#CFE3F7', done: '#B9E6CB', cancelled: 'var(--bg-fill)' })[t.status] || 'var(--bg-fill)',
+      pillColor: ({ todo: 'var(--text-primary)', doing: '#1F1400', paused: 'var(--text-secondary)', blocked: '#6B1410', review: '#0B3A66', done: '#0B3D22', cancelled: 'var(--text-secondary)' })[t.status] || 'var(--text-primary)',
+      stopColor: t.isBlocked ? 'var(--danger)' : 'var(--text-secondary)',
+      deco: t.isClosed ? 'line-through' : 'none',
+      showNext: !!(p.showNext && t.nextAction),
+      prioWeight: t.isHigh ? 700 : 400,
+      titleSize: (p.showNext && t.nextAction) ? '14px' : '16px',
+      titleWeight: (p.showNext && t.nextAction) ? 500 : 600,
+      hasError: !!t.error,
+      todayLabel: t.autoPulled ? '자동 추가 · 오늘 제외' : t.inToday ? '오늘 제외' : '오늘 추가',
+      todayTitle: t.autoPulled ? '마감 기준 자동 추가. 누르면 오늘 목록에서만 제외합니다.' : t.inToday ? '오늘 할 일 목록에서 빼기' : '오늘 할 일 목록에 담기',
+      todayBg: t.autoPulled ? 'var(--primary-bg)' : t.inToday ? 'var(--bg-fill)' : 'var(--bg-surface)',
+      todayColor: t.autoPulled ? 'var(--primary)' : t.inToday ? 'var(--text-secondary)' : 'var(--text-primary)',
+      showMove: !!p.showMove, showAssignee: !p.hideAssignee, showToday: !p.hideToday, readOnly: !!p.readOnly,
+      select: () => p.onSelect && p.onSelect(t.id, ''),
+      selectCard: () => p.onSelect && p.onSelect(t.id, ''),
+      keyCard: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onSelect && p.onSelect(t.id, ''); } },
+      stop: (e) => e.stopPropagation(),
+      memo: () => p.onSelect && p.onSelect(t.id, 'notes'),
+      status: (e) => p.onStatus && p.onStatus(t.id, e.target.value),
+      today: () => p.onToday && p.onToday(t.id),
+      up: () => p.onMove && p.onMove(t.id, 'up'),
+      down: () => p.onMove && p.onMove(t.id, 'down'),
+    };
+  }
+}
+</script>
+</body>
+</html>

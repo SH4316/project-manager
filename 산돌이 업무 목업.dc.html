@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>산돌이 업무</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root{--bg-page:#FFFFFF;--bg-surface:#FFFFFF;--bg-secondary:#F9FAFB;--bg-fill:#F2F4F6;--text-primary:#191F28;--text-secondary:#515D6B;--text-disabled:#B0B8C1;--border:#E5E8EB;--primary:#2368CC;--primary-pressed:#1B52A3;--primary-bg:#F0F6FE;--on-primary:#FFFFFF;--danger:#C92A37;--danger-bg:#FEF0F1;--on-danger:#FFFFFF;--success:#12793F;--success-bg:#EDF9F2;--warning:#A85B00;--warning-bg:#FEF6EA}
+:root[data-theme="dark"]{--bg-page:#17171C;--bg-surface:#202027;--bg-secondary:#26262E;--bg-fill:#2E2E38;--text-primary:#E7E9EE;--text-secondary:#B0B6C2;--text-disabled:#5B5F6B;--border:#33333E;--primary:#5D9CF3;--primary-pressed:#317FEE;--primary-bg:#1B2A45;--on-primary:#17171C;--danger:#FF6B6B;--danger-bg:#3A2226;--on-danger:#17171C;--success:#34C77B;--success-bg:#1E3328;--warning:#F5A93F;--warning-bg:#3A2F1E}
+html,body{margin:0;background:var(--bg-page)}
+*{box-sizing:border-box}
+a{color:var(--primary)} a:hover{color:var(--primary-pressed)}
+button,input,select,textarea{font-family:inherit}
+body{word-break:keep-all}
+button,select,a[role=button]{white-space:nowrap;flex:none}
+summary{cursor:pointer}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Layout shared by the main mockup and imported task rows. */
+.app-shell{display:grid!important;grid-template-columns:220px minmax(0,1fr);align-items:start}
+.app-shell:has(.task-panel){grid-template-columns:220px minmax(0,1fr) 360px}
+.app-nav{position:sticky;top:0;height:100dvh;overflow:auto}
+.app-main{width:100%;margin:0 auto;padding:36px 32px 56px!important}
+.task-panel{position:sticky;top:0;height:100dvh;overflow-y:auto;overscroll-behavior:contain}
+.task-panel>div:first-child{position:sticky;top:-24px;z-index:2;background:var(--bg-surface);padding:12px 0;border-bottom:1px solid var(--border)}
+.app-nav button[aria-current="true"]{color:var(--primary)!important;box-shadow:inset 3px 0 var(--primary)}
+button:hover,summary:hover{filter:brightness(.97)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--primary);outline-offset:3px}
+section[aria-label="지금 할 일"]{background:var(--bg-secondary)!important;border:1px solid var(--border)!important;border-radius:8px!important}
+section[aria-label="지금 할 일"] button:first-child{background:var(--primary)!important;color:var(--on-primary)!important;border-color:var(--primary)!important}
+section[aria-label="지금 할 일"] button:nth-child(2){background:var(--bg-surface)!important;color:var(--primary)!important;border:1px solid var(--border)!important}
+.task-row{gap:12px 16px!important;padding:16px 12px!important}
+.task-row:hover{box-shadow:inset 3px 0 var(--border)}
+.task-actions{flex:0 1 auto!important}
+.task-actions details{flex:0 0 auto!important}
+@media(max-width:1100px){
+.app-shell,.app-shell:has(.task-panel){grid-template-columns:184px minmax(0,1fr)}
+.app-shell:has(.task-panel) .app-main{display:none!important}
+.app-main{padding:28px 24px 48px!important}
+.task-panel{height:100dvh}
+}
+@media(max-width:700px){
+.app-shell,.app-shell:has(.task-panel){display:flex!important;flex-direction:column;flex-wrap:nowrap!important}
+.app-nav{position:static;width:100%;height:auto;overflow:visible;flex:none!important;padding:16px 16px 12px!important;gap:12px!important;border-right:0!important;border-bottom:1px solid var(--border)}
+.app-nav>div:first-child{padding:0 4px!important;flex-direction:row!important;align-items:baseline;justify-content:space-between}
+.app-nav>div:first-child>div:last-child{font-size:12px!important}
+.app-nav>div:nth-child(2){display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px!important}
+.app-nav>div:nth-child(2) button{padding:0 8px!important;justify-content:center!important;gap:6px;font-size:14px!important}
+.app-nav>div:nth-child(3){flex-direction:row!important;overflow-x:auto;gap:4px!important;padding-bottom:2px}
+.app-nav>div:nth-child(3)>div{display:none}
+.app-nav>div:nth-child(3) button{width:auto!important;height:36px!important;padding:0 10px!important;font-size:13px!important;gap:10px;border:1px solid var(--border)!important}
+.app-nav>div:last-child{display:none!important}
+.app-main{flex:none!important;width:100%;padding:24px 16px 40px!important}
+.app-main header h1{font-size:22px!important}
+section[aria-label="지금 할 일"]{padding:20px!important}
+section[aria-label="지금 할 일"]>div>div:first-child{font-size:23px!important;line-height:33px!important}
+.task-actions{flex:1 1 100%!important}
+.task-row{padding:16px 8px!important}
+.app-shell:has(.task-panel) .app-nav{display:none!important}
+.task-panel{flex:none!important;width:100%;height:100dvh;border-left:0!important;padding:20px!important}
+.task-panel>div:first-child{top:-20px}
+.task-panel button{min-height:40px}
+}
+
+</style>
+</helmet>
+<div class="app-shell" style="display:flex;flex-wrap:wrap;min-height:100vh;background:var(--bg-page);color:var(--text-primary);font-family:Pretendard,-apple-system,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;font-size:17px;line-height:26px">
+
+  <nav class="app-nav" aria-label="주 메뉴" style="flex:0 0 220px;display:flex;flex-direction:column;gap:32px;padding:24px 16px;border-right:1px solid var(--border);background:var(--bg-secondary)">
+    <div style="display:flex;flex-direction:column;gap:4px;padding:0 12px">
+      <div style="font-size:20px;line-height:28px;font-weight:700;letter-spacing:-0.02em">산돌이 업무</div>
+      <div style="font-size:14px;line-height:20px;color:var(--text-secondary)">팀 · 산돌이 서비스</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <button onClick="{{ goToday }}" aria-current="{{ nav.today }}" style="font:inherit;display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 12px;border-radius:8px;border:0;width:100%;text-align:left;cursor:pointer;color:var(--text-primary);font-weight:{{ navW.today }};background:{{ navBg.today }}"><span>오늘</span><span style="font-size:13px;color:var(--text-secondary)">{{ counts.todayCount }}</span></button>
+      <button onClick="{{ goMe }}" aria-current="{{ nav.me }}" style="font:inherit;display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 12px;border-radius:8px;border:0;width:100%;text-align:left;cursor:pointer;color:var(--text-primary);font-weight:{{ navW.me }};background:{{ navBg.me }}"><span>내 업무</span><span style="font-size:13px;color:var(--text-secondary)">{{ counts.myOpen }}</span></button>
+      <button onClick="{{ goTeam }}" aria-current="{{ nav.team }}" style="font:inherit;display:flex;align-items:center;height:44px;padding:0 12px;border-radius:8px;border:0;width:100%;text-align:left;cursor:pointer;color:var(--text-primary);font-weight:{{ navW.team }};background:{{ navBg.team }}">팀 현황</button>
+      <button onClick="{{ goSearch }}" aria-current="{{ nav.search }}" style="font:inherit;display:flex;align-items:center;height:44px;padding:0 12px;border-radius:8px;border:0;width:100%;text-align:left;cursor:pointer;color:var(--text-primary);font-weight:{{ navW.search }};background:{{ navBg.search }}">검색</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="font-size:14px;line-height:20px;color:var(--text-secondary);padding:0 12px">프로젝트</div>
+      <sc-for list="{{ navProjects }}" as="p" hint-placeholder-count="4">
+        <button onClick="{{ p.open }}" aria-current="{{ p.current }}" style="font:inherit;display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 12px;border-radius:8px;border:0;width:100%;text-align:left;cursor:pointer;color:var(--text-primary);font-size:15px;background:{{ p.bg }}"><span>{{ p.name }}</span><span style="font-size:13px;color:var(--text-secondary)">{{ p.open_count }}</span></button>
+      </sc-for>
+    </div>
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px;padding:0 12px;font-size:15px;line-height:22px;color:var(--text-secondary)">
+      <div>김민준</div>
+      <div style="display:flex;gap:12px"><a href="#" style="text-decoration:none">설정</a><a href="#" style="text-decoration:none">로그아웃</a></div>
+    </div>
+  </nav>
+
+  <main class="app-main" style="flex:9999 1 480px;min-width:0;padding:32px 24px 48px;display:flex;flex-direction:column;gap:32px;max-width:1080px">
+
+    <sc-if value="{{ isToday }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="오늘" style="display:flex;flex-direction:column;gap:32px">
+        <header style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+          <div>
+            <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">2026년 9월 9일 (수)</h1>
+            <p style="margin:8px 0 0;color:var(--text-secondary);font-size:15px;line-height:22px">{{ todayHint }}</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onClick="{{ toggleFocus }}" aria-pressed="{{ focusMode }}" style="font:inherit;white-space:nowrap;flex:none;min-width:104px;height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--border);background:{{ focusBg }};color:{{ focusColor }};font-size:15px;cursor:pointer">{{ focusLabel }}</button>
+            <button onClick="{{ toggleQuick }}" style="font:inherit;white-space:nowrap;flex:none;min-width:96px;height:44px;padding:0 16px;border-radius:8px;border:0;background:var(--primary-bg);color:var(--primary);font-size:15px;font-weight:600;cursor:pointer">빠른 추가</button>
+          </div>
+        </header>
+
+        <sc-if value="{{ quickOpen }}" hint-placeholder-val="{{ false }}">
+          <form onSubmit="{{ quickAdd }}" style="display:flex;flex-direction:column;gap:12px;padding:20px;border:1px solid var(--border);border-radius:8px;background:var(--bg-surface)">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:20px;color:var(--text-secondary)">제목<input value="{{ quick.title }}" onChange="{{ setQuickTitle }}" placeholder="해야 할 일" style="height:52px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:17px"></label>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:20px;color:var(--text-secondary)">프로젝트<select value="{{ quick.project }}" onChange="{{ setQuickProject }}" style="height:52px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:17px"><option value="1">학식 API</option><option value="2">카카오톡 챗봇</option><option value="3">서버 운영</option><option value="4">관리자 웹</option></select></label>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:20px;color:var(--text-secondary)">목표 기한<input type="date" value="{{ quick.due }}" onChange="{{ setQuickDue }}" style="height:52px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:17px"></label>
+            </div>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:20px;color:var(--text-secondary)">기한 미정 사유 (기한이 없을 때만)<input value="{{ quick.reason }}" onChange="{{ setQuickReason }}" style="height:52px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:17px"></label>
+            <sc-if value="{{ quick.error }}" hint-placeholder-val="{{ false }}"><p style="margin:0;color:var(--danger);font-size:15px;line-height:22px">{{ quick.error }}</p></sc-if>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button type="submit" style="font:inherit;height:44px;padding:0 16px;border-radius:8px;border:0;background:var(--primary);color:var(--on-primary);font-weight:600;cursor:pointer">오늘 목록에 추가</button>
+              <span style="font-size:14px;line-height:20px;color:var(--text-secondary)">기본값: 담당자 본인 · 중요도 중간 · 시작 전</span>
+            </div>
+          </form>
+        </sc-if>
+
+        <section aria-label="지금 할 일" style="padding:24px;border-radius:12px;background:var(--bg-secondary);border:1px solid var(--border);display:flex;flex-direction:column;gap:16px">
+          <div style="font-size:14px;line-height:20px;color:var(--text-secondary);font-weight:600">지금 할 일</div>
+          <sc-if value="{{ hasFocus }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:28px;line-height:38px;font-weight:700;letter-spacing:-0.02em;text-wrap:pretty">{{ focusTask.headline }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px 8px;font-size:15px;line-height:22px;color:var(--text-secondary)">
+                <span>{{ focusTask.number }} {{ focusTask.title }}</span><span aria-hidden="true">·</span>
+                <span>{{ focusTask.projectName }}</span><span aria-hidden="true">·</span>
+                <span>{{ focusTask.dueLabel }}</span>
+                <sc-if value="{{ focusTask.hasChecklist }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true">·</span><span>체크리스트 {{ focusTask.checkLabel }}</span></sc-if>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button onClick="{{ focusDone }}" style="font:inherit;white-space:nowrap;flex:none;height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-weight:600;cursor:pointer">{{ focusTask.primaryLabel }}</button>
+              <button onClick="{{ focusMemo }}" style="font:inherit;white-space:nowrap;flex:none;height:44px;padding:0 16px;border-radius:8px;border:0;background:var(--primary);color:var(--on-primary);font-weight:600;cursor:pointer">진행 메모 남기기</button>
+              <button onClick="{{ focusOpen }}" style="font:inherit;height:44px;padding:0 16px;border-radius:8px;border:0;background:transparent;color:var(--text-secondary);cursor:pointer">자세히 보기</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noFocus }}" hint-placeholder-val="{{ false }}">
+            <p style="margin:0;text-wrap:pretty">{{ noFocusHint }}</p>
+            <button onClick="{{ goMe }}" style="font:inherit;align-self:flex-start;height:44px;padding:0 16px;border-radius:8px;border:0;background:var(--primary);color:var(--on-primary);font-weight:600;cursor:pointer">내 업무 보기</button>
+          </sc-if>
+        </section>
+
+        <section style="display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+            <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em">오늘 업무 <span style="color:var(--text-secondary);font-weight:400">{{ counts.todayCount }}</span></h2>
+            <span style="font-size:14px;line-height:20px;color:var(--text-secondary)">개인 정렬 · 기한 및 중요도와 무관</span>
+          </div>
+          <ul style="margin:0;padding:0;display:flex;flex-direction:column">
+            <sc-for list="{{ todayItems }}" as="t" hint-placeholder-count="3">
+              <dc-import name="TaskRow" task="{{ t }}" show-move="{{ true }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" on-move="{{ moveToday }}" hint-size="100%,128px"></dc-import>
+            </sc-for>
+          </ul>
+        </section>
+
+        <sc-if value="{{ showAux }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:32px">
+            <sc-if value="{{ hasLeftover }}" hint-placeholder-val="{{ true }}">
+              <section style="display:flex;flex-direction:column;gap:12px">
+                <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em">어제 남은 일 <span style="color:var(--text-secondary);font-weight:400">{{ counts.leftover }}</span></h2>
+                <p style="margin:0;font-size:15px;line-height:22px;color:var(--text-secondary)">오늘 처리할 업무만 목록에 추가합니다.</p>
+                <ul style="margin:0;padding:0;display:flex;flex-direction:column">
+                  <sc-for list="{{ leftover }}" as="t" hint-placeholder-count="1">
+                    <dc-import name="TaskRow" task="{{ t }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" hint-size="100%,128px"></dc-import>
+                  </sc-for>
+                </ul>
+              </section>
+            </sc-if>
+
+            <section style="display:flex;flex-direction:column;gap:12px">
+              <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em">진행 중 <span style="color:var(--text-secondary);font-weight:400">{{ counts.doing }}</span></h2>
+              <ul style="margin:0;padding:0;display:flex;flex-direction:column">
+                <sc-for list="{{ doing }}" as="t" hint-placeholder-count="2">
+                  <dc-import name="TaskRow" task="{{ t }}" show-next="{{ true }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" hint-size="100%,128px"></dc-import>
+                </sc-for>
+              </ul>
+            </section>
+
+            <details style="border-top:1px solid var(--border);padding-top:16px">
+              <summary style="font-size:17px;color:var(--text-secondary)">오늘 완료 {{ counts.doneToday }}</summary>
+              <ul style="margin:12px 0 0;padding:0;display:flex;flex-direction:column">
+                <sc-for list="{{ doneToday }}" as="t" hint-placeholder-count="1">
+                  <dc-import name="TaskRow" task="{{ t }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" hint-size="100%,128px"></dc-import>
+                </sc-for>
+              </ul>
+            </details>
+
+            <p style="margin:0;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:15px;line-height:22px;color:var(--text-secondary)">
+              <button onClick="{{ goMeDueToday }}" style="font:inherit;background:none;border:0;padding:0;cursor:pointer;color:var(--text-secondary);font-size:15px">오늘 마감 <strong style="color:var(--text-primary)">{{ counts.dueToday }}</strong></button>
+              <button onClick="{{ goMeOverdue }}" style="font:inherit;background:none;border:0;padding:0;cursor:pointer;color:var(--text-secondary);font-size:15px">기한 초과 <strong style="color:var(--text-primary)">{{ counts.overdue }}</strong></button>
+              <button onClick="{{ goMeReview }}" style="font:inherit;background:none;border:0;padding:0;cursor:pointer;color:var(--text-secondary);font-size:15px">검토 대기 <strong style="color:var(--text-primary)">{{ counts.review }}</strong></button>
+              <button onClick="{{ goMeBlocked }}" style="font:inherit;background:none;border:0;padding:0;cursor:pointer;color:var(--text-secondary);font-size:15px">막힘 <strong style="color:var(--text-primary)">{{ counts.blocked }}</strong></button>
+            </p>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isMe }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="내 업무" style="display:flex;flex-direction:column;gap:32px">
+        <header style="display:flex;flex-direction:column;gap:8px">
+          <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">내 업무</h1>
+          <p style="margin:0;color:var(--text-secondary);font-size:15px;line-height:22px">미완료 {{ counts.myOpen }}건 · 검색 결과 {{ filteredCount }}건 · 마감일순</p>
+        </header>
+        <form style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <select value="{{ meFilter.due }}" onChange="{{ setFilterDue }}" aria-label="기한" style="height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px"><option value="">모든 기한</option><option value="today">오늘 마감</option><option value="overdue">기한 초과</option></select>
+          <select value="{{ meFilter.project }}" onChange="{{ setFilterProject }}" aria-label="프로젝트" style="height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px"><option value="">모든 프로젝트</option><option value="1">학식 API</option><option value="2">카카오톡 챗봇</option><option value="3">서버 운영</option><option value="4">관리자 웹</option></select>
+          <select value="{{ meFilter.status }}" onChange="{{ setFilterStatus }}" aria-label="상태" style="height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px"><option value="">모든 상태</option><option value="todo">시작 전</option><option value="doing">진행 중</option><option value="review">검토 대기</option></select>
+          <select value="{{ meFilter.priority }}" onChange="{{ setFilterPriority }}" aria-label="중요도" style="height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px"><option value="">모든 중요도</option><option value="high">높음</option><option value="mid">중간</option><option value="low">낮음</option></select>
+          <select value="{{ meFilter.blocked }}" onChange="{{ setFilterBlocked }}" aria-label="막힘" style="height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px"><option value="">막힘 상관없음</option><option value="1">막힌 업무만</option><option value="0">막히지 않은 업무만</option></select>
+          <sc-if value="{{ hasFilter }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ clearFilter }}" style="font:inherit;height:44px;padding:0 12px;border-radius:6px;border:0;background:transparent;color:var(--text-secondary);font-size:15px;cursor:pointer">필터 지우기</button></sc-if>
+        </form>
+        <sc-if value="{{ emptyFiltered }}" hint-placeholder-val="{{ false }}"><p role="status" style="padding:24px;border:1px solid var(--border);border-radius:8px;color:var(--text-secondary)">조건에 맞는 업무가 없습니다.</p></sc-if>
+        <sc-for list="{{ meGroups }}" as="g" hint-placeholder-count="5">
+          <section style="display:flex;flex-direction:column;gap:12px">
+            <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em">{{ g.title }} <span style="color:var(--text-secondary);font-weight:400">{{ g.count }}</span></h2>
+            <sc-if value="{{ g.empty }}" hint-placeholder-val="{{ false }}"><p style="margin:0;font-size:15px;line-height:22px;color:var(--text-secondary)">{{ g.emptyText }}</p></sc-if>
+            <ul style="margin:0;padding:0;display:flex;flex-direction:column">
+              <sc-for list="{{ g.tasks }}" as="t" hint-placeholder-count="2">
+                <dc-import name="TaskRow" task="{{ t }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" hint-size="100%,128px"></dc-import>
+              </sc-for>
+            </ul>
+          </section>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isTeam }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="팀 현황" style="display:flex;flex-direction:column;gap:32px">
+        <header style="display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">산돌이 서비스</h1>
+            <p style="margin:0;color:var(--text-secondary);font-size:15px;line-height:22px">학생들이 학식·공지·챗봇으로 학교 정보를 쉽게 받는 서비스</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a href="#" style="display:inline-flex;white-space:nowrap;flex:none;align-items:center;height:44px;padding:0 16px;border-radius:8px;background:var(--primary-bg);color:var(--primary);font-size:15px;font-weight:600;text-decoration:none">멤버·초대</a>
+            <a href="#" style="display:inline-flex;white-space:nowrap;flex:none;align-items:center;height:44px;padding:0 16px;border-radius:8px;background:var(--primary);color:var(--on-primary);font-size:15px;font-weight:600;text-decoration:none">프로젝트 만들기</a>
+          </div>
+        </header>
+
+        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+          <sc-for list="{{ teamCounts }}" as="c" hint-placeholder-count="6">
+            <button onClick="{{ c.go }}" style="font:inherit;display:flex;flex-direction:column;gap:4px;padding:20px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface);text-align:left;cursor:pointer;color:var(--text-primary)">
+              <span style="font-size:14px;line-height:20px;color:var(--text-secondary)">{{ c.label }}</span>
+              <span style="font-size:28px;line-height:38px;font-weight:700;letter-spacing:-0.02em">{{ c.value }}</span>
+            </button>
+          </sc-for>
+        </section>
+
+        <section style="display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+            <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em">프로젝트</h2>
+            <label style="display:flex;gap:8px;align-items:center;font-size:15px;color:var(--text-secondary)"><input type="checkbox" style="width:20px;height:20px">보관 포함</label>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:15px;line-height:22px">
+              <thead><tr style="color:var(--text-secondary);font-size:13px;text-align:left"><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">이름</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">대표 담당자</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">상태</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">미완료</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">완료</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">목표일</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ projectRows }}" as="p" hint-placeholder-count="4">
+                  <tr>
+                    <td style="padding:12px;border-bottom:1px solid var(--border)"><button onClick="{{ p.open }}" style="font:inherit;background:none;border:0;padding:0;cursor:pointer;color:var(--primary);font-size:17px;text-align:left">{{ p.name }}</button><div style="font-size:14px;line-height:20px;color:var(--text-secondary)">{{ p.purpose }}</div></td>
+                    <td style="padding:12px;border-bottom:1px solid var(--border);color:{{ p.ownerColor }}">{{ p.ownerName }}</td>
+                    <td style="padding:12px;border-bottom:1px solid var(--border)"><span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border)">{{ p.statusLabel }}</span></td>
+                    <td style="padding:12px;border-bottom:1px solid var(--border)">{{ p.open_count }}</td>
+                    <td style="padding:12px;border-bottom:1px solid var(--border)">{{ p.doneLabel }}</td>
+                    <td style="padding:12px;border-bottom:1px solid var(--border);color:var(--text-secondary)">{{ p.target }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section style="display:flex;flex-direction:column;gap:12px">
+          <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em">담당자별</h2>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:15px;line-height:22px">
+              <thead><tr style="color:var(--text-secondary);font-size:13px;text-align:left"><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">이름</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">미완료</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">기한 초과</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">검토 대기</th><th style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:400">막힘</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ byAssignee }}" as="a" hint-placeholder-count="4">
+                  <tr><td style="padding:12px;border-bottom:1px solid var(--border);font-size:17px">{{ a.name }}</td><td style="padding:12px;border-bottom:1px solid var(--border)">{{ a.open }}</td><td style="padding:12px;border-bottom:1px solid var(--border)">{{ a.overdue }}</td><td style="padding:12px;border-bottom:1px solid var(--border)">{{ a.review }}</td><td style="padding:12px;border-bottom:1px solid var(--border)">{{ a.blocked }}</td></tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isProject }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="프로젝트" style="display:flex;flex-direction:column;gap:32px">
+        <header style="display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button onClick="{{ goTeam }}" style="font:inherit;background:none;border:0;padding:0;cursor:pointer;color:var(--text-secondary);font-size:13px;text-align:left">산돌이 서비스</button>
+            <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">{{ proj.name }}</h1>
+            <p style="margin:0;color:var(--text-secondary);font-size:15px;line-height:22px">{{ proj.purpose }}</p>
+            <div style="display:flex;flex-wrap:wrap;gap:4px 8px;font-size:15px;line-height:22px;color:var(--text-secondary)">
+              <span>대표 담당자 {{ proj.ownerName }}</span><span aria-hidden="true">·</span>
+              <span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border)">{{ proj.statusLabel }}</span><span aria-hidden="true">·</span>
+              <span>목표일 {{ proj.target }}</span><span aria-hidden="true">·</span>
+              <a href="#" style="text-decoration:none">저장소</a><span aria-hidden="true">·</span>
+              <a href="#" style="text-decoration:none">설계 문서</a>
+            </div>
+          </div>
+          <a href="#" style="display:inline-flex;white-space:nowrap;flex:none;align-items:center;height:44px;padding:0 16px;border-radius:8px;background:var(--primary);color:var(--on-primary);font-size:15px;font-weight:600;text-decoration:none">태스크 만들기</a>
+        </header>
+
+        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+          <sc-for list="{{ proj.counts }}" as="c" hint-placeholder-count="5">
+            <div style="display:flex;flex-direction:column;gap:4px;padding:20px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface)">
+              <span style="font-size:14px;line-height:20px;color:var(--text-secondary)">{{ c.label }}</span>
+              <span style="font-size:28px;line-height:38px;font-weight:700;letter-spacing:-0.02em">{{ c.value }}</span>
+            </div>
+          </sc-for>
+        </section>
+
+        <section style="display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+            <div role="group" aria-label="보기" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+              <button onClick="{{ viewList }}" aria-pressed="{{ isList }}" style="font:inherit;height:44px;padding:0 16px;border:0;font-size:15px;cursor:pointer;background:{{ listBg }};color:{{ listColor }}">목록</button>
+              <button onClick="{{ viewBoard }}" aria-pressed="{{ isBoard }}" style="font:inherit;height:44px;padding:0 16px;border:0;border-left:1px solid var(--border);font-size:15px;cursor:pointer;background:{{ boardBg }};color:{{ boardColor }}">보드</button>
+            </div>
+            <label style="display:flex;gap:8px;align-items:center;font-size:15px;color:var(--text-secondary)"><input type="checkbox" checked="{{ includeClosed }}" onChange="{{ toggleClosed }}" style="width:20px;height:20px">완료·취소 포함</label>
+          </div>
+
+          <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+            <ul style="margin:0;padding:0;display:flex;flex-direction:column">
+              <sc-for list="{{ proj.tasks }}" as="t" hint-placeholder-count="4">
+                <dc-import name="TaskRow" task="{{ t }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" hint-size="100%,128px"></dc-import>
+              </sc-for>
+            </ul>
+          </sc-if>
+          <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;align-items:start">
+              <sc-for list="{{ proj.columns }}" as="col" hint-placeholder-count="3">
+                <section style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;background:var(--bg-secondary);border:1px solid var(--border)">
+                  <h3 style="margin:0;padding:0 12px;font-size:15px;line-height:22px;font-weight:600;color:var(--text-secondary)">{{ col.label }} <span style="font-weight:400">{{ col.count }}</span></h3>
+                  <ul style="margin:0;padding:0;display:flex;flex-direction:column;gap:4px">
+                    <sc-for list="{{ col.tasks }}" as="t" hint-placeholder-count="2">
+                      <dc-import name="TaskRow" task="{{ t }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" hint-size="100%,128px"></dc-import>
+                    </sc-for>
+                  </ul>
+                </section>
+              </sc-for>
+            </div>
+          </sc-if>
+        </section>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSearch }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="검색" style="display:flex;flex-direction:column;gap:32px">
+        <header style="display:flex;flex-direction:column;gap:8px">
+          <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">검색</h1>
+          <p style="margin:0;color:var(--text-secondary);font-size:15px;line-height:22px">태스크 번호, 제목, 프로젝트 이름으로 찾아요.</p>
+        </header>
+        <form style="display:flex;flex-direction:column;gap:12px">
+          <input type="search" value="{{ q }}" onChange="{{ setQ }}" placeholder="예: TASK-121, 메뉴, 챗봇" aria-label="검색어" autoFocus="{{ true }}" style="height:52px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:17px">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:15px;color:var(--text-secondary)">
+            <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" checked="{{ searchClosed }}" onChange="{{ toggleSearchClosed }}" style="width:20px;height:20px">완료·취소 포함</label>
+            <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" style="width:20px;height:20px">보관 포함</label>
+          </div>
+        </form>
+        <section style="display:flex;flex-direction:column;gap:12px">
+          <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em">결과 <span style="color:var(--text-secondary);font-weight:400">{{ searchCount }}</span></h2>
+          <sc-if value="{{ searchEmpty }}" hint-placeholder-val="{{ false }}"><p style="margin:0;font-size:15px;line-height:22px;color:var(--text-secondary)">검색 결과가 없습니다. 검색어 또는 완료·취소 포함 여부를 확인하세요.</p></sc-if>
+          <ul style="margin:0;padding:0;display:flex;flex-direction:column">
+            <sc-for list="{{ searchResults }}" as="t" hint-placeholder-count="3">
+              <dc-import name="TaskRow" task="{{ t }}" on-select="{{ selectTask }}" on-status="{{ setStatus }}" on-today="{{ toggleToday }}" hint-size="100%,128px"></dc-import>
+            </sc-for>
+          </ul>
+        </section>
+      </div>
+    </sc-if>
+  </main>
+
+  <sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ true }}">
+    <aside class="task-panel" aria-label="태스크 상세" data-screen-label="태스크 상세 패널" style="flex:1 1 380px;min-width:0;border-left:1px solid var(--border);background:var(--bg-surface);padding:24px;display:flex;flex-direction:column;gap:24px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:14px;line-height:20px;color:var(--text-secondary)">{{ sel.number }}</span>
+        <div style="display:flex;gap:4px">
+          <a href="#" style="display:inline-flex;white-space:nowrap;flex:none;align-items:center;height:36px;padding:0 12px;border-radius:6px;font-size:15px;text-decoration:none">수정</a>
+          <button onClick="{{ closePanel }}" style="font:inherit;height:36px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-size:15px;cursor:pointer">닫기</button>
+        </div>
+      </div>
+
+      <sc-if value="{{ sel.hasNext }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:16px 20px;border-radius:8px;background:var(--primary-bg);display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:14px;line-height:20px;color:var(--primary);font-weight:600">다음 행동</span>
+          <div style="font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em;text-wrap:pretty">{{ sel.nextAction }}</div>
+        </div>
+      </sc-if>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-0.02em;text-wrap:pretty">{{ sel.title }}</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 8px;font-size:15px;line-height:22px;color:var(--text-secondary)">
+          <button onClick="{{ selOpenProject }}" style="font:inherit;background:none;border:0;padding:0;cursor:pointer;color:var(--primary);font-size:15px">{{ sel.projectName }}</button><span aria-hidden="true">·</span>
+          <span>{{ sel.assigneeName }}</span><span aria-hidden="true">·</span>
+          <span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border)">{{ sel.statusLabel }}</span>
+          <span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border);color:{{ sel.dueColor }}">{{ sel.dueLabel }}</span>
+          <span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border)">중요도 {{ sel.priorityLabel }}</span>
+          <sc-if value="{{ sel.isBlocked }}" hint-placeholder-val="{{ false }}"><span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border);color:var(--warning)">막힘</span></sc-if>
+        </div>
+        <sc-if value="{{ sel.isBlocked }}" hint-placeholder-val="{{ false }}"><p style="margin:0;padding:12px 16px;border-radius:8px;background:var(--warning-bg);color:var(--warning);font-size:15px;line-height:22px">{{ sel.blockedText }}</p></sc-if>
+        <sc-if value="{{ sel.description }}" hint-placeholder-val="{{ true }}"><p style="margin:0;font-size:15px;line-height:22px;color:var(--text-secondary);text-wrap:pretty">{{ sel.description }}</p></sc-if>
+      </div>
+
+      <sc-if value="{{ sel.doneWhen }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:14px;line-height:20px;color:var(--text-secondary);font-weight:600">완료 조건</span>
+          <p style="margin:0;font-size:15px;line-height:22px;text-wrap:pretty">{{ sel.doneWhen }}</p>
+        </div>
+      </sc-if>
+
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:14px;line-height:20px;color:var(--text-secondary);font-weight:600">체크리스트</span><span style="font-size:14px;line-height:20px;color:var(--text-secondary)">{{ sel.checkLabel }} 완료</span></div>
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column">
+          <sc-for list="{{ checklist }}" as="c" hint-placeholder-count="3">
+            <li style="display:flex;align-items:center;gap:8px;min-height:44px;border-bottom:1px solid var(--border)">
+              <input type="checkbox" checked="{{ c.done }}" onChange="{{ c.toggle }}" aria-label="{{ c.text }}" style="width:20px;height:20px;flex:none">
+              <span style="flex:1;font-size:15px;line-height:22px;text-decoration:{{ c.deco }};color:{{ c.color }}">{{ c.text }}</span>
+              <button onClick="{{ c.up }}" aria-label="위로" style="font:inherit;height:36px;width:36px;border-radius:6px;border:0;background:transparent;color:var(--text-secondary);cursor:pointer">↑</button>
+              <button onClick="{{ c.down }}" aria-label="아래로" style="font:inherit;height:36px;width:36px;border-radius:6px;border:0;background:transparent;color:var(--text-secondary);cursor:pointer">↓</button>
+              <button onClick="{{ c.del }}" style="font:inherit;height:36px;padding:0 8px;border-radius:6px;border:0;background:transparent;color:var(--text-secondary);font-size:13px;cursor:pointer">삭제</button>
+            </li>
+          </sc-for>
+        </ul>
+        <form onSubmit="{{ addCheck }}" style="display:flex;gap:8px">
+          <input value="{{ newCheck }}" onChange="{{ setNewCheck }}" placeholder="세부 작업 추가" aria-label="세부 작업" style="flex:1;min-width:0;height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px">
+          <button type="submit" style="font:inherit;height:44px;padding:0 12px;border-radius:6px;border:0;background:var(--primary-bg);color:var(--primary);font-size:15px;font-weight:600;cursor:pointer">추가</button>
+        </form>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <span style="font-size:14px;line-height:20px;color:var(--text-secondary);font-weight:600">진행 메모</span>
+        <form onSubmit="{{ addComment }}" style="display:flex;flex-direction:column;gap:8px">
+          <textarea value="{{ newComment }}" onChange="{{ setNewComment }}" autoFocus="{{ focusComment }}" rows="3" placeholder="오늘 한 일, 알게 된 것, 다음에 볼 것" aria-label="진행 메모" style="padding:12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px;line-height:22px;resize:vertical"></textarea>
+          <button type="submit" style="font:inherit;align-self:flex-start;height:44px;padding:0 16px;border-radius:8px;border:0;background:var(--primary);color:var(--on-primary);font-size:15px;font-weight:600;cursor:pointer">메모 저장</button>
+        </form>
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px">
+          <sc-for list="{{ comments }}" as="cm" hint-placeholder-count="2">
+            <li style="display:flex;flex-direction:column;gap:4px;padding:12px 0;border-top:1px solid var(--border)">
+              <div style="display:flex;justify-content:space-between;gap:8px;font-size:14px;line-height:20px;color:var(--text-secondary)"><span>{{ cm.author }}</span><span>{{ cm.time }}</span></div>
+              <p style="margin:0;font-size:15px;line-height:22px;text-wrap:pretty;white-space:pre-line">{{ cm.body }}</p>
+            </li>
+          </sc-for>
+        </ul>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <span style="font-size:14px;line-height:20px;color:var(--text-secondary);font-weight:600">문서·PR 링크</span>
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">
+          <sc-for list="{{ sel.links }}" as="l" hint-placeholder-count="2">
+            <li style="display:flex;gap:8px;align-items:center;min-height:36px;font-size:15px;line-height:22px"><span style="display:inline-block;white-space:nowrap;padding:0 6px;border-radius:4px;font-size:14px;line-height:20px;border:1px solid var(--border);color:var(--text-secondary)">{{ l.kind }}</span><a href="{{ l.url }}" target="_blank" rel="noopener" style="text-decoration:none">{{ l.title }}</a></li>
+          </sc-for>
+        </ul>
+        <a href="#" style="font-size:15px;text-decoration:none">링크 추가</a>
+      </section>
+
+      <details>
+        <summary style="font-size:15px;color:var(--text-secondary)">변경 이력 {{ historyCount }}</summary>
+        <ul style="margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column">
+          <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+            <li style="display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;line-height:20px">
+              <span>{{ h.field }}: {{ h.from }} → {{ h.to }}</span>
+              <span style="color:var(--text-secondary)">{{ h.time }} · {{ h.actor }} · {{ h.source }}</span>
+            </li>
+          </sc-for>
+        </ul>
+      </details>
+
+      <details>
+        <summary style="font-size:15px;color:var(--text-secondary)">더보기</summary>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:12px;font-size:15px;line-height:22px">
+          <form onSubmit="{{ toggleBlock }}" style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:14px;line-height:20px;color:var(--text-secondary);font-weight:600">{{ sel.blockFormTitle }}</span>
+            <sc-if value="{{ sel.notBlocked }}" hint-placeholder-val="{{ true }}"><input value="{{ blockReason }}" onChange="{{ setBlockReason }}" placeholder="무엇을 기다리고 있나요?" aria-label="막힘 사유" style="height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px"></sc-if>
+            <sc-if value="{{ blockError }}" hint-placeholder-val="{{ false }}"><p style="margin:0;color:var(--danger)">{{ blockError }}</p></sc-if>
+            <button type="submit" style="font:inherit;align-self:flex-start;height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);font-size:15px;cursor:pointer">{{ sel.blockButton }}</button>
+          </form>
+          <p style="margin:0;color:var(--text-secondary)">담당자 변경: 수정 · 취소 및 재개: 목록의 상태 메뉴</p>
+        </div>
+      </details>
+
+      <section style="display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--border)">
+        <span style="font-size:14px;line-height:20px;color:var(--text-secondary);font-weight:600">다음 작업</span>
+        <p style="margin:0;font-size:15px;line-height:22px;color:var(--text-secondary)">이어서 할 작업을 기록합니다. 빈 값은 저장하지 않습니다.</p>
+        <form onSubmit="{{ saveNext }}" style="display:flex;gap:8px">
+          <input value="{{ nextInput }}" onChange="{{ setNextInput }}" placeholder="이어서 할 작업" aria-label="다음 행동" style="flex:1;min-width:0;height:44px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-fill);color:var(--text-primary);font-size:15px">
+          <button type="submit" style="font:inherit;height:44px;padding:0 12px;border-radius:6px;border:0;background:var(--primary-bg);color:var(--primary);font-size:15px;font-weight:600;cursor:pointer">저장</button>
+        </form>
+      </section>
+    </aside>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;light&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;'light'|'dark'&quot;,&quot;section&quot;:&quot;모양&quot;},&quot;focusMode&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;오늘 화면&quot;},&quot;defaultScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;today&quot;,&quot;options&quot;:[&quot;today&quot;,&quot;me&quot;,&quot;team&quot;,&quot;project&quot;,&quot;search&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;화면&quot;}}">
+class Component extends DCLogic {
+  T = '2026-09-09'; WEEK_END = '2026-09-13'; Y = '2026-09-08';
+  ME = 1;
+  MEMBERS = { 1: '김민준', 2: '이서연', 3: '박지호', 4: '최수아' };
+  PROJECTS = [
+    { id: 1, name: '학식 API', purpose: '학식 메뉴를 크롤링해 앱과 챗봇에 제공하는 API', owner: 1, status: 'active', target: '2026-10-31' },
+    { id: 2, name: '카카오톡 챗봇', purpose: '카카오 채널에서 학식·공지를 묻고 답하는 챗봇', owner: 2, status: 'active', target: '2026-11-15' },
+    { id: 3, name: '서버 운영', purpose: 'Proxmox 서버와 배포, 모니터링 운영', owner: null, status: 'active', target: null },
+    { id: 4, name: '관리자 웹', purpose: '메뉴·공지 데이터를 손으로 고치는 내부 화면', owner: 3, status: 'planned', target: '2026-12-20' },
+  ];
+  STATUS = { todo: '시작 전', doing: '진행 중', review: '검토 대기', done: '완료', cancelled: '취소' };
+  PRIO = { high: '높음', mid: '중간', low: '낮음' };
+  PSTATUS = { planned: '준비', active: '진행', on_hold: '보류', closed: '종료' };
+
+  state = {
+    screen: this.props.defaultScreen || 'today',
+    projectId: 1, selectedId: 121, panelOpen: false, focusComment: false,
+    view: 'list', includeClosed: false, focusMode: !!this.props.focusMode,
+    quickOpen: false, quick: { title: '', project: '1', due: '', reason: '', error: '' },
+    meFilter: { project: '', status: '', priority: '', blocked: '', due: '' },
+    q: '', searchClosed: false,
+    newComment: '', newCheck: '', nextInput: '', blockReason: '', blockError: '',
+    todayIds: [121, 118, 125], yesterdayIds: [121, 112, 118], errors: {},
+    tasks: [
+      { id: 121, title: '메뉴 누락 개선', project: 1, assignee: 1, status: 'doing', priority: 'high', due: '2026-09-10',
+        description: '특정 식당의 주말 메뉴가 API 응답에서 빠지는 문제. 크롤러가 병합 셀을 건너뛰는 것으로 추정.',
+        doneWhen: '9월 전체 주말 메뉴가 응답에 포함되고, 회귀 테스트가 통과한다.',
+        nextAction: '크롤링 예외 케이스 3개를 재현하는 스크립트 작성',
+        checklist: [{ text: '누락 발생 식당·날짜 목록 정리', done: true }, { text: '병합 셀 파싱 로직 확인', done: true }, { text: '재현 스크립트 작성', done: false }, { text: '수정 후 회귀 테스트', done: false }, { text: 'API 문서에 주말 메뉴 필드 반영', done: false }],
+        comments: [{ author: '김민준', time: '9월 8일 18:20', body: '병합 셀이 원인 맞음. 학생회관 토요일만 재현됨.\n내일 스크립트로 3개 케이스 고정할 예정.' }, { author: '이서연', time: '9월 7일 11:02', body: '챗봇 쪽에서도 같은 날 응답이 비어요. 우선 처리해 주세요.' }],
+        links: [{ kind: '문서', title: '크롤러 설계 문서', url: '#' }, { kind: 'PR', title: '#88 병합 셀 파싱', url: '#' }],
+        history: [{ field: '상태', from: '시작 전', to: '진행 중', time: '9월 8일 09:12', actor: '김민준', source: '웹' }, { field: '중요도', from: '중간', to: '높음', time: '9월 7일 11:05', actor: '이서연', source: '웹' }, { field: '기한', from: '9월 12일', to: '9월 10일', time: '9월 7일 11:05', actor: '이서연', source: 'AI' }] },
+      { id: 118, title: '챗봇 응답 지연 로그 확인', project: 2, assignee: 1, status: 'doing', priority: 'mid', due: '2026-09-09',
+        description: '점심 시간대 응답이 3초를 넘는 사례 확인.', doneWhen: '원인 후보를 메모로 남기고 다음 태스크로 분리한다.',
+        nextAction: '12:00~13:00 로그에서 3초 초과 요청 추출', checklist: [], comments: [], links: [{ kind: '문서', title: '로그 조회 방법', url: '#' }], history: [] },
+      { id: 125, title: 'API 문서 v2 정리', project: 1, assignee: 1, status: 'todo', priority: 'mid', due: '2026-09-12',
+        description: '', doneWhen: '', nextAction: '', checklist: [{ text: '엔드포인트 목록 갱신', done: false }, { text: '예시 응답 교체', done: false }], comments: [], links: [], history: [] },
+      { id: 109, title: '디스크 사용량 알림 설정', project: 3, assignee: 1, status: 'review', priority: 'mid', due: '2026-09-05',
+        description: '80% 넘으면 Discord로 알림.', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [{ kind: 'PR', title: '#91 disk alert', url: '#' }], history: [] },
+      { id: 112, title: '로그인 토큰 만료 처리', project: 4, assignee: 1, status: 'todo', priority: 'low', due: '2026-09-11',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 130, title: '신학기 메뉴 데이터 검수', project: 1, assignee: 1, status: 'todo', priority: 'mid', due: null, noDueReason: '학교 공지 대기',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 115, title: '카카오 채널 심사 제출', project: 2, assignee: 1, status: 'todo', priority: 'high', due: '2026-09-16', blocked: true, blockedReason: '사업자 서류 대기 (9월 4일부터)',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 119, title: '백업 스크립트 점검', project: 3, assignee: 1, status: 'todo', priority: 'low', due: '2026-09-20',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 101, title: 'Cloudflare 터널 설정', project: 3, assignee: 1, status: 'done', priority: 'mid', due: '2026-09-09', completedAt: '2026-09-09',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 122, title: '공지 크롤러 인코딩 오류', project: 2, assignee: 2, status: 'doing', priority: 'high', due: '2026-09-10',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 123, title: '메뉴 이미지 업로드 화면', project: 4, assignee: 3, status: 'review', priority: 'mid', due: '2026-09-08',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 124, title: '식당 운영시간 필드 추가', project: 1, assignee: 4, status: 'todo', priority: 'mid', due: '2026-09-04',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 126, title: '챗봇 온보딩 문구 검토', project: 2, assignee: 4, status: 'todo', priority: 'low', due: null, noDueReason: '디자인 확정 후',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 104, title: '학식 API 캐시 도입', project: 1, assignee: 2, status: 'done', priority: 'mid', due: '2026-09-03', completedAt: '2026-09-03',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+      { id: 107, title: '구 서버 종료', project: 3, assignee: 3, status: 'cancelled', priority: 'low', due: '2026-09-01',
+        description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] },
+    ],
+  };
+
+  componentDidMount() { this.applyTheme(); }
+  componentDidUpdate() { this.applyTheme(); }
+  applyTheme() { document.documentElement.dataset.theme = this.props.theme || 'light'; }
+
+  fmt(d) { if (!d) return ''; const [, m, day] = d.split('-'); return `${+m}월 ${+day}일`; }
+  isOpen(t) { return t.status !== 'done' && t.status !== 'cancelled'; }
+  enrich(t) {
+    const s = this.state, open = this.isOpen(t), overdue = open && t.due && t.due < this.T;
+    const doneN = t.checklist.filter(c => c.done).length;
+    let dueLabel = t.due ? (t.due === this.T ? '오늘 마감' : this.fmt(t.due)) : '기한 미정';
+    if (overdue) dueLabel += ' 초과';
+    return {
+      ...t, number: `TASK-${t.id}`, projectName: this.PROJECTS.find(p => p.id === t.project).name,
+      assigneeName: this.MEMBERS[t.assignee], statusLabel: this.STATUS[t.status], priorityLabel: this.PRIO[t.priority],
+      isHigh: t.priority === 'high', isBlocked: !!t.blocked, isClosed: !open, isOverdue: !!overdue,
+      dueLabel, dueColor: overdue ? 'var(--danger)' : 'var(--text-secondary)',
+      hasChecklist: t.checklist.length > 0, checkLabel: `${doneN}/${t.checklist.length}`,
+      hasDoc: t.links.length > 0, docUrl: t.links[0] ? t.links[0].url : '#',
+      selected: s.panelOpen && s.selectedId === t.id, inToday: s.todayIds.includes(t.id), error: s.errors[t.id] || '',
+    };
+  }
+  mine() { return this.state.tasks.filter(t => t.assignee === this.ME); }
+  byDue(a, b) { return (a.due || '9999').localeCompare(b.due || '9999') || a.id - b.id; }
+
+  go(screen, extra = {}) { this.setState({ screen, panelOpen: false, ...extra }); }
+  selectTask(id, focus) { this.setState({ selectedId: id, panelOpen: true, focusComment: focus === 'comment', nextInput: this.state.tasks.find(t => t.id === id)?.nextAction || '', blockReason: '', blockError: '', newComment: '' }); }
+  setStatus(id, status) {
+    this.setState(s => {
+      const errors = { ...s.errors }; delete errors[id];
+      const tasks = s.tasks.map(t => {
+        if (t.id !== id) return t;
+        if (status === 'doing' && !t.due) { errors[id] = '진행 중으로 변경하려면 목표 기한이 필요합니다.'; return t; }
+        const n = { ...t, status, history: [{ field: '상태', from: this.STATUS[t.status], to: this.STATUS[status], time: '9월 9일 지금', actor: '김민준', source: '웹' }, ...t.history] };
+        if (status === 'done') { if (t.status !== 'done') n.completedAt = this.T; n.blocked = false; }
+        else if (status === 'cancelled') n.blocked = false;
+        else if (!this.isOpen(t)) n.completedAt = null;
+        return n;
+      });
+      return { tasks, errors };
+    });
+  }
+  toggleToday(id) { this.setState(s => ({ todayIds: s.todayIds.includes(id) ? s.todayIds.filter(x => x !== id) : [...s.todayIds, id] })); }
+  moveToday(id, dir) {
+    this.setState(s => { const a = [...s.todayIds], i = a.indexOf(id), j = dir === 'up' ? i - 1 : i + 1; if (i < 0 || j < 0 || j >= a.length) return null; [a[i], a[j]] = [a[j], a[i]]; return { todayIds: a }; });
+  }
+  patchSel(fn) { this.setState(s => ({ tasks: s.tasks.map(t => t.id === s.selectedId ? fn(t) : t) })); }
+  toggleCheck(i) { this.patchSel(t => ({ ...t, checklist: t.checklist.map((c, k) => k === i ? { ...c, done: !c.done } : c) })); }
+  moveCheck(i, dir) { this.patchSel(t => { const a = [...t.checklist], j = dir === 'up' ? i - 1 : i + 1; if (j < 0 || j >= a.length) return t; [a[i], a[j]] = [a[j], a[i]]; return { ...t, checklist: a }; }); }
+  delCheck(i) { this.patchSel(t => ({ ...t, checklist: t.checklist.filter((_, k) => k !== i) })); }
+
+  renderVals() {
+    const s = this.state, all = s.tasks.map(t => this.enrich(t)), mine = all.filter(t => t.assignee === this.ME), myOpen = mine.filter(t => !t.isClosed);
+    const byId = Object.fromEntries(all.map(t => [t.id, t]));
+    const todayItems = s.todayIds.map(id => byId[id]).filter(Boolean);
+    const leftover = s.yesterdayIds.filter(id => !s.todayIds.includes(id)).map(id => byId[id]).filter(t => t && !t.isClosed);
+    const doing = myOpen.filter(t => t.status === 'doing');
+    const doneToday = mine.filter(t => t.status === 'done' && t.completedAt === this.T);
+    const counts = {
+      todayCount: todayItems.length, myOpen: myOpen.length, leftover: leftover.length, doing: doing.length, doneToday: doneToday.length,
+      dueToday: myOpen.filter(t => t.due === this.T).length, overdue: myOpen.filter(t => t.isOverdue).length,
+      review: myOpen.filter(t => t.status === 'review').length, blocked: myOpen.filter(t => t.isBlocked).length,
+    };
+    const focusTask = todayItems.find(t => !t.isClosed && !t.isBlocked && t.status !== 'review');
+    const f = s.meFilter;
+    const filterActive = !!(f.project || f.status || f.priority || f.blocked !== '' || f.due);
+    const filtered = myOpen.filter(t => (!f.due || (f.due === 'today' ? t.due === this.T : t.isOverdue)) && (!f.project || String(t.project) === f.project) && (!f.status || t.status === f.status) && (!f.priority || t.priority === f.priority) && (f.blocked === '' || (f.blocked === '1') === t.isBlocked)).sort((a, b) => this.byDue(a, b));
+    const grp = (title, pred, emptyText) => { const tasks = filtered.filter(pred); return { title, tasks, count: tasks.length, empty: tasks.length === 0, emptyText }; };
+    const meGroups = [
+      grp('기한 초과', t => t.isOverdue, '기한 초과 업무 없음'),
+      grp('오늘 마감', t => t.due === this.T, '오늘 마감 업무 없음'),
+      grp('이번 주 마감', t => t.due && t.due > this.T && t.due <= this.WEEK_END, '이번 주 마감 업무 없음'),
+      grp('그 이후', t => t.due && t.due > this.WEEK_END, ''),
+      grp('기한 미정', t => !t.due, ''),
+    ].filter(g => g.count > 0 || (!filterActive && g.emptyText));
+    const openAll = all.filter(t => !t.isClosed);
+    const go = (screen, extra) => () => this.go(screen, extra);
+    const teamCounts = [
+      { label: '미완료', value: openAll.length, go: go('me') },
+      { label: '기한 초과', value: openAll.filter(t => t.isOverdue).length, go: go('me') },
+      { label: '이번 주 마감', value: openAll.filter(t => t.due && t.due >= '2026-09-07' && t.due <= this.WEEK_END).length, go: go('me') },
+      { label: '검토 대기', value: openAll.filter(t => t.status === 'review').length, go: go('me', { meFilter: { ...f, status: 'review' } }) },
+      { label: '막힌 업무', value: openAll.filter(t => t.isBlocked).length, go: go('me', { meFilter: { ...f, blocked: '1' } }) },
+      { label: '기한 미정', value: openAll.filter(t => !t.due).length, go: go('me') },
+    ];
+    const projStats = p => { const ts = all.filter(t => t.project === p.id), open = ts.filter(t => !t.isClosed), done = ts.filter(t => t.status === 'done'); return { ts, open, done, total: ts.filter(t => t.status !== 'cancelled').length }; };
+    const projectRows = this.PROJECTS.map(p => { const st = projStats(p); return { ...p, open: () => this.go('project', { projectId: p.id }), ownerName: p.owner ? this.MEMBERS[p.owner] : '미지정', ownerColor: p.owner ? 'var(--text-primary)' : 'var(--warning)', statusLabel: this.PSTATUS[p.status], open_count: st.open.length, doneLabel: `${st.done.length}/${st.total}`, target: p.target ? this.fmt(p.target) : '없음' }; });
+    const navProjects = projectRows.map(p => ({ ...p, current: s.screen === 'project' && s.projectId === p.id, bg: s.screen === 'project' && s.projectId === p.id ? 'var(--primary-bg)' : 'transparent' }));
+    const byAssignee = Object.entries(this.MEMBERS).map(([id, name]) => { const ts = openAll.filter(t => t.assignee === +id); return { name, open: ts.length, overdue: ts.filter(t => t.isOverdue).length, review: ts.filter(t => t.status === 'review').length, blocked: ts.filter(t => t.isBlocked).length }; });
+    const pr = projectRows.find(p => p.id === s.projectId), pst = projStats(pr);
+    const projTasks = (s.includeClosed ? pst.ts : pst.open).slice().sort((a, b) => this.byDue(a, b));
+    const cols = ['todo', 'doing', 'review', ...(s.includeClosed ? ['done', 'cancelled'] : [])].map(c => { const ts = projTasks.filter(t => t.status === c); return { code: c, label: this.STATUS[c], tasks: ts, count: ts.length }; });
+    const proj = { ...pr, tasks: projTasks, columns: cols, counts: [
+      { label: '완료', value: `${pst.done.length}/${pst.total}` }, { label: '미완료', value: pst.open.length },
+      { label: '기한 초과', value: pst.open.filter(t => t.isOverdue).length }, { label: '검토 대기', value: pst.open.filter(t => t.status === 'review').length }, { label: '막힘', value: pst.open.filter(t => t.isBlocked).length },
+    ] };
+    const q = s.q.trim().toLowerCase();
+    const searchResults = q ? all.filter(t => (s.searchClosed || !t.isClosed) && (t.number.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) || t.projectName.toLowerCase().includes(q))) : [];
+    const selRaw = byId[s.selectedId] || all[0];
+    const sel = { ...selRaw, hasNext: !!selRaw.nextAction, blockedText: `막힘: ${selRaw.blockedReason || ''}`, notBlocked: !selRaw.isBlocked, blockFormTitle: selRaw.isBlocked ? '막힘 해제' : '막힘 설정', blockButton: selRaw.isBlocked ? '막힘 해제하기' : '막힘으로 표시' };
+    const navBg = {}, navW = {}, nav = {};
+    ['today', 'me', 'team', 'search'].forEach(k => { const on = s.screen === k; nav[k] = on ? 'page' : undefined; navBg[k] = on ? 'var(--primary-bg)' : 'transparent'; navW[k] = on ? 600 : 400; });
+    const upd = (key, sub) => e => this.setState(st => ({ [key]: { ...st[key], [sub]: e.target.value } }));
+    return {
+      isToday: s.screen === 'today', isMe: s.screen === 'me', isTeam: s.screen === 'team', isProject: s.screen === 'project', isSearch: s.screen === 'search',
+      nav, navBg, navW, navProjects, counts, todayItems, leftover, hasLeftover: leftover.length > 0, doing, doneToday,
+      todayHint: focusTask ? `오늘 업무 ${todayItems.length}건` : todayItems.length ? '진행 가능한 업무 없음' : '오늘 업무 없음',
+      hasFocus: !!focusTask, noFocus: !focusTask, noFocusHint: todayItems.some(t => !t.isClosed) ? '남은 업무는 검토 대기 또는 막힘 상태입니다.' : '내 업무에서 오늘 처리할 항목을 추가하세요.',
+      focusTask: focusTask ? { ...focusTask, headline: focusTask.nextAction || focusTask.title, primaryLabel: focusTask.status === 'doing' ? '완료로 표시' : '진행 중으로 시작' } : {},
+      focusDone: () => focusTask && this.setStatus(focusTask.id, focusTask.status === 'doing' ? 'done' : 'doing'),
+      focusMemo: () => focusTask && this.selectTask(focusTask.id, 'comment'),
+      focusOpen: () => focusTask && this.selectTask(focusTask.id, ''),
+      focusMode: s.focusMode, showAux: !s.focusMode, focusLabel: s.focusMode ? '집중 모드 끄기' : '집중 모드',
+      focusBg: s.focusMode ? 'var(--primary-bg)' : 'var(--bg-surface)', focusColor: s.focusMode ? 'var(--primary)' : 'var(--text-primary)',
+      toggleFocus: () => this.setState(st => ({ focusMode: !st.focusMode })),
+      quickOpen: s.quickOpen, quick: s.quick, toggleQuick: () => this.setState(st => ({ quickOpen: !st.quickOpen })),
+      setQuickTitle: upd('quick', 'title'), setQuickProject: upd('quick', 'project'), setQuickDue: upd('quick', 'due'), setQuickReason: upd('quick', 'reason'),
+      quickAdd: e => { e.preventDefault(); const qk = s.quick; if (!qk.title.trim()) return this.setState({ quick: { ...qk, error: '제목을 입력하세요.' } }); if (!qk.due && !qk.reason.trim()) return this.setState({ quick: { ...qk, error: '기한 또는 기한 미정 사유를 입력하세요.' } });
+        const id = Math.max(...s.tasks.map(t => t.id)) + 1;
+        this.setState(st => ({ tasks: [...st.tasks, { id, title: qk.title.trim(), project: +qk.project, assignee: this.ME, status: 'todo', priority: 'mid', due: qk.due || null, noDueReason: qk.reason, description: '', doneWhen: '', nextAction: '', checklist: [], comments: [], links: [], history: [] }], todayIds: [...st.todayIds, id], quick: { title: '', project: '1', due: '', reason: '', error: '' }, quickOpen: false })); },
+      goToday: go('today'), goMe: go('me'), goTeam: go('team'), goSearch: go('search'),
+      goMeDueToday: go('me', { meFilter: { project: '', status: '', priority: '', blocked: '', due: 'today' } }), goMeOverdue: go('me', { meFilter: { project: '', status: '', priority: '', blocked: '', due: 'overdue' } }), goMeReview: go('me', { meFilter: { project: '', status: 'review', priority: '', blocked: '', due: '' } }), goMeBlocked: go('me', { meFilter: { project: '', status: '', priority: '', blocked: '1', due: '' } }),
+      selectTask: (id, focus) => this.selectTask(id, focus), setStatus: (id, st) => this.setStatus(id, st), toggleToday: id => this.toggleToday(id), moveToday: (id, d) => this.moveToday(id, d),
+      filteredCount: filtered.length, emptyFiltered: filtered.length === 0, meFilter: f, hasFilter: !!(f.project || f.status || f.priority || f.blocked !== '' || f.due), meGroups,
+      setFilterProject: upd('meFilter', 'project'), setFilterStatus: upd('meFilter', 'status'), setFilterPriority: upd('meFilter', 'priority'), setFilterBlocked: upd('meFilter', 'blocked'),
+      setFilterDue: upd('meFilter', 'due'), clearFilter: () => this.setState({ meFilter: { project: '', status: '', priority: '', blocked: '', due: '' } }),
+      teamCounts, projectRows, byAssignee, proj,
+      isList: s.view === 'list', isBoard: s.view === 'board', viewList: () => this.setState({ view: 'list' }), viewBoard: () => this.setState({ view: 'board' }),
+      listBg: s.view === 'list' ? 'var(--primary-bg)' : 'var(--bg-surface)', listColor: s.view === 'list' ? 'var(--primary)' : 'var(--text-primary)',
+      boardBg: s.view === 'board' ? 'var(--primary-bg)' : 'var(--bg-surface)', boardColor: s.view === 'board' ? 'var(--primary)' : 'var(--text-primary)',
+      includeClosed: s.includeClosed, toggleClosed: () => this.setState(st => ({ includeClosed: !st.includeClosed })),
+      q: s.q, setQ: e => this.setState({ q: e.target.value }), searchClosed: s.searchClosed, toggleSearchClosed: () => this.setState(st => ({ searchClosed: !st.searchClosed })),
+      searchResults, searchCount: searchResults.length, searchEmpty: !!q && searchResults.length === 0,
+      panelOpen: s.panelOpen, closePanel: () => this.setState({ panelOpen: false }), sel, selOpenProject: () => this.go('project', { projectId: sel.project }),
+      checklist: sel.checklist.map((c, i) => ({ ...c, deco: c.done ? 'line-through' : 'none', color: c.done ? 'var(--text-secondary)' : 'var(--text-primary)', toggle: () => this.toggleCheck(i), up: () => this.moveCheck(i, 'up'), down: () => this.moveCheck(i, 'down'), del: () => this.delCheck(i) })),
+      newCheck: s.newCheck, setNewCheck: e => this.setState({ newCheck: e.target.value }),
+      addCheck: e => { e.preventDefault(); const v = s.newCheck.trim(); if (!v) return; this.patchSel(t => ({ ...t, checklist: [...t.checklist, { text: v, done: false }] })); this.setState({ newCheck: '' }); },
+      comments: sel.comments, newComment: s.newComment, focusComment: s.focusComment, setNewComment: e => this.setState({ newComment: e.target.value }),
+      addComment: e => { e.preventDefault(); const v = s.newComment.trim(); if (!v) return; this.patchSel(t => ({ ...t, comments: [{ author: '김민준', time: '9월 9일 지금', body: v }, ...t.comments] })); this.setState({ newComment: '' }); },
+      history: sel.history, historyCount: sel.history.length,
+      blockReason: s.blockReason, blockError: s.blockError, setBlockReason: e => this.setState({ blockReason: e.target.value }),
+      toggleBlock: e => { e.preventDefault(); if (!sel.isBlocked && !s.blockReason.trim()) return this.setState({ blockError: '막힘 사유를 입력하세요.' }); this.patchSel(t => ({ ...t, blocked: !t.blocked, blockedReason: t.blocked ? '' : s.blockReason.trim() })); this.setState({ blockReason: '', blockError: '' }); },
+      nextInput: s.nextInput, setNextInput: e => this.setState({ nextInput: e.target.value }),
+      saveNext: e => { e.preventDefault(); const v = s.nextInput.trim(); if (!v) return; this.patchSel(t => ({ ...t, nextAction: v })); },
+    };
+  }
+}
+</script>
+</body>
+</html>
