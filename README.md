@@ -1,4 +1,112 @@
-# Handoff: 산돌이 태스크 (팀 태스크 관리 웹앱)
+# 산돌이 태스크
+
+팀의 태스크를 한곳에서 보고, 오늘 할 일을 고르고, 마감·주간 현황을 자동으로 알리는 업무 관리 웹앱.
+세 파트로 나뉘며 서로 HTTP API로만 통신한다.
+
+| 파트 | 역할 | 스택 |
+|---|---|---|
+| [`core/`](core) | 웹 화면·데이터·HTTP API. 업무 규칙은 전부 여기 `services.py`에 있다 | Django 5.2, Django Ninja, PostgreSQL, HTMX |
+| [`discord_service/`](discord_service) | 마감 알림(D-3·D-1·당일·초과)과 주간 보고를 Discord Webhook으로 발송 | httpx, SQLite |
+| [`mcp_server/`](mcp_server) | Claude·ChatGPT 등 AI 클라이언트가 태스크를 읽고 고치는 MCP 서버 | mcp, httpx, uvicorn |
+
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [PLAN.md](PLAN.md) | 기획 배경과 전체 계획 |
+| [docs/SPEC.md](docs/SPEC.md) | 원래 요구사항 |
+| [docs/IMPL-PLAN.md](docs/IMPL-PLAN.md) | 지시서와 목업의 정합 결정표 (2026-09-10) |
+| [docs/GUIDE-00-rules.md](docs/GUIDE-00-rules.md) | 공통 규칙 (가장 먼저 읽는다) |
+| [docs/GUIDE-01-core-1-setup-models.md](docs/GUIDE-01-core-1-setup-models.md) ~ [01-5](docs/GUIDE-01-core-5-tests.md) | core 구현 지시서 |
+| [docs/GUIDE-02-discord.md](docs/GUIDE-02-discord.md) | discord_service 구현 지시서 |
+| [docs/GUIDE-03-mcp.md](docs/GUIDE-03-mcp.md) | mcp_server 구현 지시서 |
+| [docs/GUIDE-04-deploy.md](docs/GUIDE-04-deploy.md) | 배포 절차 (Proxmox + Docker Compose + Cloudflare Tunnel) |
+
+## 로컬 개발 빠른 시작
+
+```bash
+cd core
+uv sync
+uv run python manage.py migrate
+uv run python manage.py createsuperuser
+uv run python manage.py runserver
+```
+
+`http://127.0.0.1:8000/login` 으로 접속한다. API 문서는 로그인 후 `/api/docs`.
+
+테스트와 린트:
+
+```bash
+cd core            && uv run pytest -q && uv run ruff check . && uv run ruff format --check .
+cd discord_service && uv run pytest -q && uv run ruff check .
+cd mcp_server      && uv run pytest -q && uv run ruff check .
+```
+
+Postgres로도 한 번 돌린다(아래 Docker 실행으로 `db`만 띄운 상태에서):
+
+```bash
+cd core && DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q
+```
+
+## Docker 로컬 실행
+
+```bash
+cp .env.example .env
+# .env를 로컬용으로: DEBUG=1, ALLOWED_HOSTS=localhost,127.0.0.1,
+#                  CSRF_TRUSTED_ORIGINS=http://localhost:8000, SITE_URL=http://localhost:8000
+docker compose up -d --build db web mcp
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/healthz').read())"
+```
+
+`web`은 포트를 열지 않는다. 바깥에서 들어오는 HTTPS는 Cloudflare Tunnel(`cloudflared`)이 넘긴다.
+
+## 서버 배포 요약
+
+1. Proxmox에 Debian 12 LXC(`nesting=1`, `keyctl=1`)를 만들고 Docker를 설치한다.
+2. 저장소를 `/opt/project-manager`에 복사한다(`.venv/`, `db.sqlite3` 제외).
+3. `.env`를 실제 값으로 채우고 `compose.yml`의 `db` 포트 두 줄을 지운다.
+4. Cloudflare Zero Trust에서 터널을 만들고 공개 호스트 두 개를 연결한다: `pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`.
+5. `docker compose up -d --build db web mcp cloudflared` 후 superuser 생성.
+6. 팀 생성 → 초대 링크 배포 → Discord 연동 계정 토큰 발급 → `docker compose up -d discord`.
+
+자세한 절차는 [docs/GUIDE-04-deploy.md](docs/GUIDE-04-deploy.md)에 있다.
+
+## 환경 변수 (`.env.example`)
+
+| 이름 | 파트 | 설명 |
+|---|---|---|
+| `SECRET_KEY` | core | Django 비밀키. `python3 -c "import secrets;print(secrets.token_urlsafe(50))"` |
+| `DEBUG` | core | 운영은 `0` |
+| `ALLOWED_HOSTS` | core | 쉼표로 구분한 호스트 목록 |
+| `CSRF_TRUSTED_ORIGINS` | core | 쉼표로 구분한 오리진(스킴 포함) |
+| `SITE_URL` | core | 링크·초대 URL을 만들 때 쓰는 기준 주소 |
+| `POSTGRES_PASSWORD` | db·core | Postgres 비밀번호 |
+| `CORE_TOKEN` | discord | core 연동 계정의 **읽기** API 토큰 |
+| `TEAM_ID` | discord | 알림 대상 팀 id |
+| `DISCORD_WEBHOOK_URL` | discord | 채널 Webhook URL |
+| `TZ` | discord | 기본 `Asia/Seoul` |
+| `SEND_HOUR` | discord | 마감 알림 시각(시). 기본 9 |
+| `WEEKLY_WEEKDAY` / `WEEKLY_HOUR` | discord | 주간 보고 요일(0=월)·시각. 기본 0, 9 |
+| `LLM_PROVIDER` | discord | 비우면 고정 형식 보고서 |
+| `SITE_NAME` | discord | 테스트 메시지에 쓰는 이름 |
+| `CLOUDFLARE_TUNNEL_TOKEN` | cloudflared | 터널 토큰 |
+
+`mcp_server`는 `CORE_URL`과 `PORT`만 쓴다(compose가 넣어 준다).
+
+## 목업 보는 법
+
+저장소 루트에서:
+
+```bash
+python -m http.server 8765
+```
+
+`http://127.0.0.1:8765/산돌이 업무 목업 v2.dc.html` 을 연다. 화면 문구·색·크기의 원본은 아래 디자인 핸드오프 절이다.
+
+---
+
+# 디자인 핸드오프: 산돌이 태스크 (팀 태스크 관리 웹앱)
 
 ## 최신 목업 동작 (2026-09-10)
 

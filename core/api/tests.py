@@ -230,3 +230,31 @@ def test_invite_admin_only(client, api, team, admin):
     )
     assert r.status_code == 201
     assert "/join/" in r.json()["url"]
+
+
+def test_bearer_write_passes_csrf(write_token, task, db):
+    """Bearer 토큰 쓰기 요청은 CSRF 검사에 걸리지 않는다 (MCP·Discord 경로)."""
+    from django.test import Client
+
+    strict = Client(enforce_csrf_checks=True)
+    r = strict.post(
+        f"/api/tasks/{task.pk}/transition",
+        data={"status": "review", "version": 1},
+        content_type="application/json",
+        headers=_h(write_token),
+    )
+    assert r.status_code == 200
+
+
+def test_session_write_still_needs_csrf(client, member, task):
+    """세션 쿠키로 들어온 쓰기 요청은 CSRF 토큰이 없으면 거부된다."""
+    from django.test import Client
+
+    strict = Client(enforce_csrf_checks=True)
+    strict.login(username="member1", password="pw12345678")
+    r = strict.post(
+        f"/api/tasks/{task.pk}/transition",
+        data={"status": "review", "version": 1},
+        content_type="application/json",
+    )
+    assert r.status_code == 403

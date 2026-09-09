@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pm
+      POSTGRES_USER: pm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pm -d pm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:5432:5432"   # 로컬 개발·테스트용. 서버에서는 이 두 줄을 지운다.
+
+  web:
+    build: ./core
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://pm:${POSTGRES_PASSWORD:-pm}@db:5432/pm
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  discord:
+    build: ./discord_service
+    env_file: .env
+    environment:
+      CORE_URL: http://web:8000
+      DB_PATH: /data/discord.sqlite
+    volumes:
+      - discord_data:/data
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  mcp:
+    build: ./mcp_server
+    environment:
+      CORE_URL: http://web:8000
+      PORT: "8080"
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - web
+      - mcp
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  discord_data:

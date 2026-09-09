@@ -1,18 +1,17 @@
 from django.contrib.auth.decorators import login_required
 from ninja import NinjaAPI
-from ninja.security import django_auth
 from ninja.throttling import AuthRateThrottle
 
 from common.errors import ConflictError, ServiceError
 
-from .auth import TokenAuth
+from .auth import BrowserSessionAuth, TokenAuth
 from .routers import integrations, me, projects, reports, tasks, teams, today
 from .serialize import project_out, task_out
 
 api = NinjaAPI(
     title="Sandol PM API",
     version="1",
-    auth=[django_auth, TokenAuth()],
+    auth=[BrowserSessionAuth(), TokenAuth()],
     throttle=[AuthRateThrottle("60/m")],
     docs_decorator=login_required,
     urls_namespace="api",
