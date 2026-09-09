@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}프로필{% endblock %}
+{% block main %}
+<div class="card">
+  <h1 class="t24">프로필</h1>
+  <form method="post" class="stack">{% csrf_token %}
+    {% for f in form %}<label class="field">{{ f.label }}{{ f }}</label>{% for e in f.errors %}<div class="error">{{ e }}</div>{% endfor %}{% endfor %}
+    <button class="btn primary">저장</button>
+  </form>
+</div>
+{% endblock %}

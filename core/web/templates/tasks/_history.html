@@ -1,0 +1,5 @@
+<ul class="history">
+  {% for h in history %}
+  <li><div>{{ h.field }}: {{ h.from }} → {{ h.to }}</div><div class="who">{{ h.time }} · {{ h.actor }} · {{ h.source }}</div></li>
+  {% empty %}<li class="muted">변경 이력 없음</li>{% endfor %}
+</ul>

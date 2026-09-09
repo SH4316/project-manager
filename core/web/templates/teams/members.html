@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% block title %}멤버·초대{% endblock %}
+{% block main %}
+<section class="card">
+  <div class="card-head"><h1 class="t24">{{ team.name }} 멤버</h1><a class="btn sm" href="{% url 'team_detail' team.pk %}">팀 현황</a></div>
+  <table class="grid">
+    <thead><tr><th>이름</th><th>역할</th><th></th></tr></thead>
+    <tbody>
+    {% for m in memberships %}
+    <tr>
+      <td>{{ m.user.display_name }}<div class="muted t13">{{ m.user.username }}</div></td>
+      <td>
+        <form method="post" action="{% url 'member_role' m.pk %}" class="row">{% csrf_token %}
+          <select name="role" class="select auto" onchange="this.form.requestSubmit()">
+            <option value="admin"{% if m.role == "admin" %} selected{% endif %}>관리자</option>
+            <option value="member"{% if m.role == "member" %} selected{% endif %}>팀원</option>
+          </select>
+        </form>
+      </td>
+      <td><form method="post" action="{% url 'member_remove' m.pk %}" onsubmit="return confirm('제거할까요?')">{% csrf_token %}<button class="btn sm">제거</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="card">
+  <h2>초대 링크</h2>
+  <table class="grid">
+    <thead><tr><th>링크</th><th>만료</th><th class="num">사용</th><th></th></tr></thead>
+    <tbody>
+    {% for i in invites %}
+    <tr>
+      <td><code>{{ site_url }}{{ i.path }}</code>{% if not i.is_usable %} <span class="badge">만료</span>{% endif %}</td>
+      <td>{{ i.expires_at|date:"Y-m-d H:i" }}</td>
+      <td class="num">{{ i.use_count }}</td>
+      <td><form method="post" action="{% url 'invite_revoke' i.pk %}">{% csrf_token %}<button class="btn sm">폐기</button></form></td>
+    </tr>
+    {% empty %}<tr><td colspan="4" class="muted">초대 링크가 없습니다.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="{% url 'invite_create' team.pk %}" class="row">{% csrf_token %}
+    <label class="field">{{ form.days.label }}{{ form.days }}</label>
+    <button class="btn primary">초대 링크 만들기</button>
+  </form>
+</section>
+{% endblock %}

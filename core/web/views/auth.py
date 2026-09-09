@@ -1,0 +1,38 @@
+from django.contrib import messages
+from django.contrib.auth import login
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import redirect, render
+
+from common.errors import ServiceError
+from teams.services import join_by_token
+
+from ..forms import SignupForm
+
+
+def root(request):
+    return redirect("today" if request.user.is_authenticated else "login")
+
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("today")
+    form = SignupForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        login(request, user)
+        messages.info(request, "가입되었습니다. 팀에 참여하려면 초대 링크가 필요합니다.")
+        return redirect(request.GET.get("next") or "today")
+    return render(request, "auth/signup.html", {"form": form})
+
+
+@login_required
+def join(request, token):
+    if request.method == "POST":
+        try:
+            team = join_by_token(request.user, token)
+        except ServiceError as e:
+            return render(request, "auth/join.html", {"error": e.errors["token"]})
+        request.session["team_id"] = team.pk
+        messages.success(request, f"{team.name} 팀에 참여했습니다.")
+        return redirect("today")
+    return render(request, "auth/join.html", {"token": token})

@@ -1,0 +1,79 @@
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
+from django.shortcuts import render
+
+from accounts.models import User
+from projects.models import Project
+from tasks import services as ts
+from tasks.services import today_membership
+from teams.services import teams_of
+
+from .common import project_or_404, row_ctx
+
+
+@login_required
+def me(request):
+    g = request.GET
+    member, member_id = None, request.user.pk
+    raw = g.get("member", "")
+    if raw == "0":
+        member, member_id = 0, 0
+    elif raw.isdigit() and int(raw) != request.user.pk:
+        member = (
+            User.objects.filter(
+                pk=int(raw), is_active=True, memberships__team__in=teams_of(request.user)
+            )
+            .distinct()
+            .first()
+        )
+        if member is None:
+            raise Http404
+        member_id = member.pk
+    project = project_or_404(request.user, g["project"]) if g.get("project", "").isdigit() else None
+    group = g.get("group") if g.get("group") in dict(ts.GROUP_OPTIONS) else "due"
+    f = {
+        "due": g.get("due", ""),
+        "project": g.get("project", ""),
+        "status": g.get("status", ""),
+        "priority": g.get("priority", ""),
+    }
+    view = ts.me_view(
+        request.user,
+        member=member,
+        group=group,
+        due=f["due"],
+        project=project,
+        status=f["status"],
+        priority=f["priority"],
+    )
+    opts = "ro,notoday" if member is not None else "noassignee"
+    m = today_membership(request.user)
+    for grp in view["groups"]:
+        grp["rows"] = [row_ctx(request.user, t, opts, m) for t in grp["tasks"]]
+        for p in grp["projects"]:
+            p["rows"] = [row_ctx(request.user, t, opts, m) for t in p["tasks"]]
+            p["count_label"] = f"완료 {p['done']}/{p['total']}"
+    return render(
+        request,
+        "me.html",
+        {
+            "view": view,
+            "groups": view["groups"],
+            "group": group,
+            "f": f,
+            "has_filter": any(f.values()),
+            "member_id": member_id,
+            "members": User.objects.filter(
+                is_active=True, memberships__team__in=teams_of(request.user)
+            )
+            .distinct()
+            .order_by("display_name"),
+            "projects": Project.objects.filter(
+                team__in=teams_of(request.user), is_archived=False
+            ).order_by("name"),
+            "due_options": ts.DUE_FILTERS,
+            "status_options": ts.STATUS_FILTERS,
+            "priority_options": ts.PRIORITY_FILTERS,
+            "group_options": ts.GROUP_OPTIONS,
+        },
+    )

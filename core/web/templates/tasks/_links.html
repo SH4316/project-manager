@@ -1,0 +1,17 @@
+<div class="section">
+  <span class="label">문서·PR 링크</span>
+  <ul class="links">
+    {% for l in links %}
+    <li class="row"><span class="badge">{{ l.get_kind_display }}</span><a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.title }}</a>
+      <button type="button" class="btn link danger" hx-post="{% url 'link_delete' l.pk %}" hx-target="#links" hx-swap="innerHTML" hx-confirm="링크를 지울까요?">삭제</button></li>
+    {% empty %}<li class="muted t13">링크 없음</li>{% endfor %}
+  </ul>
+  <button type="button" class="btn link" data-action="toggle" data-target="#link-form" data-alt="취소">링크 추가</button>
+  <form id="link-form" class="stack"{% if not link_open %} hidden{% endif %} hx-post="{% url 'task_link_add' task.pk %}" hx-target="#links" hx-swap="innerHTML">
+    <select name="kind" class="select auto" aria-label="종류">{% for code, label in link_form.fields.kind.choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select>
+    <input class="input" name="title" placeholder="제목" required>
+    <input class="input" name="url" type="url" placeholder="https://" required>
+    <button class="btn sm primary">추가</button>
+  </form>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+</div>

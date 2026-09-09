@@ -1,1 +1,66 @@
-urlpatterns = []
+from django.contrib.auth import views as auth_views
+from django.urls import path
+
+from .views import auth, me, ops, projects, search, settings, tasks, teams, today
+
+urlpatterns = [
+    path("", auth.root, name="root"),
+    path("healthz", ops.healthz, name="healthz"),
+    path(
+        "login",
+        auth_views.LoginView.as_view(
+            template_name="auth/login.html", redirect_authenticated_user=True
+        ),
+        name="login",
+    ),
+    path("logout", auth_views.LogoutView.as_view(), name="logout"),
+    path("signup", auth.signup, name="signup"),
+    path("join/<str:token>", auth.join, name="join"),
+    path("today", today.today, name="today"),
+    path("today/quick", today.quick_add, name="today_quick"),
+    path("today/add/<int:task_id>", today.add, name="today_add"),
+    path("today/exclude/<int:task_id>", today.exclude, name="today_exclude"),
+    path("today/restore", today.restore, name="today_restore"),
+    path("today/move/<int:task_id>/<str:direction>", today.move, name="today_move"),
+    path("today/settings", today.auto_pull, name="today_settings"),
+    path("me", me.me, name="me"),
+    path("team", teams.team_current, name="team"),
+    path("teams", teams.team_list, name="team_list"),
+    path("teams/new", teams.team_new, name="team_new"),
+    path("teams/<int:team_id>", teams.team_detail, name="team_detail"),
+    path("teams/<int:team_id>/members", teams.members, name="team_members"),
+    path("teams/<int:team_id>/invites", teams.invite_create, name="invite_create"),
+    path("teams/invites/<int:invite_id>/revoke", teams.invite_revoke, name="invite_revoke"),
+    path("teams/memberships/<int:membership_id>/role", teams.member_role, name="member_role"),
+    path("teams/memberships/<int:membership_id>/remove", teams.member_remove, name="member_remove"),
+    path("projects/new", projects.project_new, name="project_new"),
+    path("projects/<int:project_id>", projects.project_detail, name="project_detail"),
+    path("projects/<int:project_id>/edit", projects.project_edit, name="project_edit"),
+    path("projects/<int:project_id>/tasks", projects.task_create, name="project_task_create"),
+    path("projects/<int:project_id>/archive", projects.project_archive, name="project_archive"),
+    path("projects/<int:project_id>/restore", projects.project_restore, name="project_restore"),
+    path("projects/<int:project_id>/links", projects.link_add, name="project_link_add"),
+    path("tasks/<int:task_id>", tasks.task_detail, name="task_detail"),
+    path("tasks/<int:task_id>/panel", tasks.task_panel, name="task_panel"),
+    path("tasks/<int:task_id>/row", tasks.task_row, name="task_row"),
+    path("tasks/<int:task_id>/edit", tasks.task_edit, name="task_edit"),
+    path("tasks/<int:task_id>/status", tasks.task_status, name="task_status"),
+    path("tasks/<int:task_id>/text/<str:field>", tasks.task_text, name="task_text"),
+    path("tasks/<int:task_id>/priority", tasks.task_priority, name="task_priority"),
+    path("tasks/<int:task_id>/extend", tasks.task_extend, name="task_extend"),
+    path("tasks/<int:task_id>/stop-reason", tasks.task_stop_reason, name="task_stop_reason"),
+    path("tasks/<int:task_id>/checklist", tasks.checklist_add, name="checklist_add"),
+    path(
+        "tasks/checklist/<int:item_id>/<str:action>",
+        tasks.checklist_action,
+        name="checklist_action",
+    ),
+    path("tasks/<int:task_id>/links", tasks.link_add, name="task_link_add"),
+    path("tasks/links/<int:link_id>/delete", tasks.link_delete, name="link_delete"),
+    path("search", search.search, name="search"),
+    path("settings/profile", settings.profile, name="profile"),
+    path("settings/tokens", settings.tokens, name="tokens"),
+    path("settings/tokens/<int:token_id>/revoke", settings.token_revoke, name="token_revoke"),
+    path("ops", ops.ops, name="ops"),
+    path("ops/export.json", ops.export_json, name="export_json"),
+]

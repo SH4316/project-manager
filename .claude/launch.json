@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1"],
       "port": 8765
+    },
+    {
+      "name": "core",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "--project", "core", "python", "core/manage.py", "runserver", "8000"],
+      "port": 8000
     }
   ]
 }

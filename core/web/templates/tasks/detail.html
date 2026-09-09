@@ -1,0 +1,4 @@
+{% extends "base.html" %}{% block title %}{{ task.number }} {{ task.title }}{% endblock %}
+{% block page_url %}{% url 'today' %}{% endblock %}
+{% block layout_class %} has-panel wide{% endblock %}
+{% block panel %}{% include "tasks/_panel.html" %}{% endblock %}

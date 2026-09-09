@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% load rows %}{% block title %}검색{% endblock %}
+{% block main %}
+<div class="card">
+  <h1 class="t24">검색</h1>
+  <form method="get" class="stack">
+    <input class="input lg" name="q" value="{{ q }}" placeholder="예: TASK-121, 메뉴, 챗봇" autofocus>
+    <div class="row">
+      <label class="check muted t13"><input type="checkbox" name="include_closed" value="1"{% if include_closed %} checked{% endif %}> 완료·취소 포함</label>
+      <label class="check muted t13"><input type="checkbox" name="include_archived" value="1"{% if include_archived %} checked{% endif %}> 보관 포함</label>
+      <button class="btn primary">검색</button>
+    </div>
+  </form>
+</div>
+<section class="card">
+  <h2>결과 <span class="muted">{{ count }}</span></h2>
+  <ul class="tasks">{% for r in rows %}{% task_row r %}{% empty %}<li class="muted">검색 결과가 없습니다.</li>{% endfor %}</ul>
+</section>
+{% endblock %}

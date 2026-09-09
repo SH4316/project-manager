@@ -1,0 +1,24 @@
+<section class="card schedule" aria-label="일정">
+  <div class="card-head">
+    <h2>일정</h2>
+    <div class="row" role="group" aria-label="일정 보기">
+      <a class="btn sm" href="{% url 'today' %}?schedule=1&cal=time" aria-pressed="{% if cal_mode == 'time' %}true{% else %}false{% endif %}">시간표</a>
+      <a class="btn sm" href="{% url 'today' %}?schedule=1&cal=month" aria-pressed="{% if cal_mode == 'month' %}true{% else %}false{% endif %}">캘린더</a>
+    </div>
+  </div>
+  <div class="t15" style="font-weight:600">{{ cal_title }}</div>
+  {% if cal_mode == 'month' %}
+  <div class="cal">
+    {% for w in "월화수목금토일" %}<span class="muted t12">{{ w }}</span>{% endfor %}
+    {% for c in cal_cells %}{% if c %}<a href="{{ c.url }}" class="{% if c.today %}today{% endif %}{% if c.sel %} sel{% endif %}" aria-label="{{ c.aria }}">{{ c.day }}{% if c.n %}<small>●{{ c.n }}</small>{% endif %}</a>{% else %}<span></span>{% endif %}{% endfor %}
+  </div>
+  <div class="muted t13">{{ cal_sel_label }}</div>
+  <ul class="stack">{% for t in cal_sel_tasks %}<li><button type="button" class="btn link" hx-get="{% url 'task_panel' t.pk %}" hx-target="#panel" hx-swap="innerHTML" hx-push-url="{% url 'task_detail' t.pk %}">{{ t.title }}</button></li>{% empty %}<li class="muted t13">마감 없음</li>{% endfor %}</ul>
+  {% else %}
+  <div class="stack">
+    <span class="muted t13">종일</span>
+    {% for t in due_today_tasks %}<button type="button" class="btn link" style="text-align:left" hx-get="{% url 'task_panel' t.pk %}" hx-target="#panel" hx-swap="innerHTML" hx-push-url="{% url 'task_detail' t.pk %}">{{ t.title }}</button>{% empty %}<span class="muted t13">오늘 마감 없음</span>{% endfor %}
+  </div>
+  <div class="hours">{% for h in hours %}<div>{{ h }}</div>{% endfor %}</div>
+  {% endif %}
+</section>

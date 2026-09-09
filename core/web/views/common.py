@@ -1,0 +1,230 @@
+import json
+import uuid
+from datetime import date, timedelta
+from urllib.parse import urlencode
+
+from django.http import Http404, HttpResponse
+from django.shortcuts import redirect
+from django.utils import timezone
+
+from accounts.models import User
+from common.dates import fmt_md, today_kst
+from common.errors import ServiceError
+from projects.models import Project
+from tasks.models import Task
+from tasks.services import get_visible_task, today_flag, today_membership
+from teams.models import Team
+from teams.services import is_admin, is_member, teams_of
+
+CONFLICT_MSG = "다른 사람이 먼저 수정했습니다. 최신 내용을 다시 확인하세요."
+
+
+def task_or_404(user, task_id):
+    task = get_visible_task(user, task_id)
+    if task is None:
+        raise Http404
+    return task
+
+
+def team_or_404(user, team_id):
+    team = Team.objects.filter(pk=team_id).first()
+    if team is None or not is_member(user, team):
+        raise Http404
+    return team
+
+
+def project_or_404(user, project_id):
+    p = (
+        Project.objects.filter(pk=project_id)
+        .select_related("team")
+        .prefetch_related("owners")
+        .first()
+    )
+    if p is None or not is_member(user, p.team):
+        raise Http404
+    return p
+
+
+def current_team(request):
+    """세션의 team_id가 내 팀이면 그 팀, 아니면 이름순 첫 팀. 팀이 없으면 None."""
+    teams = list(teams_of(request.user).order_by("name"))
+    if not teams:
+        return None
+    tid = request.session.get("team_id")
+    for t in teams:
+        if t.pk == tid:
+            return t
+    return teams[0]
+
+
+def apply_service_error(form, exc: ServiceError):
+    """ServiceError의 {필드: 메시지}를 폼 오류로 옮긴다. 폼에 없는 필드는 non_field로."""
+    for field, msg in exc.errors.items():
+        form.add_error(field if field in form.fields else None, msg)
+
+
+def new_idem() -> str:
+    return uuid.uuid4().hex
+
+
+def can_admin(user, team) -> bool:
+    return is_admin(user, team)
+
+
+def hx_redirect(request, url: str):
+    """HTMX 요청이면 204 + HX-Redirect, 아니면 일반 302."""
+    if request.headers.get("HX-Request"):
+        return HttpResponse(status=204, headers={"HX-Redirect": url})
+    return redirect(url)
+
+
+def trigger(response, event: str, task=None):
+    """응답에 HX-Trigger 헤더를 붙인다. task를 주면 {"event": {"id": n}} 형식."""
+    response["HX-Trigger"] = json.dumps({event: {"id": task.pk}}) if task else event
+    return response
+
+
+def version_of(request) -> int:
+    try:
+        return int(request.POST.get("version", 0))
+    except ValueError:
+        return 0
+
+
+# ---------- 표시 문자열 ----------
+
+
+def due_label(task) -> str:
+    """행 우측 기한 라벨: '오늘 마감' / '9월 12일' / '기한 미정', 초과면 ' 초과'."""
+    if not task.due_date:
+        return "기한 미정"
+    label = "오늘 마감" if task.due_date == today_kst() else fmt_md(task.due_date)
+    return label + " 초과" if task.is_overdue else label
+
+
+def due_full(task) -> str:
+    """패널 목표일 블록: '2026년 9월 12일 (초과)' / '기한 미정 · 사유'."""
+    if task.due_date:
+        return f"{task.due_date.year}년 {fmt_md(task.due_date)}" + (
+            " (초과)" if task.is_overdue else ""
+        )
+    return "기한 미정" + (f" · {task.no_due_reason}" if task.no_due_reason else "")
+
+
+FIELD_LABELS = {
+    "created": "생성",
+    "status": "상태",
+    "assignee": "담당자",
+    "due_date": "기한",
+    "project": "프로젝트",
+    "priority": "중요도",
+    "stop_reason": "사유",
+    "completed_at": "완료 시각",
+    "owners": "관리자",
+    "is_archived": "보관",
+}
+
+
+def _display(field, raw: str) -> str:
+    if raw == "":
+        return "없음"
+    if field == "status":
+        return dict(Task.STATUSES).get(raw, raw)
+    if field == "priority":
+        return f"{raw}/10"
+    if field == "due_date":
+        return fmt_md(date.fromisoformat(raw))
+    if field == "completed_at":
+        return raw[:10]
+    if field == "assignee":
+        u = User.objects.filter(pk=raw).first()
+        return u.display_name if u else raw
+    if field == "project":
+        p = Project.objects.filter(pk=raw).first()
+        return p.name if p else raw
+    if field == "owners":
+        names = [u.display_name for u in User.objects.filter(pk__in=raw.split(","))]
+        return ", ".join(names) or raw
+    return raw
+
+
+def history_rows(logs) -> list[dict]:
+    """ChangeLog → 패널 표시용. 최신이 먼저."""
+    rows = []
+    for log in logs:
+        to = _display(log.field, log.new_value)
+        if log.note:
+            to += f" ({log.note})"
+        at = timezone.localtime(log.created_at)
+        rows.append(
+            {
+                "field": FIELD_LABELS.get(log.field, log.field),
+                "from": _display(log.field, log.old_value),
+                "to": to,
+                "time": f"{at.month}월 {at.day}일 {at:%H:%M}",
+                "actor": log.actor.display_name,
+                "source": log.get_source_display(),
+            }
+        )
+    return rows
+
+
+# ---------- 태스크 행 ----------
+
+ROW_OPTS = ("next", "move", "noassignee", "notoday", "ro", "today")
+
+
+def row_ctx(user, task, opts: str = "", membership: dict | None = None, selected_id=None) -> dict:
+    """tasks/_row.html 렌더링 context.
+    opts: 쉼표 구분. next(다음 행동 표시) move(↑↓) noassignee(담당자 숨김) notoday(오늘 버튼 숨김)
+          ro(상태 select 비활성) today(오늘 화면 안: 목록 전체를 갱신, 자기 갱신 없음)."""
+    o = {x for x in opts.split(",") if x in ROW_OPTS}
+    m = membership or today_membership(user)
+    flag = today_flag(task, m)
+    items = list(task.checklist.all())
+    opts = ",".join(sorted(o))
+    return {
+        "task": task,
+        "row_opts": opts,
+        "row_query": urlencode({"opts": opts}),
+        "show_next": "next" in o and bool(task.next_action),
+        "show_move": "move" in o and flag == "manual",
+        "hide_assignee": "noassignee" in o,
+        "hide_today": "notoday" in o,
+        "read_only": "ro" in o,
+        "in_today_page": "today" in o,
+        "row_target": "#today-list" if "today" in o else f"#task-{task.pk}",
+        "in_today": flag != "",
+        "auto_pulled": flag == "auto",
+        "selected": task.pk == selected_id,
+        "checklist_done": sum(1 for i in items if i.is_done),
+        "checklist_total": len(items),
+        "due_label": due_label(task),
+    }
+
+
+def rows_for(user, tasks, opts: str = "", selected_id=None) -> list[dict]:
+    m = today_membership(user)
+    return [row_ctx(user, t, opts, m, selected_id) for t in tasks]
+
+
+def render_row(request, task, error=None):
+    """행 하나를 다시 그린다. opts는 요청의 POST 또는 GET `opts`에서 읽는다."""
+    from django.shortcuts import render
+
+    opts = request.POST.get("opts") or request.GET.get("opts", "")
+    ctx = row_ctx(request.user, task, opts)
+    ctx["error"] = error
+    return render(request, "tasks/_row.html", ctx)
+
+
+def week_days(day: date) -> list[date | None]:
+    """월간 달력 셀. 그 달 1일 앞의 빈칸(None) + 날짜. 월요일 시작."""
+    first = day.replace(day=1)
+    nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+    cells: list[date | None] = [None] * first.weekday()
+    d = first
+    while d < nxt:
+        cells.append(d)
+        d += timedelta(days=1)
+    return cells

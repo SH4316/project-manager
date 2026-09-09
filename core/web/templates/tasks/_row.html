@@ -1,0 +1,46 @@
+<li id="task-{{ task.pk }}"
+    class="task-row{% if task.is_closed %} closed{% endif %}{% if selected %} selected{% endif %}"
+    role="button" tabindex="0" aria-label="{{ task.title }} 상세 보기"
+    data-id="{{ task.pk }}" data-panel="{% url 'task_panel' task.pk %}"
+    {% if not in_today_page %}hx-get="{% url 'task_row' task.pk %}?{{ row_query }}" hx-trigger="task-changed[event.detail.id=={{ task.pk }}] from:body" hx-swap="outerHTML"{% endif %}>
+  <div class="main{% if show_next %} has-next{% endif %}">
+    {% if show_next %}<div class="next">{{ task.next_action }}</div>{% endif %}
+    <div class="proj">{{ task.project.name }}</div>
+    <div class="title">{{ task.title }}</div>
+    <div class="meta">
+      {% if not hide_assignee %}<span>{{ task.assignee.display_name }}</span>{% endif %}
+      <span class="badge{% if task.priority >= 8 %} high{% endif %}">중요도 {{ task.priority }}/10</span>
+      {% if task.is_stopped %}<span{% if task.is_blocked %} class="danger"{% endif %}>{{ task.stop_reason|default:"사유 없음" }}</span>{% endif %}
+      {% if checklist_total %}<span>체크리스트 {{ checklist_done }}/{{ checklist_total }}</span>{% endif %}
+    </div>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  </div>
+  <div class="actions">
+    <span class="due{% if task.is_overdue %} overdue{% endif %}">{{ due_label }}</span>
+    <form>
+      <input type="hidden" name="version" value="{{ task.version }}">
+      <input type="hidden" name="opts" value="{{ row_opts }}">
+      <select name="status" class="pill {{ task.status }}" aria-label="상태"
+              data-status="{{ task.status }}" data-id="{{ task.pk }}" data-panel="{% url 'task_panel' task.pk %}"
+              hx-post="{% url 'task_status' task.pk %}" hx-target="#task-{{ task.pk }}" hx-swap="outerHTML"
+              hx-trigger="change[!(this.value=='blocked' && this.dataset.status!='blocked')]"
+              {% if read_only %}disabled{% endif %}>
+        {% for code, label in task.STATUSES %}<option value="{{ code }}"{% if code == task.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </form>
+    {% if not hide_today %}
+      {% if auto_pulled %}
+      <button type="button" class="btn sm today-btn auto" hx-post="{% url 'today_exclude' task.pk %}?{{ row_query }}" hx-target="{{ row_target }}" hx-swap="outerHTML" title="마감 기준 자동 추가. 누르면 오늘 목록에서만 제외합니다.">자동 추가 · 오늘 제외</button>
+      {% elif in_today %}
+      <button type="button" class="btn sm today-btn in" hx-post="{% url 'today_exclude' task.pk %}?{{ row_query }}" hx-target="{{ row_target }}" hx-swap="outerHTML" title="오늘 할 일 목록에서 빼기">오늘 제외</button>
+      {% else %}
+      <button type="button" class="btn sm today-btn" hx-post="{% url 'today_add' task.pk %}?{{ row_query }}" hx-target="{{ row_target }}" hx-swap="outerHTML" title="오늘 할 일 목록에 담기">오늘 추가</button>
+      {% endif %}
+    {% endif %}
+    <button type="button" class="btn sm icon" data-copy="{{ task.pk }}" aria-label="바로가기 링크 복사" title="바로가기 링크 복사"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 014 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 01-4-4L5 7.5"></path></svg></button>
+    {% if show_move %}
+    <button type="button" class="btn sm icon" hx-post="{% url 'today_move' task.pk 'up' %}" hx-target="#today-list" hx-swap="outerHTML" aria-label="위로">↑</button>
+    <button type="button" class="btn sm icon" hx-post="{% url 'today_move' task.pk 'down' %}" hx-target="#today-list" hx-swap="outerHTML" aria-label="아래로">↓</button>
+    {% endif %}
+  </div>
+</li>

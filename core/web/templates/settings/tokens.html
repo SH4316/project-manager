@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% block title %}API 토큰{% endblock %}
+{% block main %}
+{% if new_token %}
+<div class="card">
+  <h2>새 토큰</h2>
+  <code>{{ new_token }}</code>
+  <p class="warning">지금 복사하세요. 다시 볼 수 없습니다.</p>
+</div>
+{% endif %}
+<section class="card">
+  <h1 class="t24">API 토큰</h1>
+  <table class="grid">
+    <thead><tr><th>이름</th><th>앞자리</th><th>범위</th><th>만료</th><th></th></tr></thead>
+    <tbody>
+    {% for t in tokens %}
+    <tr{% if t.revoked_at %} class="muted"{% endif %}>
+      <td>{{ t.name }}{% if t.revoked_at %} <span class="badge">폐기됨</span>{% endif %}</td>
+      <td><code>{{ t.prefix }}…</code></td>
+      <td>{{ t.get_scope_display }}</td>
+      <td>{{ t.expires_at|date:"Y-m-d"|default:"없음" }}</td>
+      <td>{% if not t.revoked_at %}<form method="post" action="{% url 'token_revoke' t.pk %}">{% csrf_token %}<button class="btn sm">폐기</button></form>{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5" class="muted">토큰이 없습니다.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <form method="post" class="row">{% csrf_token %}
+    <label class="field">{{ form.name.label }}{{ form.name }}</label>
+    <label class="field">{{ form.scope.label }}{{ form.scope }}</label>
+    <button class="btn primary">토큰 발급</button>
+  </form>
+</section>
+<section class="card">
+  <h2>AI 클라이언트 연결</h2>
+  <p class="muted t13">&lt;MCP_URL&gt;은 MCP 서버 주소, &lt;TOKEN&gt;은 위에서 발급한 값입니다.</p>
+  <table class="grid">
+    <thead><tr><th>클라이언트</th><th>설정</th></tr></thead>
+    <tbody>
+      <tr><td>Claude Code</td><td><code>claude mcp add --transport http sandol &lt;MCP_URL&gt;/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"</code></td></tr>
+      <tr><td>Codex CLI</td><td><code>~/.codex/config.toml</code>에 <code>[mcp_servers.sandol]</code> <code>url = "&lt;MCP_URL&gt;/mcp"</code> <code>bearer_token_env_var = "SANDOL_TOKEN"</code> 추가, 환경 변수 <code>SANDOL_TOKEN=&lt;TOKEN&gt;</code></td></tr>
+      <tr><td>Claude 앱 / claude.ai</td><td>설정 → 커넥터 → 커스텀 커넥터 추가 → URL <code>&lt;MCP_URL&gt;/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
+      <tr><td>ChatGPT</td><td>설정 → 커넥터(개발자 모드) → 추가 → URL <code>&lt;MCP_URL&gt;/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
+    </tbody>
+  </table>
+  <p class="warning t13">개인 비밀 URL은 비밀번호와 같습니다. 공유하지 말고, 유출되면 이 화면에서 폐기하세요.</p>
+</section>
+{% endblock %}

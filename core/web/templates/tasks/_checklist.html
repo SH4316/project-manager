@@ -1,0 +1,22 @@
+<div class="section">
+  <div class="row" style="justify-content:space-between">
+    <span class="label">체크리스트</span>
+    {% if checklist %}<span class="muted t13">{{ checklist_done }}/{{ checklist|length }} 완료</span>{% endif %}
+  </div>
+  <ul class="checklist">
+    {% for item in checklist %}
+    <li{% if item.is_done %} class="done"{% endif %}>
+      <input type="checkbox"{% if item.is_done %} checked{% endif %} aria-label="{{ item.text }}" hx-post="{% url 'checklist_action' item.pk 'toggle' %}" hx-target="#checklist" hx-swap="innerHTML">
+      <span class="text">{{ item.text }}</span>
+      <button type="button" class="btn sm icon" hx-post="{% url 'checklist_action' item.pk 'up' %}" hx-target="#checklist" hx-swap="innerHTML" aria-label="위로">↑</button>
+      <button type="button" class="btn sm icon" hx-post="{% url 'checklist_action' item.pk 'down' %}" hx-target="#checklist" hx-swap="innerHTML" aria-label="아래로">↓</button>
+      <button type="button" class="btn sm icon" hx-post="{% url 'checklist_action' item.pk 'delete' %}" hx-target="#checklist" hx-swap="innerHTML" hx-confirm="삭제할까요?" aria-label="삭제">✕</button>
+    </li>
+    {% endfor %}
+  </ul>
+  <form class="row" hx-post="{% url 'checklist_add' task.pk %}" hx-target="#checklist" hx-swap="innerHTML">
+    <input class="input" name="text" placeholder="항목 추가" style="flex:1" required>
+    <button class="btn sm">추가</button>
+  </form>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+</div>

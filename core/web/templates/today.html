@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% load rows %}{% block title %}오늘{% endblock %}
+{% block main %}
+{% include "today/_head.html" %}
+<div id="quick"{% if not quick_open %} hidden{% endif %}>{% include "today/_quick.html" %}</div>
+<div class="today-columns">
+  {% include "today/_list.html" %}
+  {% if schedule_open %}{% include "today/_schedule.html" %}{% endif %}
+</div>
+{% endblock %}
