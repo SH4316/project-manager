@@ -45,12 +45,6 @@ def restore(request):
     return _out(request.auth)
 
 
-@router.delete("/{task_id}", response=TodayOut)
-def exclude(request, task_id: int):
-    today_exclude(request.auth, task_or_404(request, task_id))
-    return _out(request.auth)
-
-
 @router.patch("/order", response=TodayOut)
 def order(request, payload: TodayOrderIn):
     today_reorder(request.auth, payload.task_ids)
@@ -60,4 +54,12 @@ def order(request, payload: TodayOrderIn):
 @router.patch("/settings", response={200: TodayOut, 400: ErrorOut})
 def settings_ep(request, payload: TodaySettingsIn):
     today_set_auto_pull(request.auth, payload.auto_pull_days)
+    return _out(request.auth)
+
+
+# 고정 경로(/excluded, /order, /settings)를 /{task_id}보다 먼저 등록한다.
+# django-ninja는 int 변환기를 붙이지 않으므로 순서가 곧 우선순위다.
+@router.delete("/{task_id}", response=TodayOut)
+def exclude(request, task_id: int):
+    today_exclude(request.auth, task_or_404(request, task_id))
     return _out(request.auth)

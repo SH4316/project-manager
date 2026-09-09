@@ -27,7 +27,8 @@ class InviteForm(forms.Form):
 class ProjectForm(forms.Form):
     """프로젝트 모달. 관리자는 체크 칩, 상태는 카드형 라디오로 템플릿이 직접 그린다."""
 
-    name = forms.CharField(label="이름", max_length=100)
+    # 빈 이름 검사는 services.create_project/update_project가 한다(업무 규칙은 services에만).
+    name = forms.CharField(label="이름", max_length=100, required=False)
     purpose = forms.CharField(
         label="목적", max_length=200, required=False, widget=forms.Textarea(attrs={"rows": 2})
     )

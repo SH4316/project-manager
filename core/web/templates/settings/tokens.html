@@ -15,7 +15,7 @@
     {% for t in tokens %}
     <tr{% if t.revoked_at %} class="muted"{% endif %}>
       <td>{{ t.name }}{% if t.revoked_at %} <span class="badge">폐기됨</span>{% endif %}</td>
-      <td><code>{{ t.prefix }}…</code></td>
+      <td><code>{{ t.prefix|slice:"3:" }}…</code></td>
       <td>{{ t.get_scope_display }}</td>
       <td>{{ t.expires_at|date:"Y-m-d"|default:"없음" }}</td>
       <td>{% if not t.revoked_at %}<form method="post" action="{% url 'token_revoke' t.pk %}">{% csrf_token %}<button class="btn sm">폐기</button></form>{% endif %}</td>
