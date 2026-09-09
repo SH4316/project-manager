@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -84,9 +83,7 @@ class Migration(migrations.Migration):
             options={
                 "ordering": ["name"],
                 "constraints": [
-                    models.UniqueConstraint(
-                        fields=("team", "name"), name="project_team_name"
-                    )
+                    models.UniqueConstraint(fields=("team", "name"), name="project_team_name")
                 ],
             },
         ),

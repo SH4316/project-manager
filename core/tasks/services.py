@@ -1,0 +1,699 @@
+from datetime import date, timedelta
+
+from django.db import transaction
+from django.db.models import Max, Q
+from django.utils import timezone
+
+from accounts.models import IdempotencyKey, User
+from common.dates import kst_day_range, today_kst, week_bounds
+from common.errors import ConflictError, ServiceError
+from projects.services import project_stats
+from teams.services import is_member, teams_of
+
+from .models import ChangeLog, ChecklistItem, Link, Task, TodayItem
+
+# 자동 저장되는 부속 텍스트. version·ChangeLog 없음.
+TEXT_FIELDS = ("title", "description", "done_when", "next_action", "notes")
+TEXT_MAX = {"title": 200, "done_when": 300, "next_action": 200}
+# 낙관적 잠금이 걸리는 팀 데이터
+LOCKED_FIELDS = {"assignee", "priority", "due_date", "no_due_reason", "project", "stop_reason"}
+EDITABLE = LOCKED_FIELDS | set(TEXT_FIELDS)
+TRACKED = ("assignee", "due_date", "project", "priority", "stop_reason")
+
+NO_DUE_FOR_DOING = "목표 기한이 없어서 진행 중으로 바꾸지 못했어요. 기한을 먼저 정해 주세요."
+
+# 내 태스크 화면 필터 값. (코드, 화면 표기)
+DUE_FILTERS = [
+    ("", "모든 기한"),
+    ("overdue", "기한 초과"),
+    ("today", "오늘 마감"),
+    ("week", "이번 주 남은 마감"),
+    ("this_week", "이번 주 전체 마감"),
+    ("later", "그 이후"),
+    ("none", "기한 미정"),
+]
+STATUS_FILTERS = (
+    [("", "모든 상태")]
+    + [(c, label) for c, label in Task.STATUSES if c in Task.OPEN]
+    + [("done_today", "오늘 완료"), ("done_7d", "지난 7일 완료")]
+)
+PRIORITY_FILTERS = [("", "모든 중요도")] + Task.TIER_LABELS
+GROUP_OPTIONS = [("due", "기한별"), ("project", "프로젝트별"), ("status", "상태별")]
+
+
+# ---------- 공통 ----------
+
+
+def _s(v) -> str:
+    if v is None:
+        return ""
+    if hasattr(v, "pk"):
+        return str(v.pk)
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return str(v)
+
+
+def _log(task, field, old, new, actor, source, token=None, note=""):
+    ChangeLog.objects.create(
+        target_type="task",
+        target_id=task.pk,
+        field=field,
+        old_value=_s(old),
+        new_value=_s(new),
+        note=note[:200],
+        actor=actor,
+        source=source,
+        token=token,
+    )
+
+
+def _require_member(actor, project):
+    if not is_member(actor, project.team):
+        raise ServiceError({"project": "이 팀의 멤버가 아닙니다."})
+
+
+def _validate(*, project, assignee, status, priority, due_date, no_due_reason, stop_reason, title):
+    errors = {}
+    if not title or not title.strip():
+        errors["title"] = "제목을 입력하세요."
+    if project.is_archived:
+        errors["project"] = "보관된 프로젝트에는 태스크를 둘 수 없습니다."
+    if assignee is None:
+        errors["assignee"] = "담당자를 지정하세요."
+    elif not assignee.is_active or not is_member(assignee, project.team):
+        errors["assignee"] = "담당자는 이 팀의 활성 멤버여야 합니다."
+    if not isinstance(priority, int) or isinstance(priority, bool) or not 1 <= priority <= 10:
+        errors["priority"] = "중요도는 1~10 사이의 정수여야 합니다."
+    if status == "doing" and due_date is None:
+        errors["due_date"] = NO_DUE_FOR_DOING
+    elif status in Task.OPEN and due_date is None and not (no_due_reason or "").strip():
+        errors["no_due_reason"] = "기한이 없으면 사유를 입력하세요."
+    reason = (stop_reason or "").strip()
+    if status == "blocked" and not reason:
+        errors["stop_reason"] = "막힘 사유를 입력하세요."
+    if status not in Task.STOPPED and reason:
+        errors["stop_reason"] = "일시정지·막힘 상태에서만 사유를 둘 수 있습니다."
+    if errors:
+        raise ServiceError(errors)
+
+
+def _apply(task, expected_version: int, fields: dict):
+    """낙관적 잠금 갱신. 버전이 다르면 ConflictError(최신 객체)."""
+    updated = Task.objects.filter(pk=task.pk, version=expected_version).update(
+        version=expected_version + 1, updated_at=timezone.now(), **fields
+    )
+    if updated != 1:
+        task.refresh_from_db()
+        raise ConflictError(task)
+    task.refresh_from_db()
+
+
+def visible_tasks(user):
+    """user가 볼 수 있는 태스크 queryset (내 팀 범위)."""
+    return Task.objects.filter(project__team__in=teams_of(user)).select_related(
+        "project", "project__team", "assignee"
+    )
+
+
+def get_visible_task(user, task_id: int) -> Task | None:
+    return visible_tasks(user).filter(pk=task_id).first()
+
+
+def by_due(t):
+    """기한 오름차순, 기한 없음은 뒤로, 같으면 id."""
+    return (t.due_date or date.max, t.pk)
+
+
+# ---------- 생성·수정 ----------
+
+
+@transaction.atomic
+def create_task(
+    *,
+    project,
+    title,
+    actor,
+    source,
+    token=None,
+    assignee=None,
+    description="",
+    done_when="",
+    next_action="",
+    priority=5,
+    due_date=None,
+    no_due_reason="",
+    idempotency_key=None,
+) -> Task:
+    _require_member(actor, project)
+    if idempotency_key:
+        hit = IdempotencyKey.objects.filter(
+            user=actor, key=idempotency_key, target_type="task"
+        ).first()
+        if hit:
+            return Task.objects.get(pk=hit.target_id)
+    assignee = assignee or actor
+    _validate(
+        project=project,
+        assignee=assignee,
+        status="todo",
+        priority=priority,
+        due_date=due_date,
+        no_due_reason=no_due_reason,
+        stop_reason="",
+        title=title,
+    )
+    task = Task.objects.create(
+        project=project,
+        title=title.strip()[:200],
+        description=description or "",
+        done_when=(done_when or "")[:300],
+        next_action=(next_action or "")[:200],
+        assignee=assignee,
+        priority=priority,
+        due_date=due_date,
+        no_due_reason=(no_due_reason or "").strip(),
+        created_by=actor,
+    )
+    _log(task, "created", "", task.number, actor, source, token)
+    if idempotency_key:
+        IdempotencyKey.objects.create(
+            user=actor, key=idempotency_key, target_type="task", target_id=task.pk
+        )
+    return task
+
+
+def update_text(task, field: str, value: str, *, actor) -> Task:
+    """제목·설명·완료 조건·다음 행동·진행 메모 자동 저장. version·ChangeLog를 건드리지 않는다.
+    # ponytail: 부속 텍스트는 last-write-wins. 동시 편집 보호가 필요해지면 필드별 갱신 시각 비교로.
+    """
+    _require_member(actor, task.project)
+    if field not in TEXT_FIELDS:
+        raise ServiceError({field: "수정할 수 없는 항목입니다."})
+    value = value or ""
+    if field == "title":
+        value = value.strip()
+        if not value:
+            raise ServiceError({"title": "제목을 입력하세요."})
+    if field in TEXT_MAX:
+        value = value[: TEXT_MAX[field]]
+    Task.objects.filter(pk=task.pk).update(**{field: value}, updated_at=timezone.now())
+    task.refresh_from_db()
+    return task
+
+
+@transaction.atomic
+def update_task(task, changes: dict, *, actor, source, token=None, expected_version: int) -> Task:
+    """팀 데이터 필드는 version 검사 후 갱신·이력 기록. TEXT_FIELDS는 update_text로 보낸다."""
+    _require_member(actor, task.project)
+    unknown = set(changes) - EDITABLE
+    if unknown:
+        raise ServiceError({k: "수정할 수 없는 항목입니다." for k in sorted(unknown)})
+    for f in TEXT_FIELDS:
+        if f in changes:
+            update_text(task, f, changes[f], actor=actor)
+    changes = {f: v for f, v in changes.items() if f in LOCKED_FIELDS}
+    if not changes:
+        return task
+    new = {f: changes.get(f, getattr(task, f)) for f in LOCKED_FIELDS}
+    if "project" in changes:
+        _require_member(actor, new["project"])
+        if new["project"].team_id != task.project.team_id:
+            raise ServiceError({"project": "다른 팀의 프로젝트로 옮길 수 없습니다."})
+    new["no_due_reason"] = (new["no_due_reason"] or "").strip()
+    new["stop_reason"] = (new["stop_reason"] or "").strip()[:300]
+    _validate(
+        project=new["project"],
+        assignee=new["assignee"],
+        status=task.status,
+        priority=new["priority"],
+        due_date=new["due_date"],
+        no_due_reason=new["no_due_reason"],
+        stop_reason=new["stop_reason"],
+        title=task.title,
+    )
+    old = {f: getattr(task, f) for f in LOCKED_FIELDS}
+    fields = {f: v for f, v in new.items() if v != old[f]}
+    if not fields:
+        return task
+    _apply(task, expected_version, fields)
+    for f in TRACKED:
+        if f in fields:
+            _log(task, f, old[f], fields[f], actor, source, token)
+    return task
+
+
+@transaction.atomic
+def transition(
+    task, new_status: str, *, actor, source, token=None, reason="", expected_version: int
+) -> Task:
+    """상태 변경. 규칙:
+    - 미완료 5개 사이는 자유. 미완료 → 완료·취소 가능. 완료·취소 → 시작 전·진행 중으로만 재개.
+    - 같은 상태 재요청은 아무것도 바꾸지 않는다 (A06).
+    - doing 진입 시 기한 필수. blocked 진입 시 reason 필수. paused는 reason 선택.
+    - paused·blocked 밖으로 나가면 stop_reason·stopped_at 초기화.
+    - done 진입 시 completed_at=now. 재개·취소 시 completed_at=None.
+    - 재개 사유(reason)는 선택. 있으면 이력 note에 남는다.
+    """
+    _require_member(actor, task.project)
+    labels = dict(Task.STATUSES)
+    if new_status not in labels:
+        raise ServiceError({"status": "알 수 없는 상태입니다."})
+    if new_status == task.status:
+        return task
+    if task.is_closed and new_status not in ("todo", "doing"):
+        raise ServiceError(
+            {
+                "status": f"{labels[task.status]}에서 {labels[new_status]}(으)로 바꿀 수 없습니다. "
+                "먼저 시작 전이나 진행 중으로 다시 여세요."
+            }
+        )
+    reason = (reason or "").strip()[:300]
+    if new_status == "doing" and task.due_date is None:
+        raise ServiceError({"due_date": NO_DUE_FOR_DOING})
+    if new_status == "blocked" and not reason:
+        raise ServiceError({"stop_reason": "막힘 사유를 입력하세요."})
+    fields = {"status": new_status}
+    if new_status in Task.STOPPED:
+        fields["stop_reason"] = reason or (task.stop_reason if task.is_stopped else "")
+        if not task.is_stopped:
+            fields["stopped_at"] = timezone.now()
+    else:
+        fields["stop_reason"] = ""
+        fields["stopped_at"] = None
+    if new_status == "done":
+        fields["completed_at"] = timezone.now()
+    elif task.is_closed or new_status == "cancelled":
+        fields["completed_at"] = None
+    old_status, old_completed, old_reason = task.status, task.completed_at, task.stop_reason
+    _apply(task, expected_version, fields)
+    _log(task, "status", old_status, new_status, actor, source, token, note=reason)
+    if old_status == "done" and old_completed is not None:
+        _log(task, "completed_at", old_completed, None, actor, source, token, note="재개")
+    if old_reason and not task.stop_reason:
+        _log(task, "stop_reason", old_reason, "", actor, source, token, note="상태 변경으로 해제")
+    return task
+
+
+@transaction.atomic
+def extend_due(
+    task, new_date: date | None, reason: str, *, actor, source, token=None, expected_version: int
+) -> Task:
+    """목표일 연장. 기한이 없던 태스크는 목표일 정하기. 새 날짜는 현 기한보다 뒤, 사유 필수.
+    이력에 'due_date' 행 하나, note='연장: 사유'. 진행 메모는 건드리지 않는다."""
+    _require_member(actor, task.project)
+    if not task.is_open:
+        raise ServiceError({"due_date": "완료·취소된 태스크의 기한은 바꿀 수 없습니다."})
+    if new_date is None:
+        raise ServiceError({"due_date": "새 목표일을 선택하세요."})
+    if task.due_date is not None and new_date <= task.due_date:
+        raise ServiceError({"due_date": "현재 목표일보다 뒤의 날짜를 선택하세요."})
+    reason = (reason or "").strip()
+    if not reason:
+        raise ServiceError({"reason": "연장 사유를 입력하세요."})
+    old = task.due_date
+    _apply(task, expected_version, {"due_date": new_date, "no_due_reason": ""})
+    note = f"연장: {reason}" if old else f"목표일 지정: {reason}"
+    _log(task, "due_date", old, new_date, actor, source, token, note=note)
+    return task
+
+
+# ---------- 링크 ----------
+
+
+def add_link(*, actor, title, url, kind="doc", task=None, project=None) -> Link:
+    if (task is None) == (project is None):
+        raise ServiceError({"target": "태스크 또는 프로젝트 중 하나에만 연결합니다."})
+    target_project = project if project is not None else task.project
+    _require_member(actor, target_project)
+    title, url = (title or "").strip(), (url or "").strip()
+    if not title or not url:
+        raise ServiceError({"url": "제목과 URL을 입력하세요."})
+    if not url.startswith(("http://", "https://")):
+        raise ServiceError({"url": "http:// 또는 https:// 로 시작해야 합니다."})
+    if kind not in dict(Link.KINDS):
+        raise ServiceError({"kind": "알 수 없는 종류입니다."})
+    return Link.objects.create(
+        task=task, project=project, title=title[:100], url=url[:500], kind=kind, created_by=actor
+    )
+
+
+def delete_link(link, *, actor):
+    target_project = link.project or link.task.project
+    _require_member(actor, target_project)
+    link.delete()
+
+
+# ---------- 체크리스트 ----------
+
+
+@transaction.atomic
+def replace_checklist(task, items: list[dict], *, actor) -> list[ChecklistItem]:
+    """items: [{'text': str, 'is_done': bool}, ...]. 전체 교체."""
+    _require_member(actor, task.project)
+    cleaned = []
+    for i, item in enumerate(items):
+        text = (item.get("text") or "").strip()
+        if not text:
+            raise ServiceError({"checklist": f"{i + 1}번째 항목의 내용이 비어 있습니다."})
+        cleaned.append(
+            ChecklistItem(task=task, text=text[:200], is_done=bool(item.get("is_done")), position=i)
+        )
+    task.checklist.all().delete()
+    ChecklistItem.objects.bulk_create(cleaned)
+    return list(task.checklist.all())
+
+
+def checklist_add(task, text: str, *, actor) -> ChecklistItem:
+    _require_member(actor, task.project)
+    text = (text or "").strip()
+    if not text:
+        raise ServiceError({"text": "내용을 입력하세요."})
+    pos = (task.checklist.aggregate(m=Max("position"))["m"] or 0) + 1
+    return ChecklistItem.objects.create(task=task, text=text[:200], position=pos)
+
+
+def checklist_toggle(item, *, actor) -> ChecklistItem:
+    _require_member(actor, item.task.project)
+    item.is_done = not item.is_done
+    item.save(update_fields=["is_done"])
+    return item
+
+
+def checklist_delete(item, *, actor):
+    _require_member(actor, item.task.project)
+    item.delete()
+
+
+def checklist_move(item, direction: str, *, actor):
+    """direction: 'up' | 'down'. 이웃과 position을 맞바꾼다."""
+    _require_member(actor, item.task.project)
+    siblings = list(item.task.checklist.all())
+    idx = siblings.index(item)
+    j = idx - 1 if direction == "up" else idx + 1
+    if 0 <= j < len(siblings):
+        siblings[idx], siblings[j] = siblings[j], siblings[idx]
+        for pos, s in enumerate(siblings):
+            ChecklistItem.objects.filter(pk=s.pk).update(position=pos)
+
+
+# ---------- 오늘 목록 (개인 계획) ----------
+# 오늘 목록 = 직접 담은 것 ∪ (내 미완료 태스크 중 기한 ≤ 오늘+auto_pull_days, '오늘 제외' 아님).
+# 어느 조작도 Task의 상태·기한·중요도·version·ChangeLog를 건드리지 않는다.
+
+
+def _pull_end(user, day: date) -> date | None:
+    n = user.auto_pull_days
+    return day + timedelta(days=n) if n > 0 else None
+
+
+def today_membership(user, day: date | None = None) -> dict:
+    """행 렌더링용. 키: user_id, manual(set), excluded(set), pull_end."""
+    day = day or today_kst()
+    rows = TodayItem.objects.filter(user=user, date=day).values_list("task_id", "excluded")
+    return {
+        "user_id": user.pk,
+        "manual": {tid for tid, ex in rows if not ex},
+        "excluded": {tid for tid, ex in rows if ex},
+        "pull_end": _pull_end(user, day),
+    }
+
+
+def today_flag(task, m: dict) -> str:
+    """'manual' | 'auto' | ''. 자동 담기는 내가 담당한 미완료 태스크에만 적용된다."""
+    if task.pk in m["manual"]:
+        return "manual"
+    if (
+        m["pull_end"] is not None
+        and task.assignee_id == m["user_id"]
+        and task.is_open
+        and task.due_date is not None
+        and task.due_date <= m["pull_end"]
+        and task.pk not in m["excluded"]
+    ):
+        return "auto"
+    return ""
+
+
+def today_add(user, task, day: date | None = None) -> TodayItem:
+    _require_member(user, task.project)
+    day = day or today_kst()
+    pos = (TodayItem.objects.filter(user=user, date=day).aggregate(m=Max("position"))["m"] or 0) + 1
+    item, created = TodayItem.objects.get_or_create(
+        user=user, task=task, date=day, defaults={"position": pos, "excluded": False}
+    )
+    if not created and item.excluded:
+        item.excluded, item.position = False, pos
+        item.save(update_fields=["excluded", "position"])
+    return item
+
+
+def today_exclude(user, task, day: date | None = None):
+    """직접 담은 항목이면 빼고, 자동 담기 대상이면 오늘 하루 제외한다. 둘 다 같은 행 하나로 표현."""
+    day = day or today_kst()
+    TodayItem.objects.update_or_create(
+        user=user, task=task, date=day, defaults={"excluded": True, "position": 0}
+    )
+
+
+def today_restore_excluded(user, day: date | None = None):
+    day = day or today_kst()
+    TodayItem.objects.filter(user=user, date=day, excluded=True).delete()
+
+
+def today_set_auto_pull(user, days: int):
+    if days not in dict(User.AUTO_PULL_CHOICES):
+        raise ServiceError({"auto_pull_days": "0, 1, 3, 5, 7, 14 중 하나여야 합니다."})
+    user.auto_pull_days = days
+    user.save(update_fields=["auto_pull_days"])
+
+
+def today_reorder(user, task_ids: list[int], day: date | None = None):
+    day = day or today_kst()
+    items = {i.task_id: i for i in TodayItem.objects.filter(user=user, date=day, excluded=False)}
+    for pos, tid in enumerate(task_ids):
+        if tid in items:
+            TodayItem.objects.filter(pk=items[tid].pk).update(position=pos)
+
+
+def today_move(user, task, direction: str, day: date | None = None):
+    """직접 담은 항목끼리만 순서를 바꾼다. 자동 담긴 항목은 정렬 규칙을 따른다."""
+    day = day or today_kst()
+    ids = [i.task_id for i in TodayItem.objects.filter(user=user, date=day, excluded=False)]
+    if task.pk not in ids:
+        return
+    idx = ids.index(task.pk)
+    j = idx - 1 if direction == "up" else idx + 1
+    if 0 <= j < len(ids):
+        ids[idx], ids[j] = ids[j], ids[idx]
+        today_reorder(user, ids, day)
+
+
+def _rank(t):
+    """자동 담긴 항목 정렬: 중요도 desc → 기한 asc → id."""
+    return (-t.priority, t.due_date or date.max, t.pk)
+
+
+def today_view(user, day: date | None = None) -> dict:
+    """오늘 화면 데이터. 키: date, items, focus, done_today, auto_pull_days, counts.
+    items 순서: 직접 담은 것(위치 순) → 자동 담긴 것(_rank) → 닫힌 것은 맨 뒤.
+    각 Task에 auto_pulled(bool) 속성을 붙여 돌려준다."""
+    day = day or today_kst()
+    m = today_membership(user, day)
+    manual = [
+        i.task
+        for i in TodayItem.objects.filter(user=user, date=day, excluded=False)
+        .select_related("task__project", "task__assignee")
+        .order_by("position", "id")
+    ]
+    mine = Task.objects.filter(assignee=user).select_related("project", "assignee")
+    my_open = mine.filter(status__in=Task.OPEN)
+    auto = []
+    if m["pull_end"] is not None:
+        auto = sorted(
+            my_open.filter(due_date__lte=m["pull_end"]).exclude(pk__in=m["manual"] | m["excluded"]),
+            key=_rank,
+        )
+    for t in manual:
+        t.auto_pulled = False
+    for t in auto:
+        t.auto_pulled = True
+    both = manual + auto
+    items = [t for t in both if t.is_open] + [t for t in both if t.is_closed]
+    start, end = kst_day_range(day)
+    done_today = list(
+        mine.filter(status="done", completed_at__gte=start, completed_at__lt=end).order_by(
+            "-completed_at"
+        )
+    )
+    week_start, _ = kst_day_range(day - timedelta(days=6))
+    counts = {
+        "today": len(items),
+        "auto_pulled": len(auto),
+        "excluded": len(m["excluded"]),
+        "done_today": len(done_today),
+        "done_7d": mine.filter(
+            status="done", completed_at__gte=week_start, completed_at__lt=end
+        ).count(),
+        "my_open": my_open.count(),
+        "due_today": my_open.filter(due_date=day).count(),
+        "overdue": my_open.filter(due_date__lt=day).count(),
+        "review": my_open.filter(status="review").count(),
+        "blocked": my_open.filter(status="blocked").count(),
+    }
+    return {
+        "date": day,
+        "items": items,
+        "focus": next((t for t in items if t.is_open), None),
+        "done_today": done_today,
+        "auto_pull_days": user.auto_pull_days,
+        "counts": counts,
+    }
+
+
+# ---------- 내 태스크 · 검색 ----------
+
+
+def _due_preds(today: date) -> dict:
+    monday, sunday = week_bounds(today)
+    return {
+        "overdue": lambda t: t.due_date is not None and t.due_date < today,
+        "today": lambda t: t.due_date == today,
+        "week": lambda t: t.due_date is not None and today < t.due_date <= sunday,
+        "this_week": lambda t: t.due_date is not None and monday <= t.due_date <= sunday,
+        "later": lambda t: t.due_date is not None and t.due_date > sunday,
+        "none": lambda t: t.due_date is None,
+    }
+
+
+def me_view(
+    user, *, member=None, group="due", due="", project=None, status="", priority=""
+) -> dict:
+    """내 태스크 화면 데이터. member: None=나, 0=팀 전체, User=다른 팀원.
+    반환: {title, hint, groups, read_only, completion}
+    groups[i]: {title, count, empty_text, flat, tasks, projects:[{project, done, total, pct, tasks}]}
+    flat이면 tasks를 그대로, 아니면 projects의 하위 묶음으로 그린다."""
+    today = today_kst()
+    preds = _due_preds(today)
+    completion = status in ("done_today", "done_7d")
+    base = visible_tasks(user).filter(project__is_archived=False)
+    if member is None:
+        base = base.filter(assignee=user)
+    elif not isinstance(member, int):
+        base = base.filter(assignee=member)
+    if completion:
+        first = today if status == "done_today" else today - timedelta(days=6)
+        start, _ = kst_day_range(first)
+        _, end = kst_day_range(today)
+        base = base.filter(status="done", completed_at__gte=start, completed_at__lt=end)
+    else:
+        base = base.filter(status__in=Task.OPEN)
+    qs = base
+    if project is not None:
+        qs = qs.filter(project=project)
+    if status and not completion:
+        qs = qs.filter(status=status)
+    if priority in Task.TIERS:
+        lo, hi = Task.TIERS[priority]
+        qs = qs.filter(priority__gte=lo, priority__lte=hi)
+    tasks = sorted(qs, key=by_due)
+    if due in preds:
+        tasks = [t for t in tasks if preds[due](t)]
+
+    def projects_of(ts):
+        seen = {}
+        for t in ts:
+            seen.setdefault(t.project_id, t.project)
+        return sorted(seen.values(), key=lambda p: p.name)
+
+    def grp(title, pred, empty_text="", flat=False):
+        ts = [t for t in tasks if pred(t)]
+        g = {
+            "title": title,
+            "tasks": ts,
+            "count": len(ts),
+            "empty_text": empty_text,
+            "flat": flat,
+            "projects": [],
+        }
+        if not flat:
+            for p in projects_of(ts):
+                st = project_stats(p)
+                pct = round(st["done"] / st["total"] * 100) if st["total"] else 0
+                g["projects"].append(
+                    {
+                        "project": p,
+                        "done": st["done"],
+                        "total": st["total"],
+                        "pct": pct,
+                        "tasks": [t for t in ts if t.project_id == p.pk],
+                    }
+                )
+        return g
+
+    def eq(field, value):
+        return lambda t: getattr(t, field) == value
+
+    if completion:
+        title = "오늘 완료" if status == "done_today" else "지난 7일 완료"
+        groups = [grp(title, lambda t: True, "완료한 태스크가 없습니다.", flat=True)]
+    elif group == "project":
+        groups = [grp(p.name, eq("project_id", p.pk), flat=True) for p in projects_of(tasks)]
+    elif group == "status":
+        groups = [
+            grp(label, eq("status", code)) for code, label in Task.STATUSES if code in Task.OPEN
+        ]
+        groups = [g for g in groups if g["count"]]
+    else:
+        groups = [
+            grp("기한 초과", preds["overdue"], "기한 초과 태스크 없음"),
+            grp("오늘 마감", preds["today"], "오늘 마감 태스크 없음"),
+            grp("이번 주 마감", preds["week"], "이번 주 마감 태스크 없음"),
+            grp("그 이후", preds["later"]),
+            grp("기한 미정", preds["none"]),
+        ]
+        groups = [g for g in groups if g["count"] or (g["empty_text"] and not due)]
+    if not groups:
+        groups = [
+            {
+                "title": "결과 없음",
+                "tasks": [],
+                "count": 0,
+                "empty_text": "조건에 맞는 태스크가 없습니다.",
+                "flat": True,
+                "projects": [],
+            }
+        ]
+
+    if member is None:
+        title = "내 태스크"
+    elif isinstance(member, int):
+        title = "팀 전체 태스크"
+    else:
+        title = f"{member.display_name}의 태스크"
+    hint = f"{'완료' if completion else '미완료'} {base.count()}건 · 결과 {len(tasks)}건"
+    if member is not None:
+        hint += " · 보기 전용"
+    return {
+        "title": title,
+        "hint": hint,
+        "groups": groups,
+        "read_only": member is not None,
+        "completion": completion,
+    }
+
+
+def search(user, q: str, *, include_closed=False, include_archived=False):
+    q = (q or "").strip()
+    qs = visible_tasks(user)
+    if not include_closed:
+        qs = qs.filter(status__in=Task.OPEN)
+    if not include_archived:
+        qs = qs.filter(project__is_archived=False)
+    if not q:
+        return qs.none()
+    cond = Q(title__icontains=q) | Q(project__name__icontains=q)
+    num = q.upper().replace("TASK-", "")
+    if num.isdigit():
+        cond |= Q(pk=int(num))
+    return qs.filter(cond).order_by("-id")[:100]

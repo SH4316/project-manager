@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -32,15 +31,11 @@ class Migration(migrations.Migration):
                 ("description", models.TextField(blank=True, verbose_name="설명")),
                 (
                     "done_when",
-                    models.CharField(
-                        blank=True, max_length=300, verbose_name="완료 조건"
-                    ),
+                    models.CharField(blank=True, max_length=300, verbose_name="완료 조건"),
                 ),
                 (
                     "next_action",
-                    models.CharField(
-                        blank=True, max_length=200, verbose_name="다음 행동"
-                    ),
+                    models.CharField(blank=True, max_length=200, verbose_name="다음 행동"),
                 ),
                 ("notes", models.TextField(blank=True, verbose_name="진행 메모")),
                 (
@@ -70,15 +65,11 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "no_due_reason",
-                    models.CharField(
-                        blank=True, max_length=200, verbose_name="기한 미정 사유"
-                    ),
+                    models.CharField(blank=True, max_length=200, verbose_name="기한 미정 사유"),
                 ),
                 (
                     "stop_reason",
-                    models.CharField(
-                        blank=True, max_length=300, verbose_name="멈춘 사유"
-                    ),
+                    models.CharField(blank=True, max_length=300, verbose_name="멈춘 사유"),
                 ),
                 ("stopped_at", models.DateTimeField(blank=True, null=True)),
                 ("completed_at", models.DateTimeField(blank=True, null=True)),
@@ -298,29 +289,21 @@ class Migration(migrations.Migration):
                         fields=["target_type", "target_id"],
                         name="tasks_chang_target__8d3d06_idx",
                     ),
-                    models.Index(
-                        fields=["created_at"], name="tasks_chang_created_3be81d_idx"
-                    ),
+                    models.Index(fields=["created_at"], name="tasks_chang_created_3be81d_idx"),
                 ],
             },
         ),
         migrations.AddIndex(
             model_name="task",
-            index=models.Index(
-                fields=["assignee", "status"], name="tasks_task_assigne_7928f6_idx"
-            ),
+            index=models.Index(fields=["assignee", "status"], name="tasks_task_assigne_7928f6_idx"),
         ),
         migrations.AddIndex(
             model_name="task",
-            index=models.Index(
-                fields=["project", "status"], name="tasks_task_project_b78682_idx"
-            ),
+            index=models.Index(fields=["project", "status"], name="tasks_task_project_b78682_idx"),
         ),
         migrations.AddIndex(
             model_name="task",
-            index=models.Index(
-                fields=["due_date"], name="tasks_task_due_dat_bce847_idx"
-            ),
+            index=models.Index(fields=["due_date"], name="tasks_task_due_dat_bce847_idx"),
         ),
         migrations.AddConstraint(
             model_name="task",
