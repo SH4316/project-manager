@@ -24,6 +24,25 @@ class InviteForm(forms.Form):
     days = forms.IntegerField(label="만료(일)", min_value=1, max_value=90, initial=7)
 
 
+class WebhookForm(forms.Form):
+    """Discord 알림 채널 등록. 주소 형식 검사는 services.add_webhook이 한다."""
+
+    name = forms.CharField(
+        label="채널 이름",
+        max_length=50,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "input", "placeholder": "예: 업무-알림"}),
+    )
+    url = forms.CharField(
+        label="Webhook 주소",
+        max_length=300,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "input", "placeholder": "https://discord.com/api/webhooks/…"}
+        ),
+    )
+
+
 class ProjectForm(forms.Form):
     """프로젝트 모달. 관리자는 체크 칩, 상태는 카드형 라디오로 템플릿이 직접 그린다."""
 

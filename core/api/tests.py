@@ -279,3 +279,46 @@ def test_null_due_date_sorts_last_on_both_backends(api, project, member):
     create_task(project=project, title="undated", actor=member, source="web", no_due_reason="미정")
     titles = [t["title"] for t in api.get("/api/tasks?limit=10").json()["items"]]
     assert titles.index("undated") > titles.index("dated")
+
+
+WH = "https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOp-_9876"
+WH2 = "https://discord.com/api/webhooks/999999999999999999/ZzZzZzZzZzZzZzZzZzZz"
+
+
+def test_discord_webhook_list_is_admin_only(client, team, admin, member, outsider):
+    """Webhook 주소는 비밀이다. 팀 관리자만 읽을 수 있고, 꺼진 채널은 빠진다."""
+    from teams.services import add_webhook, set_webhook_active
+
+    add_webhook(team, "업무", WH, admin)
+    set_webhook_active(add_webhook(team, "잠깐 끔", WH2, admin), False, admin)
+    url = f"/api/integrations/discord/webhooks?team={team.pk}"
+
+    _, raw = ApiToken.issue(member, "m", "read")
+    assert client.get(url, headers=_h(raw)).status_code == 403
+    _, raw = ApiToken.issue(outsider, "o", "read")
+    assert client.get(url, headers=_h(raw)).status_code == 404
+    assert client.get(url).status_code == 401
+
+    _, raw = ApiToken.issue(admin, "a", "read")  # 읽기 토큰으로 충분하다
+    r = client.get(url, headers=_h(raw))
+    assert r.status_code == 200
+    assert r.json() == {"urls": [WH]}
+
+
+def test_throttle_bucket_is_per_user_not_per_display_name(rf, member, outsider):
+    """처리량 제한 키가 display_name이면 남과 같은 이름으로 바꿔 그 사람 몫을 갉아먹는다."""
+    from accounts.models import User
+    from api.api import UserRateThrottle
+
+    User.objects.filter(pk=outsider.pk).update(display_name=member.display_name)
+    outsider.refresh_from_db()
+    assert str(member) == str(outsider)
+
+    t = UserRateThrottle("60/m")
+    keys = []
+    for u in (member, outsider):
+        r = rf.get("/api/me")
+        r.auth = u
+        keys.append(t.get_cache_key(r))
+    assert keys[0] != keys[1]
+    assert str(member.pk) in keys[0]

@@ -91,7 +91,12 @@ def update_project(
     old_owners = list(project.owners.all())
     new_owners = list(changes.get("owners", old_owners))
     new = {f: changes.get(f, getattr(project, f)) for f in ("name", "purpose", "status")}
-    _validate(project.team, new["name"], new_owners, new["status"])
+    # 새로 넣는 관리자만 검사한다. 이미 있던 사람이 팀에서 빠지면 그 프로젝트의
+    # 이름·상태조차 못 고치게 되기 때문이다(태스크 담당자와 같은 이유).
+    old_ids = {u.pk for u in old_owners}
+    _validate(
+        project.team, new["name"], [u for u in new_owners if u.pk not in old_ids], new["status"]
+    )
     new["name"] = new["name"].strip()[:100]
     new["purpose"] = (new["purpose"] or "").strip()[:200]
     if (

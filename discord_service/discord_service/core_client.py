@@ -37,6 +37,12 @@ class CoreClient:
         r.raise_for_status()
         return r.json()
 
+    def webhook_urls(self, team_id: int) -> list[str]:
+        """웹 화면(팀 → 알림 채널)에 등록된, 켜져 있는 Webhook 주소. 팀 관리자 토큰이 필요하다."""
+        r = self.http.get("/api/integrations/discord/webhooks", params={"team": team_id})
+        r.raise_for_status()
+        return r.json()["urls"]
+
     def weekly(self, team_id: int, week_start: str) -> dict:
         r = self.http.get("/api/reports/weekly", params={"team": team_id, "week_start": week_start})
         r.raise_for_status()

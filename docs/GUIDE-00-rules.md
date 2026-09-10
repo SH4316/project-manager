@@ -66,6 +66,7 @@
 - 뷰와 API 라우터에 업무 규칙(검증, 상태 전이, 이력)을 쓰지 않는다. 항상 services 함수를 부른다.
 - core가 `discord_service`나 `mcp_server`를 import하지 않는다. 반대도 마찬가지다. 세 파트는 HTTP로만 통신한다.
 - 로그에 토큰·비밀키·Webhook URL을 남기지 않는다.
+- Discord Webhook 주소는 core DB에 원문으로 두되(발송에 필요하다), 화면·오류 메시지·`/ops` 내보내기에는 `DiscordWebhook.masked`만 쓴다. 원문을 주는 곳은 팀 관리자만 볼 수 있는 `GET /api/integrations/discord/webhooks` 하나뿐이다.
 - 테스트를 지우거나 `skip`으로 통과시키지 않는다.
 - 새 파일을 만들 때 지시서의 디렉터리 구조 밖에 두지 않는다.
 

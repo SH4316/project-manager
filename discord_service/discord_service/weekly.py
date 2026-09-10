@@ -3,7 +3,7 @@ import logging
 from datetime import date, timedelta
 
 from .core_client import CoreClient
-from .discord import UnknownResult, Webhook
+from .discord import Sender, UnknownResult
 from .store import Store
 from .summarize import summarize
 
@@ -17,7 +17,7 @@ def last_monday(today: date) -> date:
 
 def run_weekly(
     core: CoreClient,
-    hook: Webhook,
+    hook: Sender,
     store: Store,
     team_id: int,
     week_start: date,

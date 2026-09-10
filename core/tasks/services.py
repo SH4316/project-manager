@@ -73,7 +73,24 @@ def _require_member(actor, project):
         raise ServiceError({"project": "이 팀의 멤버가 아닙니다."})
 
 
-def _validate(*, project, assignee, status, priority, due_date, no_due_reason, stop_reason, title):
+def _validate(
+    *,
+    project,
+    assignee,
+    status,
+    priority,
+    due_date,
+    no_due_reason,
+    stop_reason,
+    title,
+    check_assignee=True,
+):
+    """check_assignee=False면 담당자가 팀의 활성 멤버인지 보지 않는다.
+
+    담당자를 바꾸지 않는 수정에는 이 검사를 걸지 않는다. 담당자가 팀에서 빠지거나
+    비활성이 되면(팀원 관리 화면의 [제거]) 그 태스크의 중요도·기한조차 못 고치게 되고,
+    화면에는 이미 나간 사람 이름이 담긴 오류만 나온다.
+    """
     errors = {}
     if not title or not title.strip():
         errors["title"] = "제목을 입력하세요."
@@ -81,7 +98,7 @@ def _validate(*, project, assignee, status, priority, due_date, no_due_reason, s
         errors["project"] = "보관된 프로젝트에는 태스크를 둘 수 없습니다."
     if assignee is None:
         errors["assignee"] = "담당자를 지정하세요."
-    elif not assignee.is_active or not is_member(assignee, project.team):
+    elif check_assignee and (not assignee.is_active or not is_member(assignee, project.team)):
         errors["assignee"] = "담당자는 이 팀의 활성 멤버여야 합니다."
     if not isinstance(priority, int) or isinstance(priority, bool) or not 1 <= priority <= 10:
         errors["priority"] = "중요도는 1~10 사이의 정수여야 합니다."
@@ -232,6 +249,7 @@ def update_task(task, changes: dict, *, actor, source, token=None, expected_vers
         no_due_reason=new["no_due_reason"],
         stop_reason=new["stop_reason"],
         title=task.title,
+        check_assignee="assignee" in changes,
     )
     old = {f: getattr(task, f) for f in LOCKED_FIELDS}
     fields = {f: v for f, v in new.items() if v != old[f]}

@@ -117,6 +117,13 @@ def api(client, write_token):
 | `test_outsider_cannot_see_team_data_via_api` | outsider 토큰으로 `GET /api/teams/{team.id}` → 404, `GET /api/tasks` → `total == 0`, `GET /api/projects` → `[]` (A01) |
 | `test_outsider_cannot_open_project_page` | outsider로 `client.login` 후 `GET /projects/{project.id}` → 404 (A01) |
 | `test_join_page_requires_login_then_joins` | 비로그인 `GET /join/<token>` → 302 `/login?next=...`. 로그인 후 `POST /join/<token>` → 302 `/today`, 멤버십 생성 |
+| `test_member_cannot_manage_webhooks` | 팀원이 `add_webhook`·`set_webhook_active`·`delete_webhook`·`send_test_message` 모두 `ServiceError`. 값은 그대로 |
+| `test_add_webhook_rejects_non_discord_urls` | http, 다른 host, `discord.com.evil.example`, 토큰 없음, 쿼리 덧붙음, 숫자 아닌 채널 id, 빈 문자열 → 전부 `ServiceError`, 저장 0건. 이름이 공백이면 `ServiceError` |
+| `test_add_webhook_trims_and_blocks_duplicates` | 앞뒤 공백을 잘라 저장하고, 같은 주소를 다시 등록하면 `ServiceError` |
+| `test_masked_hides_the_secret_part` | `masked`에 토큰 본문이 없고 뒤 네 자로 끝난다. 토큰이 짧으면(12자 이하) 뒤 네 자도 감춘다 |
+| `test_only_active_webhooks_are_send_targets` | `active_webhook_urls`는 이름순. 끄면 빠지고, 삭제하면 행이 사라진다 |
+| `test_send_test_message_records_success_and_failure` | 성공 시 `(True, "")` + `last_test_ok` 참. `HTTPError(404)`면 사유에 "404"가 있고 **주소는 없다**. 네트워크 오류면 "연결" 문구 |
+| `test_webhooks_go_away_with_the_team_not_with_the_member` | 등록한 팀원을 제거해도 채널은 남아 발송 대상으로 유지된다 |
 
 ---
 
@@ -136,6 +143,8 @@ def api(client, write_token):
 | `test_project_stats_total_excludes_cancelled` | 태스크 3개를 각각 done·todo·cancelled로 만든 뒤 `project_stats(project)` → `total == 2`, `done == 1`, `open == 1` |
 | `test_project_name_and_purpose_truncated_to_column_length` | `name="N"*150, purpose="P"*300`으로 생성 → 각각 100·200자. `update_project`도 같다. (자르지 않으면 Postgres에서 `DataError`) |
 | `test_duplicate_check_uses_truncated_name` | `name="B"*100`으로 만든 뒤 `name="B"*150` → `ServiceError` key `name`. (검사와 저장이 다른 값을 쓰면 unique 제약에 걸려 500) |
+
+| `test_removed_member_does_not_freeze_their_projects` | 관리자로 지정된 팀원을 제거한 뒤에도 프로젝트 상태 수정이 된다(명단은 그대로). 관리자를 **새로** 넣을 때는 팀의 활성 멤버만 된다 |
 
 ---
 
@@ -190,6 +199,8 @@ def api(client, write_token):
 | `test_today_view_is_scoped_to_team_membership` | 담당 태스크가 오늘 목록에 보이는 상태에서 `Membership`을 지우면 `items == []`, `focus is None`, `counts`의 `my_open`·`due_today`·`done_7d` 모두 0 (A01) |
 | `test_today_view_manual_item_also_scoped` | `today_set_auto_pull(member, 0)` 후 `today_add` → 보임. `Membership` 삭제 → `items == []`, `focus is None`, `today_membership()["manual"] == set()`. (auto 분기만 막으면 직접 담은 항목이 새어 나간다) |
 
+| `test_removed_member_does_not_freeze_their_tasks` | 담당자를 팀에서 제거한 뒤에도 중요도·기한 수정이 된다(담당자는 그대로 남는다). 담당자를 **새로** 넣을 때는 여전히 팀의 활성 멤버만 된다 |
+
 ---
 
 ## 7.5 `core/reports/tests.py`
@@ -212,6 +223,8 @@ def api(client, write_token):
 | `test_revoked_token_401` | 토큰 발급 → `revoke()` → `GET /api/me` 401 (A14) |
 | `test_read_token_cannot_write` | read 토큰으로 `POST /api/tasks/{id}/transition` → 403. `GET /api/tasks/{id}` → 200 |
 | `test_read_token_can_report_integration_status` | read 토큰으로 `POST /api/integrations/discord/status {"ok": true, "detail": {}}` → 204, `IntegrationStatus` 1건 |
+| `test_throttle_bucket_is_per_user_not_per_display_name` | 같은 `display_name`을 가진 두 사용자의 처리량 제한 키가 다르고, 키에 사용자 id가 들어간다 |
+| `test_discord_webhook_list_is_admin_only` | `GET /api/integrations/discord/webhooks?team=`: 팀원 토큰 403, 외부인 토큰 404, 무인증 401. 관리자의 **읽기** 토큰은 200이고 켜진 채널만 준다 |
 | `test_list_tasks_filters_and_paging` | task 3개 생성 → `GET /api/tasks?team=&status=todo&limit=2&offset=0` → `total==3`, `len(items)==2`. `status=bogus` → 400. `status=blocked` → `total==0` |
 | `test_create_task_defaults_and_idempotency` | `POST /api/tasks {"project_id","title","due_date"}` 헤더 `Idempotency-Key: k1` 두 번 → 둘 다 201, 같은 `id`. `assignee.id == member.id`, `priority == 5` |
 | `test_create_task_validation` | `title=""` → 400, `detail`에 `title` 키. `priority=11` → 422 (스키마 검증) |
@@ -254,7 +267,7 @@ def api(client, write_token):
 | `test_team_page_renders` | `GET /teams/{id}` → 200, 본문에 "미완료", 프로젝트 이름, "새 프로젝트" |
 | `test_signup_then_no_team_message` | `POST /signup` → 302 `/today`, 이후 `/today` 본문에 "초대 링크" |
 | `test_ops_requires_staff` | member `/ops` → 302(로그인 페이지) 또는 403. superuser → 200 |
-| `test_export_json_has_no_password` | superuser `/ops/export.json` → 200, 본문에 `"password"` 없음 |
+| `test_export_json_has_no_secrets` | superuser `/ops/export.json` → 200. 본문에 `"password"`·초대 token·Webhook 주소가 없고, Webhook 행의 이름은 남는다 |
 | `test_healthz` | `GET /healthz` → 200 `{"ok": true}` |
 | `test_token_shown_once` | `POST /settings/tokens {name, scope}` → 302 → `GET` 본문에 `pm_` 포함 → 다시 `GET` 하면 `pm_` 없음 |
 | `test_schedule_card_is_scoped_to_team_membership` | `/today?schedule=1&cal=month`에 태스크 제목이 보이는 상태에서 `Membership`을 지우면 사라진다 |
@@ -265,6 +278,13 @@ def api(client, write_token):
 | `test_far_future_schedule_day_does_not_crash` | `/today?schedule=1&cal=month&day=`에 `9999-12-01`·`9999-12-31`·`0001-01-01` → 모두 200. (`week_days()`의 `OverflowError`) |
 | `test_admin_task_and_project_are_read_only` | staff로 admin 목록·상세는 200, `add/`·`delete/`는 403, `change/`에 POST는 403이고 값이 안 바뀐다 (GUIDE-00 §3) |
 | `test_secret_filter_redacts_tokens_and_webhooks` | `SecretFilter`가 `pm_` 토큰·`Bearer …`·`/u/<token>/`·Discord Webhook URL을 `[redacted]`로 바꾼다. `record.args`를 쓰는 형식도 포함 |
+| `test_admin_pages_are_hidden_from_members` | 팀원으로 `/teams/{id}/members`·`/teams/{id}/webhooks` GET, 웹훅 4개 POST 경로 모두 **404**(403이 아니다). 값은 그대로 |
+| `test_members_page_shows_workload_and_discord_link` | "팀원 관리", 팀원 이름, Discord "연결", "관리자 1명", "알림 채널" 링크가 보인다 |
+| `test_webhook_page_never_shows_the_full_url` | 화면에 주소 원문이 없고 뒤 네 자와 "사용 중"만 보인다 |
+| `test_webhook_create_rejects_other_hosts` | 다른 host면 200 + "형식이 아닙니다", 저장 0건. 올바른 주소면 저장되고 응답에 원문이 없다 |
+| `test_webhook_toggle_and_delete` | toggle 두 번에 `is_active`가 False→True, delete로 행 0건 |
+| `test_webhook_test_send_reports_the_result` | `post_discord`를 monkeypatch: 성공 시 "확인 메시지를 보냈습니다" + `last_test_ok` 참, 실패 시 "발송 실패"이고 응답에 주소가 없다 |
+| `test_webhook_of_another_team_is_404` | 다른 팀 사용자가 남의 webhook id로 delete·test → 404 |
 
 ---
 
@@ -290,9 +310,9 @@ DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q
 ## 7.9 core 완료 체크리스트
 
 - [x] Step 0~7 검증 전부 통과
-- [x] `uv run pytest` SQLite·Postgres 모두 통과 (각 122개, skip 0)
+- [x] `uv run pytest` SQLite·Postgres 모두 통과 (각 140개, skip 0)
 - [x] `ruff check`, `ruff format --check` 오류 0
-- [x] `/api/docs`에 5.7 표의 엔드포인트가 전부 보인다 (OpenAPI 경로 20개 확인)
+- [x] `/api/docs`에 5.7 표의 엔드포인트가 전부 보인다 (OpenAPI 경로 21개 확인)
 - [x] 01-4 §6.10의 수동 확인 완료 (20항목, 브라우저)
 - [x] 목업과 나란히 놓고 다섯 화면 대조 완료. 상세 패널·인라인 폼 문구는 목업과 일치. 차이 9건은 지시서·README가 다르게 지정한 것이거나 목업에만 있는 것이라 [IMPL-REPORT](IMPL-REPORT.md)의 '목업 대조' 절에 기록했다
 - [x] 로그에 `pm_` 토큰 원문이 찍히지 않는다 (`SecretFilter` 단위 테스트 + 실제 로깅 설정으로 확인)

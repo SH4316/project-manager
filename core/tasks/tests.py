@@ -639,3 +639,33 @@ def test_assignee_is_required(task, member):
     assert "assignee" in e.value.errors
     task.refresh_from_db()
     assert task.assignee == member
+
+
+def test_removed_member_does_not_freeze_their_tasks(task, project, member, admin, outsider):
+    """팀원 관리 화면에서 담당자를 제거해도 그 태스크의 다른 항목은 고칠 수 있어야 한다.
+
+    담당자를 새로 지정하는 것은 그대로 팀의 활성 멤버만 된다.
+    """
+    from teams.models import Membership
+    from teams.services import remove_member
+
+    remove_member(Membership.objects.get(team=project.team, user=member), admin)
+
+    t = update_task(task, {"priority": 9}, actor=admin, source="web", expected_version=task.version)
+    assert t.priority == 9
+    t = update_task(
+        t,
+        {"due_date": today_kst() + timedelta(days=9)},
+        actor=admin,
+        source="web",
+        expected_version=t.version,
+    )
+    assert t.assignee == member  # 담당자는 그대로 남는다(누가 하던 일인지 잃지 않는다)
+
+    with pytest.raises(ServiceError) as e:
+        update_task(
+            t, {"assignee": outsider}, actor=admin, source="web", expected_version=t.version
+        )
+    assert "assignee" in e.value.errors
+    t = update_task(t, {"assignee": admin}, actor=admin, source="web", expected_version=t.version)
+    assert t.assignee == admin

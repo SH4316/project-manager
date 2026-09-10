@@ -183,12 +183,21 @@ def test_ops_requires_staff(client, member):
     assert client.get("/ops").status_code == 200
 
 
-def test_export_json_has_no_password(client, member, task):
+def test_export_json_has_no_secrets(client, member, admin, team, task):
+    """백업에 비밀번호·초대 token·Webhook 주소가 들어가지 않는다."""
+    from teams.services import add_webhook, create_invite
+
+    invite = create_invite(team, admin)
+    add_webhook(team, "업무 알림", WH, admin)
     User.objects.filter(pk=member.pk).update(is_staff=True, is_superuser=True)
     client.login(username="member1", password="pw12345678")
     r = client.get("/ops/export.json")
     assert r.status_code == 200
-    assert "password" not in r.content.decode()
+    body = r.content.decode()
+    assert "password" not in body
+    assert invite.token not in body
+    assert WH not in body
+    assert "업무 알림" in body  # 행 자체는 남는다
 
 
 def test_healthz(client):
@@ -308,3 +317,116 @@ def test_secret_filter_redacts_tokens_and_webhooks(caplog):
     )
     f.filter(rec)
     assert "pm_" not in rec.getMessage()
+
+
+# ---------- 팀원 관리 · 알림 채널 (팀 관리자 전용) ----------
+
+WH = "https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOp-_9876"
+
+
+@pytest.fixture
+def as_admin(client, team):
+    client.login(username="admin1", password="pw12345678")
+    return client
+
+
+def _webhook(team, admin):
+    from teams.services import add_webhook
+
+    return add_webhook(team, "업무 알림", WH, admin)
+
+
+def test_admin_pages_are_hidden_from_members(logged, team, admin):
+    """팀원에게는 관리 화면이 아예 없는 것처럼 보인다(403이 아니라 404)."""
+    wh = _webhook(team, admin)
+    for path in (f"/teams/{team.pk}/members", f"/teams/{team.pk}/webhooks"):
+        assert logged.get(path).status_code == 404
+    for path in (
+        f"/teams/{team.pk}/webhooks/new",
+        f"/teams/webhooks/{wh.pk}/toggle",
+        f"/teams/webhooks/{wh.pk}/test",
+        f"/teams/webhooks/{wh.pk}/delete",
+    ):
+        assert logged.post(path, {"name": "x", "url": WH}).status_code == 404
+    wh.refresh_from_db()
+    assert wh.is_active is True
+
+
+def test_members_page_shows_workload_and_discord_link(as_admin, team, task, member):
+    body = as_admin.get(f"/teams/{team.pk}/members").content.decode()
+    assert "팀원 관리" in body
+    assert member.display_name in body
+    assert "연결" in body  # member 픽스처는 discord_user_id가 있다
+    assert "관리자 1명" in body
+    assert "알림 채널" in body
+
+
+def test_webhook_page_never_shows_the_full_url(as_admin, team, admin):
+    _webhook(team, admin)
+    body = as_admin.get(f"/teams/{team.pk}/webhooks").content.decode()
+    assert WH not in body
+    assert "9876" in body
+    assert "사용 중" in body
+
+
+def test_webhook_create_rejects_other_hosts(as_admin, team):
+    from teams.models import DiscordWebhook
+
+    r = as_admin.post(
+        f"/teams/{team.pk}/webhooks/new",
+        {"name": "업무", "url": "https://evil.example/api/webhooks/1/x"},
+    )
+    assert r.status_code == 200
+    assert "형식이 아닙니다" in r.content.decode()
+    assert DiscordWebhook.objects.count() == 0
+
+    r = as_admin.post(f"/teams/{team.pk}/webhooks/new", {"name": "업무", "url": WH}, follow=True)
+    assert r.status_code == 200
+    assert DiscordWebhook.objects.get().url == WH
+    assert WH not in r.content.decode()
+
+
+def test_webhook_toggle_and_delete(as_admin, team, admin):
+    from teams.models import DiscordWebhook
+
+    wh = _webhook(team, admin)
+    as_admin.post(f"/teams/webhooks/{wh.pk}/toggle")
+    wh.refresh_from_db()
+    assert wh.is_active is False
+    as_admin.post(f"/teams/webhooks/{wh.pk}/toggle")
+    wh.refresh_from_db()
+    assert wh.is_active is True
+    as_admin.post(f"/teams/webhooks/{wh.pk}/delete")
+    assert DiscordWebhook.objects.count() == 0
+
+
+def test_webhook_test_send_reports_the_result(as_admin, team, admin, monkeypatch):
+    from teams import services as tsv
+
+    calls = []
+    monkeypatch.setattr(tsv, "post_discord", lambda url, text: calls.append(url))
+    wh = _webhook(team, admin)
+    body = as_admin.post(f"/teams/webhooks/{wh.pk}/test", follow=True).content.decode()
+    assert calls == [WH]
+    assert "확인 메시지를 보냈습니다" in body
+    wh.refresh_from_db()
+    assert wh.last_test_ok is True
+
+    def boom(url, text):
+        raise OSError("dns")
+
+    monkeypatch.setattr(tsv, "post_discord", boom)
+    body = as_admin.post(f"/teams/webhooks/{wh.pk}/test", follow=True).content.decode()
+    assert "발송 실패" in body
+    assert WH not in body
+
+
+def test_webhook_of_another_team_is_404(client, team, admin, outsider):
+    """다른 팀의 webhook id를 넣어도 404. 팀 확인을 그 객체의 팀으로 한다."""
+    from teams.services import create_team
+
+    wh = _webhook(team, admin)
+    create_team("남의 팀", "", outsider)
+    client.login(username="outsider", password="pw12345678")
+    assert client.post(f"/teams/webhooks/{wh.pk}/delete").status_code == 404
+    assert client.post(f"/teams/webhooks/{wh.pk}/test").status_code == 404

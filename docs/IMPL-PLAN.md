@@ -193,9 +193,9 @@
 ## 8. 진행 상태
 
 - **0단계 지시서 개정: 완료 (2026-09-10).** GUIDE-00·01-1·01-2·01-3·01-5·02·03·04 개정, 01-4 전면 재작성.
-- **1단계 core: 완료.** Step 0~7. `pytest` SQLite·Postgres 16 각 122개 통과(skip 0), `ruff` 0,
-  `/api/docs` 엔드포인트 20개, §6.10 수동 확인 20항목, 목업 다섯 화면 대조.
-- **2단계 discord_service: 완료(실제 채널 제외).** 20 passed. 컨테이너에서 실제 core에 붙여
+- **1단계 core: 완료.** Step 0~7. `pytest` SQLite·Postgres 16 각 140개 통과(skip 0), `ruff` 0,
+  `/api/docs` 엔드포인트 21개, §6.10 수동 확인 20항목, 목업 다섯 화면 대조.
+- **2단계 discord_service: 완료(실제 채널 제외).** 29 passed. 컨테이너에서 실제 core에 붙여
   `deadlines`(중복 방지 포함)·`weekly`·`test`·`once`를 로컬 Webhook 싱크로 검증, 메시지 본문까지 확인.
   진짜 `DISCORD_WEBHOOK_URL`만 남았다.
 - **3단계 mcp_server: 완료(공개 커넥터 제외).** 16 passed. 도구 14개, 헤더·URL 두 인증 방식,
@@ -205,6 +205,10 @@
   `DEBUG=0` + 프록시 뒤 동작, 가입·초대·참여 플로우.
 - **4단계 배포·시범: 대기.** Proxmox LXC, Cloudflare Tunnel, UptimeRobot, vzdump, 2주 시범은
   사용자 인프라·계정이 필요하다. GUIDE-04 Step 5~8 그대로 진행하면 된다.
+
+- **추가 작업: 권한 검사 + 관리 화면 2개 (완료).** 렌즈 5개·회의론자 3명씩(에이전트 110개)으로
+  권한 모델을 검사해 확정 2건을 고치고, 팀 관리자용 **알림 채널** 화면과 **팀원 관리** 화면을
+  만들었다. Discord 발송 대상이 환경 변수에서 웹 화면으로 옮겨졌다(discord 서비스는 core API로 읽는다).
 
 구현 중 발견해 고친 것(지시서 코드 자체의 결함 포함) 22건과 지시서 반영 46곳은
 [IMPL-REPORT.md](IMPL-REPORT.md)에 있다. 이 문서는 이제 결정 근거로만 참고한다.

@@ -114,3 +114,21 @@ def test_duplicate_check_uses_truncated_name(team, admin):
     with pytest.raises(ServiceError) as e:
         create_project(team=team, name="B" * 150, actor=admin)
     assert "name" in e.value.errors
+
+
+def test_removed_member_does_not_freeze_their_projects(team, admin, member, outsider):
+    """관리자로 지정된 팀원을 제거해도 그 프로젝트의 이름·상태는 고칠 수 있어야 한다."""
+    from teams.models import Membership
+    from teams.services import remove_member
+
+    p = create_project(team=team, name="백엔드", actor=admin, owners=[admin, member])
+    remove_member(Membership.objects.get(team=team, user=member), admin)
+
+    p = update_project(p, {"status": "active"}, actor=admin, expected_version=p.version)
+    assert p.status == "active"
+    assert {u.pk for u in p.owners.all()} == {admin.pk, member.pk}  # 명단은 그대로
+
+    with pytest.raises(ServiceError):  # 새로 넣는 사람은 여전히 팀의 활성 멤버여야 한다
+        update_project(p, {"owners": [admin, outsider]}, actor=admin, expected_version=p.version)
+    p = update_project(p, {"owners": [admin]}, actor=admin, expected_version=p.version)
+    assert [u.pk for u in p.owners.all()] == [admin.pk]

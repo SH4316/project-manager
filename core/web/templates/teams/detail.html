@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}팀 현황{% endblock %}
 {% block main %}
 <div class="card">
-  <div class="card-head"><h1 class="t24">{{ team.name }}</h1>{% if is_admin %}<a class="btn sm" href="{% url 'team_members' team.pk %}">멤버·초대</a>{% endif %}</div>
+  <div class="card-head"><h1 class="t24">{{ team.name }}</h1>{% if is_admin %}<a class="btn sm" href="{% url 'team_members' team.pk %}">팀원 관리</a><a class="btn sm" href="{% url 'team_webhooks' team.pk %}">알림 채널</a>{% endif %}</div>
   <div class="tiles">
     {% for label, value, url in tiles %}<a class="tile" href="{{ url }}"><b>{{ value }}</b><span>{{ label }}</span></a>{% endfor %}
   </div>

@@ -8,15 +8,19 @@
 
 | 파트 | 테스트 (SQLite) | 테스트 (Postgres 16) | ruff check | ruff format |
 |---|---|---|---|---|
-| `core/` | **120 passed**, skip 0 | **120 passed**, skip 0 | 0 | 통과 |
-| `discord_service/` | **20 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
+| `core/` | **140 passed**, skip 0 | **140 passed**, skip 0 | 0 | 통과 |
+| `discord_service/` | **29 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 | `mcp_server/` | **16 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 
-`/api/docs`에 [GUIDE-01-3](GUIDE-01-core-3-api.md) 5.7 표의 엔드포인트 20개가 모두 보인다.
+`/api/docs`에 [GUIDE-01-3](GUIDE-01-core-3-api.md) 5.7 표의 엔드포인트 21개가 모두 보인다.
 MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_note`·이력 경로 `mcp`·폐기 토큰 오류)를 확인했다.
 Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경로까지 실행했다(Docker 검증 절).
 그 뒤 독립 렌즈 6개로 심층 감사를 돌리고(확정 16건), 그 수정들을 다시 적대 검증해
 **총 22건을 고쳤다**(심층 감사 절). 지시서 코드 블록 46곳도 함께 고쳤다.
+
+이어서 권한 검사(렌즈 5개 + 지적별 회의론자 3명, 에이전트 110개 → 확정 2건)를 돌리고,
+그 결과를 반영해 **알림 채널 화면**(`/teams/<id>/webhooks`)과 **팀원 관리 화면 보강**
+(`/teams/<id>/members`)을 만들었다. 마지막 절 참고.
 
 ---
 
@@ -566,13 +570,148 @@ GUIDE-01-1 §2.6의 제약 검증 절차도 shell 기준으로 다시 썼다(실
 
 ---
 
+## 권한 검사와 관리 화면 2개 (2026-09-10, 추가 작업)
+
+요청: "권한 검사가 끝나면, 디스코드 웹훅을 관리하는 페이지, 팀장이 팀원을 관리하는 페이지를
+만들고 구성하기 위한 계획을 세우고 실행해". 순서대로 권한 검사를 먼저 돌리고, 그 결과를 반영해
+두 화면을 만들었다.
+
+### 1. 권한 검사 (에이전트 110개)
+
+렌즈 5개(관리자 전용 경로 · 팀 간 id 혼동 · 토큰 범위와 인증 순서 · 멤버십 생애주기 ·
+비밀 취급)로 찾고, 각 지적마다 회의론자 3명(정확성 · 도달 가능성 · 이미 막혀 있나)을 붙여
+2명 이상이 반박하면 버렸다. 회의론자는 판정 근거를 프로브로 실행해 확인했다.
+
+**지적 35건 → 확정 2건, 반박 33건.** 확정 2건은 고쳤다.
+
+권한 모델은 2층이고, 짐을 지는 쪽은 **뷰가 아니라 서비스**다. 렌즈 다섯 개가 같은 결론을 냈다.
+
+1. **범위(멤버)**: 모든 읽기가 `teams_of(user)`에서 출발한다 — `tasks.services.visible_tasks`,
+   `web/views/common.py`의 `task_or_404`/`team_or_404`/`project_or_404`(+ 숫자가 아닌 id는
+   `_pk_or_404`가 404), `api/context.py`의 같은 헬퍼. 전부 **멤버** 기준이고 역할은 보지 않는다.
+2. **역할(관리자)**: `teams.services.require_admin(actor, team)`을 **서비스 함수 첫 줄**에서 부른다
+   (`create_invite`·`revoke_invite`·`change_role`·`remove_member`, `archive_project`·`restore_project`,
+   그리고 이번에 추가한 웹훅 함수 전부). 템플릿의 `{% if is_admin %}`은 장식일 뿐이다.
+
+렌즈들이 팀원 세션·팀원 쓰기 토큰·외부인 토큰으로 관리자 전용 경로 전부(웹 POST 6개, API 2개)와
+id를 받는 모든 경로(교차 팀 `assignee_id`·`owner_ids`·`project_id`·`task_id`·`membership_id`·
+`invite_id`·`link_id`·`item_id`·`webhook_id`·`?member=`·`?project=`)를 찔러 봤고, 전부 404/400에
+상태 변화 0이었다. 즉 **기존 권한 경계에는 구멍이 없었다.**
+
+#### 확정 2건 (고쳤다)
+
+| # | 곳 | 문제 | 고친 방법 |
+|---|---|---|---|
+| 1 | `tasks/services.py::_validate`, `projects/services.py::update_project` | 담당자를 팀에서 제거하면 그 사람이 담당인 태스크의 **중요도·기한조차** 못 고친다. `_validate`가 바뀌지 않은 담당자까지 다시 검사해 "담당자는 이 팀의 활성 멤버여야 합니다"로 막고, 화면에는 이미 나간 사람 이름이 담긴 오류만 뜬다. 프로젝트 관리자도 같다 | 바뀌는 것만 검사한다. `_validate(..., check_assignee=...)`에 `update_task`가 `"assignee" in changes`를 넘기고, `update_project`는 **새로 넣는** 관리자만 검사한다. 담당자·관리자 명단 자체는 그대로 남겨 "누가 하던 일인지"를 잃지 않는다 |
+| 2 | `api/api.py` | 처리량 제한(60/m)이 `str(request.auth)` = `display_name`으로 센다. 본인이 바꿀 수 있고 유일하지도 않아, 남과 같은 이름으로 바꿔 두면 그 사람 몫까지 갉아먹는다 | `UserRateThrottle`이 사용자 id로 센다 |
+
+#### 반박됐지만 같이 고친 2건 (이번에 내가 새로 쓴 코드의 결함이라)
+
+회의론자들이 "권한 경계 문제는 아니다"라고 반박한 것 중, 내가 방금 쓴 `Fanout`의 의미가
+어정쩡한 것 두 개는 그대로 두지 않았다.
+
+- **채널을 전부 끄면 예비 주소로 새어 나갔다.** `if self._urls:`가 "채널 0개"와
+  "core가 답을 안 했다"를 같은 것으로 취급했다. 이제 목록을 **읽는 데 성공했으면** 그 목록을
+  그대로 쓴다(빈 목록이면 발송 없음, 실패로 기록). 예비 주소(`DISCORD_WEBHOOK_URL`)는
+  core를 **못 읽었을 때**만 쓰고, core가 4xx로 답하면(토큰·권한·팀 설정) 감추지 않고 실패시킨다.
+- **채널 하나가 죽으면 나머지 채널도 못 받았다.** 이제 전부 시도한 뒤 첫 예외를 다시 던진다.
+  `store`가 자리를 잡아 두었으므로 살아 있는 채널에 중복으로 가지 않는다.
+
+#### 반박 이유가 타당해서 안 고친 것 (주요 8건)
+
+| 지적 | 반박 근거 |
+|---|---|
+| `SecretFilter`가 traceback(`exc_info`)은 가리지 못한다 | 기제는 사실이지만 core에 도달 경로가 없다. core에는 httpx가 아예 없고(`raise_for_status` 0건), 유일한 Discord 발송 `post_discord`는 `send_test_message`가 전부 catch해 예외가 새지 않으며, core 전체에 `.exception(`·`exc_info` 사용이 0건이다 |
+| 마지막 관리자 보호가 원자적이지 않다(동시 요청이면 관리자 0명) | 권한 상승이 아니다. 두 관리자가 서로를 동시에 제거하는 경우뿐이고, 둘 다 이미 팀 전권을 가진 사람이다. 한 사람이 두 탭으로 하는 변형은 실제로 안 된다(두 번째 요청은 이미 지워진 행에 걸린다). 일상 작업(프로젝트·태스크·오늘·보고)은 멤버 권한이라 계속 돌아간다 |
+| `_admin_count`가 비활성 사용자까지 센다 | 비활성화는 Django admin에서만 가능하고, 그 상태에서도 팀 데이터는 멤버 권한으로 돌아간다. 6명이 각각 반박 |
+| 제거한 사람이 살아 있는 초대 링크로 다시 들어온다 | 초대 링크는 팀 전체용이고 발급·폐기 화면이 같은 페이지에 있다. 대신 **화면에 안내 한 줄을 넣었다**("제거한 사람이 링크를 가지고 있으면 다시 참여할 수 있으니 필요하면 폐기하세요") |
+| `WRITE_EXEMPT_PREFIX`가 경로 접두사라 읽기 토큰이 `/api/integrations/` 아래 쓰기를 할 수 있다 | 지시서에 명시된 설계다(연동 계정이 읽기 토큰으로 상태를 보고한다). 그 아래 쓰기 엔드포인트는 `report_status` 하나뿐이고 팀 데이터를 건드리지 않는다. 이번에 추가한 웹훅 엔드포인트는 GET이다 |
+| `ChangeLog.source`가 `X-Source` 헤더로 정해진다 | 지시서에 적힌 동작이고, 위조해도 남의 데이터에 접근하지 못한다 |
+| 권한 거부가 API에서 400으로 나간다 | 기존 설계(`ServiceError` → 400). 새 웹훅 엔드포인트는 403을 명시적으로 낸다 |
+| `active_webhook_urls`에 actor가 없어 권한 검사를 안 한다 | 유일한 호출부인 API 라우터가 `is_admin`으로 막고, 테스트가 팀원 403·외부인 404·무인증 401을 고정한다 |
+
+감사 도중 드러난 문서 오류 2건도 고쳤다: `PLAN.md`의 초대 폐기 경로(`/api/invites/{id}` →
+`/api/teams/invites/{id}`)와 "JSON 내보내기: 팀 관리자 가능" 표기(실제로는 모든 팀이 한 파일에
+담기므로 superuser 전용).
+
+### 2. 알림 채널 화면 (`/teams/<id>/webhooks`)
+
+전에는 발송 대상이 `discord_service`의 환경 변수 `DISCORD_WEBHOOK_URL` 하나였다. 이제 팀 관리자가
+웹에서 관리하고, discord 서비스가 그 목록을 HTTP로 읽어 간다. 세 파트는 여전히 HTTP로만 통신한다.
+
+- `teams.DiscordWebhook(team, name, url, is_active, created_by, last_test_*)` + 마이그레이션
+  `0002_discordwebhook`. `UniqueConstraint(team, url)`.
+- **주소가 곧 비밀이다.** 아는 사람은 누구나 그 채널에 글을 쓸 수 있으므로
+  화면·오류 메시지·`/ops` 내보내기에는 `masked`(`…/webhooks/<채널 id>/••••••••뒤4자`)만 쓴다.
+  토큰이 짧으면 뒤 네 자도 감춘다. 원문을 주는 곳은 팀 관리자만 읽을 수 있는
+  `GET /api/integrations/discord/webhooks` 하나다. 백업(`/ops/export.json`)에는 초대 token과
+  같은 방식으로 `url`을 빼고 행만 넣는다.
+- `add_webhook`은 `WEBHOOK_RE`(`https://discord(app).com/api/webhooks/<숫자>/<토큰>`)로 검사한다.
+  이 검사가 곧 SSRF 방지다 — 통과한 주소만 `post_discord`가 연다.
+- **테스트 발송**: core가 Discord로 직접 보내는 곳은 이 확인용 1건뿐이다(stdlib `urllib`, 5초).
+  정기 알림은 discord 서비스의 일이다. 실패 사유는 `Discord 응답 404` 같은 짧은 문구로만 남기고
+  예외 원문은 쓰지 않는다(주소가 섞이지 않게).
+- 화면: 채널 표(이름·등록자·등록일, masked 주소, 사용 여부, 마지막 확인 결과,
+  [테스트 발송][끄기/켜기][삭제]) + 등록 폼. 팀원에게는 403이 아니라 **404**로 감춘다.
+
+### 3. 팀원 관리 화면 보강 (`/teams/<id>/members`)
+
+있던 것(역할 select, 제거, 초대 발급·폐기)에 팀장이 판단할 때 필요한 것을 더했다.
+
+- **미완료·기한 초과 건수**: 새 집계 함수를 만들지 않고 `reports.services.team_status`의
+  `by_assignee`를 담당자 id로 찾아 쓴다. 누구를 제거하면 무엇이 남는지 보고 결정할 수 있다.
+- **Discord 연동 여부**: 마감 알림의 멘션은 `discord_user_id`로 만든다. 없는 팀원은 멘션 대신
+  이름만 나오므로 그 사실과 해결 방법(본인이 프로필에서 입력)을 화면에 적었다.
+- **참여일**, **관리자 수**("관리자 1명. 마지막 관리자는 역할을 바꾸거나 제거할 수 없습니다"),
+  제거 확인 문구("담당 중인 미완료 태스크는 담당자 그대로 팀에 남습니다"),
+  초대 링크 재사용 안내, 알림 채널 화면 링크.
+- 권한 관문은 `_admin_only`(= `team_or_404` + `can_admin` → 404) 하나로 모았고,
+  객체별 경로는 `_webhook_or_404`처럼 **그 객체의 team_id**로 확인한다(URL·본문의 팀 id를 믿지 않는다).
+
+### 4. discord_service 변경
+
+- `CoreClient.webhook_urls(team_id)` → `GET /api/integrations/discord/webhooks?team=`.
+- `Fanout`이 `Webhook` 자리를 대신한다(같은 `send(text)`). 켜져 있는 채널 **전부**로 보내고,
+  목록은 60초 캐시한다. `notify`·`weekly`는 타입 힌트만 `Sender`(= `Webhook | Fanout`)로 바꿨고
+  본문은 그대로다.
+- `DISCORD_WEBHOOK_URL`은 **필수에서 예비로** 바뀌었다(`.env.example`은 빈 값).
+  연동 계정은 이제 그 팀의 **관리자**여야 한다(주소를 읽어야 하므로). 토큰은 읽기여도 된다 —
+  읽기 토큰은 `/api/integrations/` 밖의 쓰기를 못 한다.
+
+### 5. 확인
+
+- core 140 / discord 29 / mcp 16 전부 통과, ruff 0 (요약 표 참고). core는 SQLite와 Postgres 16 둘 다.
+- **파트 간 계약을 실제 프로세스로 확인했다.** 실행 중인 core에 알림 채널 1건을 등록하고
+  `discord_service`의 `CoreClient`·`Fanout`으로 붙였다:
+  관리자 읽기 토큰 → 주소 1건, **팀원 읽기 토큰 → 403** `팀 관리자만 볼 수 있습니다.`,
+  `Fanout.targets()` → core에서 읽은 주소, 403일 때 예비 주소로 숨기지 않고 예외.
+  확인용으로 만든 웹훅·토큰은 지웠다.
+- 브라우저(실행 중 dev 서버, 팀 관리자 세션)로 두 화면을 직접 확인했다:
+  팀원 관리 화면의 새 열 3개(참여·Discord·미완료), 알림 채널 등록(잘못된 host → 필드 오류, 올바른 주소 → 등록되고
+  화면에는 masked만), **테스트 발송을 실제 Discord로 보내 403 응답이 화면과 행에 표시되는 것**,
+  끄기/켜기, 삭제. 팀원 세션으로는 두 화면 모두 404.
+- `docker compose build web discord` 다시 통과(376MB · 269MB, 이전과 같음). 이미지 안에
+  `web/templates/teams/webhooks.html`과 `teams/migrations/0002_discordwebhook.py`가 들어 있는 것도 확인했다.
+- 목업에는 없는 화면이다. 핸드오프(README)의 7화면은 팀원 모두가 쓰는 화면이고, 이 둘은 팀
+  관리자 전용 관리 화면이라 목업 대조 대상이 아니다. 색·크기·문구는 `app.css`의 기존 토큰과
+  컴포넌트(카드·`table.grid`·`badge`·`btn sm`)만 써서 새 스타일을 만들지 않았다.
+- 상단 내비게이션(오늘·내 태스크·팀 현황·검색)은 그대로 두고, 팀 현황 화면의 관리자 전용
+  버튼 두 개로 들어간다.
+- 지시서 반영: GUIDE-00 §3(비밀 취급 규칙 1줄), 01-1 §2.1(모델), 01-2 §3.1·§3.3(서비스·검증),
+  01-3 §5.5·§5.6·§5.7(throttle·라우터·엔드포인트 표), 01-4 §6.2·§6.3·§6.10·§6.11·§6.13
+  (URL·폼·뷰·ops·템플릿 표), 01-5 §7.2~§7.7(테스트 표), 02(config·Fanout·conftest·테스트 표),
+  04 Step 3·Step 7·완료 체크, `README.md`, `discord_service/README.md`, `.env.example`, `PLAN.md`.
+
+---
+
 ## 남은 것 (사용자 인프라가 필요한 것)
 
 Docker 관련 항목은 위에서 모두 실행했다. 남은 것은 **사용자 계정·인프라가 있어야 하는 것들**뿐이다.
 GUIDE-04 Step 5~8을 그대로 진행하면 된다.
 
-- 실제 Discord 채널 발송 — `DISCORD_WEBHOOK_URL`에 진짜 Webhook을 넣고
-  `docker compose run --rm discord python -m discord_service test`
+- 실제 Discord 채널 발송 — 웹 화면 `팀 → 알림 채널`에 진짜 Webhook 주소를 등록하고
+  [테스트 발송]을 누른다. 정기 알림은 `docker compose up -d discord` 후 자동
+  (연동 계정을 그 팀의 관리자로 올려야 주소를 읽는다)
 - Cloudflare Tunnel 토큰 발급과 공개 호스트 2개 등록 (`pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`)
 - Proxmox LXC(`nesting=1`, `keyctl=1`) 생성·배포, `https://pm.<도메인>/healthz` 확인
 - UptimeRobot 모니터 등록, Proxmox vzdump 예약

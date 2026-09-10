@@ -2,7 +2,7 @@ import logging
 from datetime import date, timedelta
 
 from .core_client import CoreClient
-from .discord import UnknownResult, Webhook
+from .discord import Sender, UnknownResult
 from .messages import deadline_message
 from .store import Store
 
@@ -27,7 +27,7 @@ def classify(task: dict, today: date) -> str | None:
     return None
 
 
-def run_deadlines(core: CoreClient, hook: Webhook, store: Store, team_id: int, today: date) -> dict:
+def run_deadlines(core: CoreClient, hook: Sender, store: Store, team_id: int, today: date) -> dict:
     """하루 1회. 결과 dict: {sent, skipped, failed, unknown}."""
     today_s = today.isoformat()
     result = {"sent": 0, "skipped": 0, "failed": 0, "unknown": 0}

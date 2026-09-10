@@ -8,7 +8,7 @@ class Config:
     core_url: str
     core_token: str
     team_id: int
-    webhook_url: str
+    webhook_url: str  # 예비용. 주소는 core(웹 화면)에서 읽는 것이 기본이다
     tz: ZoneInfo
     send_hour: int
     weekly_weekday: int
@@ -29,7 +29,7 @@ class Config:
             core_url=need("CORE_URL").rstrip("/"),
             core_token=need("CORE_TOKEN"),
             team_id=int(need("TEAM_ID")),
-            webhook_url=need("DISCORD_WEBHOOK_URL"),
+            webhook_url=os.environ.get("DISCORD_WEBHOOK_URL", "").strip(),
             tz=ZoneInfo(os.environ.get("TZ", "Asia/Seoul")),
             send_hour=int(os.environ.get("SEND_HOUR", "9")),
             weekly_weekday=int(os.environ.get("WEEKLY_WEEKDAY", "0")),

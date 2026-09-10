@@ -432,11 +432,26 @@ from .auth import BrowserSessionAuth, TokenAuth
 from .routers import integrations, me, projects, reports, tasks, teams, today
 from .serialize import project_out, task_out
 
+class UserRateThrottle(AuthRateThrottle):
+    """사용자별 처리량 제한.
+
+    기본 AuthRateThrottle은 `str(request.auth)`를 키로 쓴다. User.__str__은
+    display_name이고 이건 본인이 바꿀 수 있으며 유일하지도 않다. 남과 같은 이름으로
+    바꿔 두면 그 사람 몫까지 같이 갉아먹는다. 바뀌지 않는 사용자 id로 센다.
+    """
+
+    def get_cache_key(self, request) -> str:
+        pk = getattr(getattr(request, "auth", None), "pk", None)
+        if pk is None:
+            return super().get_cache_key(request)
+        return self.cache_format % {"scope": self.scope, "ident": f"user-{pk}"}
+
+
 api = NinjaAPI(
     title="Sandol PM API",
     version="1",
     auth=[BrowserSessionAuth(), TokenAuth()],
-    throttle=[AuthRateThrottle("60/m")],
+    throttle=[UserRateThrottle("60/m")],
     docs_decorator=login_required,
     urls_namespace="api",
 )
@@ -874,11 +889,27 @@ from django.utils import timezone
 from ninja import Router
 from ninja.errors import HttpError
 
+from teams.services import active_webhook_urls, is_admin
+
+from ..context import team_or_404
 from ..models import IntegrationStatus
 from ..schemas import StatusIn
 
 router = Router(tags=["integrations"])
 ALLOWED = {"discord", "mcp"}
+
+
+@router.get("/discord/webhooks", response=dict)
+def discord_webhooks(request, team: int):
+    """discord 서비스가 발송 대상 주소를 읽어 가는 곳.
+
+    Webhook 주소는 그 자체가 비밀이라 팀 관리자만 볼 수 있다. 연동 계정을 그 팀의
+    관리자로 넣어야 한다(읽기 토큰이면 이 팀의 다른 것은 바꿀 수 없다).
+    """
+    t = team_or_404(request, team)
+    if not is_admin(request.auth, t):
+        raise HttpError(403, "팀 관리자만 볼 수 있습니다.")
+    return {"urls": active_webhook_urls(t)}
 
 
 @router.post("/{name}/status", response={204: None})
@@ -891,6 +922,11 @@ def report_status(request, name: str, payload: StatusIn):
     )
     return 204, None
 ```
+
+`/{name}/status`보다 고정 경로 `/discord/webhooks`를 **먼저** 등록한다(§5.6 규칙).
+Webhook 주소는 비밀이라 이 엔드포인트만 원문을 준다. 팀 관리자만 읽을 수 있으므로
+discord 서비스가 쓰는 연동 계정을 그 팀의 **관리자**로 넣어야 한다. 토큰은 읽기여도 된다
+(읽기 토큰은 `/api/integrations/` 밖의 쓰기를 못 한다).
 
 ---
 
@@ -917,6 +953,7 @@ def report_status(request, name: str, payload: StatusIn):
 | `POST /api/tasks/{id}/extend` `{due_date, reason, version}` | 200 | 400, 409 |
 | `GET /api/today` · `POST /api/today` `{task_id}` · `DELETE /api/today/{task_id}`(오늘 제외) · `DELETE /api/today/excluded`(제외 복원) · `PATCH /api/today/order` `{task_ids}` · `PATCH /api/today/settings` `{auto_pull_days}` | 200 `TodayOut` | 400, 404 |
 | `GET /api/reports/weekly?team=&week_start=` | 200 dict (`weekly`) | 400, 404 |
+| `GET /api/integrations/discord/webhooks?team=` | 200 `{urls: [...]}` | 403(팀 관리자 아님), 404 |
 | `POST /api/integrations/{name}/status` `{ok, detail}` | 204 | 404 |
 
 공통:

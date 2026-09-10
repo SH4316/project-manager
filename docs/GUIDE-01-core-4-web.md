@@ -474,6 +474,11 @@ urlpatterns = [
     path("teams/invites/<int:invite_id>/revoke", teams.invite_revoke, name="invite_revoke"),
     path("teams/memberships/<int:membership_id>/role", teams.member_role, name="member_role"),
     path("teams/memberships/<int:membership_id>/remove", teams.member_remove, name="member_remove"),
+    path("teams/<int:team_id>/webhooks", teams.webhooks, name="team_webhooks"),
+    path("teams/<int:team_id>/webhooks/new", teams.webhook_create, name="webhook_create"),
+    path("teams/webhooks/<int:webhook_id>/toggle", teams.webhook_toggle, name="webhook_toggle"),
+    path("teams/webhooks/<int:webhook_id>/test", teams.webhook_test, name="webhook_test"),
+    path("teams/webhooks/<int:webhook_id>/delete", teams.webhook_delete, name="webhook_delete"),
 
     path("projects/new", projects.project_new, name="project_new"),
     path("projects/<int:project_id>", projects.project_detail, name="project_detail"),
@@ -539,6 +544,25 @@ class TeamForm(forms.Form):
 
 class InviteForm(forms.Form):
     days = forms.IntegerField(label="만료(일)", min_value=1, max_value=90, initial=7)
+
+
+class WebhookForm(forms.Form):
+    """Discord 알림 채널 등록. 주소 형식 검사는 services.add_webhook이 한다."""
+
+    name = forms.CharField(
+        label="채널 이름",
+        max_length=50,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "input", "placeholder": "예: 업무-알림"}),
+    )
+    url = forms.CharField(
+        label="Webhook 주소",
+        max_length=300,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "input", "placeholder": "https://discord.com/api/webhooks/…"}
+        ),
+    )
 
 
 class ProjectForm(forms.Form):
@@ -1621,9 +1645,9 @@ from common.errors import ServiceError
 from projects.services import project_stats
 from reports.services import team_status
 from teams import services as tsv
-from teams.models import Invite, Membership
+from teams.models import DiscordWebhook, Invite, Membership
 
-from ..forms import InviteForm, TeamForm
+from ..forms import InviteForm, TeamForm, WebhookForm
 from .common import apply_service_error, can_admin, current_team, team_or_404
 
 
@@ -1665,7 +1689,135 @@ def team_detail(request, team_id):
 
 - `team_list`: 내 팀 목록. 팀이 없으면 "초대 링크가 필요합니다" 안내와 "팀 만들기" 링크. 팀이 정확히 하나면 `team_detail`로 redirect.
 - `team_new`: `TeamForm` → `tsv.create_team`. 성공 시 세션 `team_id` 저장 후 `team_detail`.
-- `members(team_id)`: admin만 (아니면 404). context: memberships, invites(폐기 안 된 것, `is_usable` 표시), `InviteForm`, `SITE_URL`.
+- 팀 관리자 전용 화면은 모두 이 관문을 지난다. 팀원에게는 403이 아니라 **404**로 감춘다.
+
+```python
+def _admin_only(request, team_id):
+    """팀 관리자 전용 화면의 공통 관문. 팀원에게는 화면 자체를 숨긴다(404)."""
+    team = team_or_404(request.user, team_id)
+    if not can_admin(request.user, team):
+        raise Http404
+    return team
+
+
+@login_required
+def members(request, team_id):
+    """팀원 관리. 역할·제거·초대에 더해, 제거 판단에 필요한 업무량을 함께 보여준다."""
+    team = _admin_only(request, team_id)
+    load = {r["assignee_id"]: r for r in team_status(team)["by_assignee"]}
+    rows = [
+        {"m": m, "load": load.get(m.user_id)}
+        for m in team.memberships.select_related("user").order_by("user__display_name")
+    ]
+    return render(
+        request,
+        "teams/members.html",
+        {
+            "team": team,
+            "rows": rows,
+            "admin_count": sum(1 for r in rows if r["m"].role == "admin"),
+            "invites": team.invites.filter(revoked_at__isnull=True),
+            "form": InviteForm(),
+            "site_url": settings.SITE_URL,
+            "is_admin": True,
+        },
+    )
+```
+
+`rows`의 `load`는 `team_status(team)["by_assignee"]`를 담당자 id로 찾은 것이다(미완료·기한 초과 건수).
+팀장이 제거·역할 변경을 판단할 때 필요한 숫자라 같은 화면에 둔다. 새 집계 함수를 만들지 않는다.
+
+- 알림 채널 화면(전체 코드):
+
+```python
+# ---------- Discord 알림 채널 ----------
+
+
+def _webhook_or_404(request, webhook_id):
+    """팀 관리자만 만질 수 있다. 남의 팀 id를 넣어도 화면과 같은 404가 된다."""
+    wh = get_object_or_404(DiscordWebhook.objects.select_related("team"), pk=webhook_id)
+    _admin_only(request, wh.team_id)
+    return wh
+
+
+def _webhook_page(request, team, form):
+    return render(
+        request,
+        "teams/webhooks.html",
+        {
+            "team": team,
+            "webhooks": tsv.webhooks_of(team),
+            "form": form,
+            "help": tsv.WEBHOOK_HELP,
+            "is_admin": True,
+        },
+    )
+
+
+@login_required
+def webhooks(request, team_id):
+    return _webhook_page(request, _admin_only(request, team_id), WebhookForm())
+
+
+@login_required
+@require_POST
+def webhook_create(request, team_id):
+    team = _admin_only(request, team_id)
+    form = WebhookForm(request.POST)
+    if form.is_valid():
+        try:
+            wh = tsv.add_webhook(
+                team, form.cleaned_data["name"], form.cleaned_data["url"], request.user
+            )
+            messages.success(
+                request, f"{wh.name} 채널을 등록했습니다. 테스트 발송으로 확인해 보세요."
+            )
+        except ServiceError as e:
+            apply_service_error(form, e)
+    if form.errors:
+        return _webhook_page(request, team, form)
+    return redirect("team_webhooks", team_id=team.pk)
+
+
+@login_required
+@require_POST
+def webhook_toggle(request, webhook_id):
+    wh = _webhook_or_404(request, webhook_id)
+    try:
+        tsv.set_webhook_active(wh, not wh.is_active, request.user)
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+    return redirect("team_webhooks", team_id=wh.team_id)
+
+
+@login_required
+@require_POST
+def webhook_delete(request, webhook_id):
+    wh = _webhook_or_404(request, webhook_id)
+    team_id = wh.team_id
+    try:
+        tsv.delete_webhook(wh, request.user)
+        messages.success(request, "채널을 삭제했습니다.")
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+    return redirect("team_webhooks", team_id=team_id)
+
+
+@login_required
+@require_POST
+def webhook_test(request, webhook_id):
+    wh = _webhook_or_404(request, webhook_id)
+    try:
+        ok, detail = tsv.send_test_message(wh, request.user)
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+    else:
+        if ok:
+            messages.success(request, f"{wh.name} 채널로 확인 메시지를 보냈습니다.")
+        else:
+            messages.error(request, f"{wh.name} 발송 실패 — {detail}")
+    return redirect("team_webhooks", team_id=wh.team_id)
+```
 - `invite_create(team_id)` POST: `tsv.create_invite`. 성공 시 `messages.success`에 전체 URL(`settings.SITE_URL + invite.path`) 표시 후 `team_members`로.
 - `invite_revoke(invite_id)` POST: `tsv.revoke_invite`.
 - `member_role(membership_id)` POST `role`: `tsv.change_role`.
@@ -1697,7 +1849,7 @@ from accounts.models import User
 from api.models import IntegrationStatus
 from projects.models import Project
 from tasks.models import ChangeLog, ChecklistItem, Link, Task, TodayItem
-from teams.models import Invite, Membership, Team
+from teams.models import DiscordWebhook, Invite, Membership, Team
 
 
 def healthz(request):
@@ -1714,10 +1866,24 @@ def ops(request):
 @staff_member_required
 def export_json(request):
     parts = [
-        serializers.serialize("json", User.objects.all(), fields=("username", "display_name", "discord_user_id", "is_active", "auto_pull_days")),
+        serializers.serialize(
+            "json",
+            User.objects.all(),
+            fields=("username", "display_name", "discord_user_id", "is_active", "auto_pull_days"),
+        ),
         serializers.serialize("json", Team.objects.all()),
         serializers.serialize("json", Membership.objects.all()),
-        serializers.serialize("json", Invite.objects.all(), fields=("team", "expires_at", "revoked_at", "use_count")),
+        serializers.serialize(
+            "json",
+            Invite.objects.all(),
+            fields=("team", "expires_at", "revoked_at", "use_count"),
+        ),
+        # 초대 token과 같은 이유로 Webhook url은 빼고 내보낸다. 백업에 비밀을 담지 않는다.
+        serializers.serialize(
+            "json",
+            DiscordWebhook.objects.all(),
+            fields=("team", "name", "is_active", "created_at", "last_test_at", "last_test_ok"),
+        ),
         serializers.serialize("json", Project.objects.all()),
         serializers.serialize("json", Task.objects.all()),
         serializers.serialize("json", ChecklistItem.objects.all()),
@@ -2221,7 +2387,7 @@ def export_json(request):
 {% extends "base.html" %}{% block title %}팀 현황{% endblock %}
 {% block main %}
 <div class="card">
-  <div class="card-head"><h1 class="t24">{{ team.name }}</h1>{% if is_admin %}<a class="btn sm" href="{% url 'team_members' team.pk %}">멤버·초대</a>{% endif %}</div>
+  <div class="card-head"><h1 class="t24">{{ team.name }}</h1>{% if is_admin %}<a class="btn sm" href="{% url 'team_members' team.pk %}">팀원 관리</a><a class="btn sm" href="{% url 'team_webhooks' team.pk %}">알림 채널</a>{% endif %}</div>
   <div class="tiles">
     {% for label, value, url in tiles %}<a class="tile" href="{{ url }}"><b>{{ value }}</b><span>{{ label }}</span></a>{% endfor %}
   </div>
@@ -2395,7 +2561,8 @@ def export_json(request):
 | `search.html` | 52px 검색 input(`class="input lg"`, placeholder "예: TASK-121, 메뉴, 챗봇"), 체크 "완료·취소 포함", "보관 포함", 결과 개수 + `ul.tasks`, 빈 결과 문구 "검색 결과가 없습니다." |
 | `teams/list.html` | 팀 목록(각각 `team_detail` 링크), 팀이 없으면 "아직 팀에 속해 있지 않습니다. 초대 링크가 필요합니다.", "팀 만들기" 링크 |
 | `teams/new.html` | `TeamForm` |
-| `teams/members.html` | 멤버 표(이름, 역할 select POST, 제거 버튼), 초대 링크 표(URL, 만료, 사용 횟수, 폐기 버튼), `InviteForm` |
+| `teams/members.html` | 제목 "{팀} 팀원 관리", "관리자 N명" 안내, 멤버 표(이름, 역할 select POST, 참여일, Discord 연동 여부, 미완료·초과 건수, 제거 버튼), Discord 미연동 안내 한 줄, 초대 링크 표(제거한 사람이 링크로 다시 들어올 수 있다는 안내 포함)(URL, 만료, 사용 횟수, 폐기 버튼), `InviteForm`, `team_webhooks` 링크 |
+| `teams/webhooks.html` | 제목 "{팀} 알림 채널", 채널 표(이름·등록자·등록일, `masked` 주소, 사용 여부, 마지막 확인 결과, [테스트 발송][끄기/켜기][삭제]), 빈 상태 "등록한 채널이 없습니다. 채널을 하나도 등록하지 않으면 알림이 나가지 않습니다.", 등록 폼(`WebhookForm` + `help`), "등록한 주소는 다시 볼 수 없습니다" 안내. **주소 원문은 어디에도 넣지 않는다** |
 | `tasks/edit.html` | `TaskForm.as_p`(제목·프로젝트·담당자·중요도·기한·기한 미정 사유·설명·완료 조건·다음 행동), "저장"·"취소" |
 | `settings/profile.html` | `ProfileForm` |
 | `settings/tokens.html` | `new_token`이 있으면 `<code>`로 1회 표시 + "지금 복사하세요. 다시 볼 수 없습니다.", 토큰 표(이름, 앞자리, 범위, 만료, 폐기 버튼), `TokenForm`, MCP 연결 안내(GUIDE-03 Step 5 표) |

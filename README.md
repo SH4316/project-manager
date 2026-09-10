@@ -68,7 +68,8 @@ docker compose exec web python -c "import urllib.request;print(urllib.request.ur
 3. `.env`를 실제 값으로 채우고 `compose.yml`의 `db` 포트 두 줄을 지운다.
 4. Cloudflare Zero Trust에서 터널을 만들고 공개 호스트 두 개를 연결한다: `pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`.
 5. `docker compose up -d --build db web mcp cloudflared` 후 superuser 생성.
-6. 팀 생성 → 초대 링크 배포 → Discord 연동 계정 토큰 발급 → `docker compose up -d discord`.
+6. 팀 생성 → 초대 링크 배포 → `팀 → 알림 채널`에 Discord Webhook 주소 등록·[테스트 발송] →
+   Discord 연동 계정을 팀 **관리자**로 넣고 읽기 토큰 발급 → `docker compose up -d discord`.
 
 자세한 절차는 [docs/GUIDE-04-deploy.md](docs/GUIDE-04-deploy.md)에 있다.
 
@@ -84,7 +85,7 @@ docker compose exec web python -c "import urllib.request;print(urllib.request.ur
 | `POSTGRES_PASSWORD` | db·core | Postgres 비밀번호 |
 | `CORE_TOKEN` | discord | core 연동 계정의 **읽기** API 토큰 |
 | `TEAM_ID` | discord | 알림 대상 팀 id |
-| `DISCORD_WEBHOOK_URL` | discord | 채널 Webhook URL |
+| `DISCORD_WEBHOOK_URL` | discord | 예비 Webhook URL. 발송 대상은 웹 화면 `팀 → 알림 채널`에서 관리한다 |
 | `TZ` | discord | 기본 `Asia/Seoul` |
 | `SEND_HOUR` | discord | 마감 알림 시각(시). 기본 9 |
 | `WEEKLY_WEEKDAY` / `WEEKLY_HOUR` | discord | 주간 보고 요일(0=월)·시각. 기본 0, 9 |

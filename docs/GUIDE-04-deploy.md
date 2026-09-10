@@ -132,9 +132,10 @@ SITE_URL=https://pm.example.com
 POSTGRES_PASSWORD=change-me
 
 # --- discord_service ---
-CORE_TOKEN=pm_xxx            # core에서 연동 계정으로 발급한 읽기 토큰
+CORE_TOKEN=pm_xxx            # core에서 연동 계정으로 발급한 읽기 토큰. 그 계정은 팀 관리자여야 한다
 TEAM_ID=1
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+# 발송 대상은 웹 화면 `팀 → 알림 채널`에 등록한다. 아래는 core를 못 읽을 때 쓰는 예비값이라 비워도 된다.
+DISCORD_WEBHOOK_URL=
 TZ=Asia/Seoul
 SEND_HOUR=9
 WEEKLY_WEEKDAY=0
@@ -223,10 +224,11 @@ docker compose logs --tail=50 web cloudflared
 초기 데이터:
 
 1. superuser로 `/signup`이 아닌 `/login`으로 들어가 `/teams/new`에서 팀 생성(예: 산돌이 서비스). 만든 사람이 관리자가 된다.
-2. `/teams/<id>/members`에서 초대 링크 발급 → 팀원에게 전달. 팀원은 `/signup` 후 링크로 참여.
-3. Discord 연동 계정: `/signup`으로 `discord-bot` 계정 생성 → 초대 링크로 팀 참여 → 그 계정으로 `/settings/tokens`에서 **읽기** 토큰 발급 → `.env`의 `CORE_TOKEN`에 넣고 `TEAM_ID` 확인 → `docker compose up -d discord`.
-4. `docker compose exec discord python -m discord_service test` → 채널에 테스트 메시지.
-5. 각자 `/settings/tokens`에서 개인 토큰 발급 후 GUIDE-03 Step 5 표대로 AI 클라이언트 연결. MCP URL은 `https://mcp.<도메인>`.
+2. `/teams/<id>/members`(팀원 관리)에서 초대 링크 발급 → 팀원에게 전달. 팀원은 `/signup` 후 링크로 참여.
+3. `/teams/<id>/webhooks`(알림 채널)에서 Discord 채널 Webhook 주소를 등록하고 **[테스트 발송]**으로 확인한다. 여기 등록한 채널이 곧 알림 발송 대상이다.
+4. Discord 연동 계정: `/signup`으로 `discord-bot` 계정 생성 → 초대 링크로 팀 참여 → `팀원 관리`에서 그 계정을 **관리자**로 올린다(Webhook 주소를 읽어야 한다) → 그 계정으로 `/settings/tokens`에서 **읽기** 토큰 발급 → `.env`의 `CORE_TOKEN`에 넣고 `TEAM_ID` 확인 → `docker compose up -d discord`.
+5. `docker compose exec discord python -m discord_service test` → 등록한 채널 전부에 테스트 메시지.
+6. 각자 `/settings/tokens`에서 개인 토큰 발급 후 GUIDE-03 Step 5 표대로 AI 클라이언트 연결. MCP URL은 `https://mcp.<도메인>`.
 
 ---
 
@@ -259,7 +261,8 @@ docker compose logs --tail=50 web cloudflared
 - [x] 로컬에서 `db web mcp` 기동 후 `/healthz` OK, Postgres 16으로 core 테스트 122개 통과
 - [ ] Proxmox LXC 기동·`https://pm.<도메인>/healthz`  ← 사용자 인프라 필요
 - [x] 팀 생성 → 초대 링크 발급 → 새 계정 가입 → 참여까지 실행 중 서버에서 확인 (참여 후 프로젝트 레일에 팀 프로젝트가 보이고 '초대 링크가 필요합니다' 안내가 사라진다)
-- [ ] 실제 Discord 채널 테스트 메시지 수신  ← 사용자 인프라 필요 — 컨테이너 기동·설정 파싱·발송 경로는 확인
+- [x] 팀원 관리 화면에서 역할 변경·제거·초대, 알림 채널 화면에서 Webhook 등록·[테스트 발송]·끄기·삭제까지 브라우저에서 확인 (테스트 발송은 실제 Discord가 403으로 답한 것까지 화면에 표시)
+- [ ] 실제 Discord 채널 테스트 메시지 수신  ← 사용자 인프라 필요 — 컨테이너 기동·설정 파싱·발송 경로는 확인. 진짜 Webhook 주소를 `팀 → 알림 채널`에 등록하면 된다
 - [ ] 공개 URL로 커넥터 등록  ← 사용자 인프라 필요 — mcp 컨테이너에서 `list_tasks` 동작 확인
 - [ ] UptimeRobot 모니터 등록  ← 사용자 인프라 필요
 - [ ] Proxmox vzdump 예약 등록  ← 사용자 인프라 필요

@@ -3,7 +3,7 @@
 버전: 0.3
 작성일: 2026-09-09
 기준 문서: [docs/SPEC.md](docs/SPEC.md) (기능 명세 v0.1) + Leantime 참고 적용안 + 2026-09-09 결정 사항
-상태: **1~3단계 구현 완료 (2026-09-10).** `core`·`discord_service`·`mcp_server` 구현·테스트·컨테이너 검증까지 끝났다. 4단계(배포·시범)는 사용자 인프라가 필요하다. 결과와 남은 일은 [docs/IMPL-REPORT.md](docs/IMPL-REPORT.md).
+상태: **1~3단계 구현 완료 (2026-09-10).** 팀 관리자용 알림 채널·팀원 관리 화면 포함. `core`·`discord_service`·`mcp_server` 구현·테스트·컨테이너 검증까지 끝났다. 4단계(배포·시범)는 사용자 인프라가 필요하다. 결과와 남은 일은 [docs/IMPL-REPORT.md](docs/IMPL-REPORT.md).
 
 **구현 지시서:** 실제 구현은 [docs/GUIDE-00-rules.md](docs/GUIDE-00-rules.md)부터 시작하는 GUIDE 문서를 따른다. 이 계획서와 지시서가 다르면 지시서가 우선한다.
 
@@ -239,7 +239,8 @@ DB 제약: `status=doing`이면 `due_date` 필수, `is_blocked`면 `blocked_reas
 | 프로젝트 생성·수정 | 가능 | 가능 | |
 | 프로젝트 보관·복원 | 불가 | 가능 | |
 | 초대 링크 발급·폐기, 멤버 역할 변경·제거 | 불가 | 가능 | |
-| JSON 내보내기 | 불가 | 가능 | |
+| Discord 알림 채널 등록·끄기·삭제·테스트 발송 | 불가 | 가능 | |
+| JSON 내보내기 | 불가 | 불가 | 가능 (모든 팀이 한 파일에 담기므로 superuser만) |
 | 사용자 비활성화, 통합 상태 확인 | 불가 | 불가 | 가능 |
 
 오늘 목록은 본인만. API 토큰 `scope=read`는 GET만. 예외: 통합 상태 보고 엔드포인트는 read 토큰도 POST할 수 있다(태스크 데이터에 손대지 않으므로).
@@ -256,7 +257,8 @@ DB 제약: `status=doing`이면 `due_date` 필수, `is_blocked`면 `blocked_reas
 | `GET /api/teams/{id}` | 팀 정보 + 프로젝트 목록 |
 | `GET /api/teams/{id}/members` | 담당자 선택용 활성 멤버. `discord_user_id` 포함 |
 | `GET /api/teams/{id}/status` | 명세 7.3 지표 + 담당자 없는 프로젝트. 프로젝트별·담당자별 |
-| `POST /api/teams/{id}/invites` · `DELETE /api/invites/{id}` | 초대 링크 발급·폐기 (admin) |
+| `POST /api/teams/{id}/invites` · `DELETE /api/teams/invites/{id}` | 초대 링크 발급·폐기 (admin) |
+| `GET /api/integrations/discord/webhooks?team=` | 팀의 알림 채널 주소 (팀 admin만). discord 서비스가 읽는다 |
 | `GET /api/projects?team=&include_archived=` | 프로젝트 목록 |
 | `GET /api/projects/{id}` | 상세 + 집계(미완료·초과·검토·막힘·완료 n/m) + 링크 |
 | `POST /api/projects` · `PATCH /api/projects/{id}` | 생성·수정(version 필수) |
@@ -356,7 +358,7 @@ core와 코드를 공유하지 않는다. 의존성은 `httpx` 하나. 상태는
 
 ### 설정 (환경 변수)
 
-`CORE_URL`, `CORE_TOKEN`(연동 계정의 읽기 토큰), `TEAM_ID`, `DISCORD_WEBHOOK_URL`, `TZ=Asia/Seoul`, `SEND_HOUR=9`, `WEEKLY_WEEKDAY=0`, `WEEKLY_HOUR=9`, `LLM_PROVIDER=`(비우면 고정 형식), `DB_PATH=/data/discord.sqlite`
+`CORE_URL`, `CORE_TOKEN`(연동 계정의 읽기 토큰. 그 계정은 팀 **관리자**여야 한다), `TEAM_ID`, `DISCORD_WEBHOOK_URL`(예비용. 발송 대상은 웹 화면 `팀 → 알림 채널`에서 관리), `TZ=Asia/Seoul`, `SEND_HOUR=9`, `WEEKLY_WEEKDAY=0`, `WEEKLY_HOUR=9`, `LLM_PROVIDER=`(비우면 고정 형식), `DB_PATH=/data/discord.sqlite`
 
 ### 실행
 

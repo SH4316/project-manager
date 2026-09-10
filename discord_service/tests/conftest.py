@@ -69,10 +69,20 @@ def weekly_data(
 class FakeCore:
     """core API 흉내. tasks dict를 바꾸면 응답이 바뀐다."""
 
-    def __init__(self, tasks: list[dict], weekly: dict | None = None):
+    def __init__(
+        self,
+        tasks: list[dict],
+        weekly: dict | None = None,
+        webhook_urls: list[str] | None = None,
+    ):
         self.tasks = {t["id"]: t for t in tasks}
         self.weekly_data = weekly
         self.status_reports = []
+        self.webhook_urls = (
+            ["https://discord.com/api/webhooks/1/aaa"] if webhook_urls is None else webhook_urls
+        )
+        self.webhook_status = 200  # 500으로 바꾸면 목록 조회가 실패한다
+        self.webhook_calls = 0
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -89,6 +99,11 @@ class FakeCore:
             return httpx.Response(200, json=t) if t else httpx.Response(404, json={"detail": "x"})
         if path == "/api/reports/weekly":
             return httpx.Response(200, json=self.weekly_data)
+        if path == "/api/integrations/discord/webhooks":
+            self.webhook_calls += 1
+            if self.webhook_status != 200:
+                return httpx.Response(self.webhook_status, json={"detail": "x"})
+            return httpx.Response(200, json={"urls": self.webhook_urls})
         if path.startswith("/api/integrations/"):
             self.status_reports.append(json.loads(request.content))
             return httpx.Response(204)
@@ -99,11 +114,13 @@ class FakeHook:
     def __init__(self, statuses=None):
         self.sent = []
         self.payloads = []
+        self.urls = []
         self.statuses = list(statuses or [])
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         self.payloads.append(payload)
+        self.urls.append(str(request.url))
         self.sent.append(payload["content"])
         code = self.statuses.pop(0) if self.statuses else 204
         return httpx.Response(code, headers={"Retry-After": "0"} if code == 429 else {})

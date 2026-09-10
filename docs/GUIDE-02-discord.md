@@ -48,7 +48,7 @@ discord_service/
     config.py       환경 변수 → Config
     store.py        SQLite
     core_client.py  core API 호출
-    discord.py      Webhook 전송 (재시도, 2000자 분할)
+    discord.py      Webhook 전송 (재시도, 2000자 분할) + Fanout (등록된 채널 전부)
     messages.py     메시지 문자열 만들기
     notify.py       마감 알림 작업
     weekly.py       주간 보고 작업
@@ -75,7 +75,7 @@ class Config:
     core_url: str
     core_token: str
     team_id: int
-    webhook_url: str
+    webhook_url: str  # 예비용. 주소는 core(웹 화면)에서 읽는 것이 기본이다
     tz: ZoneInfo
     send_hour: int
     weekly_weekday: int
@@ -96,7 +96,7 @@ class Config:
             core_url=need("CORE_URL").rstrip("/"),
             core_token=need("CORE_TOKEN"),
             team_id=int(need("TEAM_ID")),
-            webhook_url=need("DISCORD_WEBHOOK_URL"),
+            webhook_url=os.environ.get("DISCORD_WEBHOOK_URL", "").strip(),
             tz=ZoneInfo(os.environ.get("TZ", "Asia/Seoul")),
             send_hour=int(os.environ.get("SEND_HOUR", "9")),
             weekly_weekday=int(os.environ.get("WEEKLY_WEEKDAY", "0")),
@@ -106,6 +106,10 @@ class Config:
             site_name=os.environ.get("SITE_NAME", "산돌이 업무"),
         )
 ```
+
+발송 대상은 **core에서 읽는다**. 웹 화면 `팀 → 알림 채널`(GUIDE-01-4 §6.10)에 등록한
+채널이 곧 발송 대상이고, `DISCORD_WEBHOOK_URL`은 core를 못 읽을 때 쓰는 예비값이라
+비워 둘 수 있다. 그래서 여기서만 `need`를 쓰지 않는다.
 
 ### `discord_service/store.py`
 
@@ -251,6 +255,12 @@ class CoreClient:
         r.raise_for_status()
         return r.json()
 
+    def webhook_urls(self, team_id: int) -> list[str]:
+        """웹 화면(팀 → 알림 채널)에 등록된, 켜져 있는 Webhook 주소. 팀 관리자 토큰이 필요하다."""
+        r = self.http.get("/api/integrations/discord/webhooks", params={"team": team_id})
+        r.raise_for_status()
+        return r.json()["urls"]
+
     def weekly(self, team_id: int, week_start: str) -> dict:
         r = self.http.get("/api/reports/weekly", params={"team": team_id, "week_start": week_start})
         r.raise_for_status()
@@ -366,6 +376,76 @@ def test_message(site_name: str) -> str:
     return f"✅ {site_name} Discord 알림 연결 테스트"
 ```
 
+`discord.py` 뒤에 발송 대상을 core에서 읽는 `Fanout`을 둔다. `notify`·`weekly`는
+`Webhook`이든 `Fanout`이든 `send(text)` 하나만 쓴다(`Sender`).
+
+```python
+class Fanout:
+    """core에 등록된 팀 채널 전부로 보낸다.
+
+    주소는 웹 화면에서 관리하므로 여기서 60초 캐시해 두고, core가 **일시적으로** 안 되면
+    마지막으로 읽은 목록(없으면 환경 변수 `DISCORD_WEBHOOK_URL`)을 쓴다.
+    core가 4xx로 답하면(토큰·권한·팀) 설정 문제라 그대로 실패시킨다.
+    `Webhook.send`와 같은 모양이라 notify·weekly는 그대로 쓴다.
+
+    여러 채널 중 한 곳이 실패해도 나머지 채널에는 보낸다. 그 뒤 첫 예외를 다시 던져
+    그 알림을 실패로 남긴다(store가 자리를 잡아 두었으니 다음 실행에서 중복 발송되지 않는다).
+    """
+
+    def __init__(self, core, team_id: int, fallback_url: str = "", ttl: int = 60, **hook_kwargs):
+        self.core = core
+        self.team_id = team_id
+        self.fallback_url = fallback_url
+        self.ttl = ttl
+        self.hook_kwargs = hook_kwargs
+        self._urls: list[str] | None = None
+        self._read_at = 0.0
+        # 상주 프로세스다. 메시지마다 httpx.Client를 새로 만들면 소켓이 쌓인다.
+        self._hooks: dict[str, Webhook] = {}
+
+    def targets(self) -> list[str]:
+        now = time.monotonic()
+        if self._urls is None or now - self._read_at > self.ttl:
+            try:
+                self._urls = self.core.webhook_urls(self.team_id)
+                self._read_at = now
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code < 500:
+                    # 토큰·권한·팀 설정 문제다. 예비 주소로 조용히 흘려보내면
+                    # 관리자가 화면에서 끈 채널로 계속 알림이 나갈 수 있다.
+                    raise
+                log.warning("core가 알림 채널 목록을 주지 못했다: %s", e)
+            except Exception as e:  # noqa: BLE001  일시적 장애가 알림을 영구히 막지 않게
+                log.warning("core에서 알림 채널 목록을 읽지 못했다: %s", e)
+        if self._urls is not None:
+            return self._urls  # 빈 목록은 "보낼 곳 없음"이 맞다. 예비 주소로 넘기지 않는다
+        return [self.fallback_url] if self.fallback_url else []
+
+    def send(self, text: str) -> str:
+        urls = self.targets()
+        if not urls:
+            raise RuntimeError("보낼 알림 채널이 없습니다. 웹에서 팀 → 알림 채널에 등록하세요.")
+        first = None
+        for url in urls:
+            try:
+                self._hooks.setdefault(url, Webhook(url, **self.hook_kwargs)).send(text)
+            except Exception as e:  # noqa: BLE001  한 채널이 죽어도 나머지에는 보낸다
+                log.warning("채널 하나에 실패했다. 나머지 채널은 계속 보낸다: %s", e)
+                first = first or e
+        if first is not None:
+            raise first  # 종류(UnknownResult 등)를 그대로 올려 store가 같게 분류한다
+        return "sent"
+```
+
+- 등록된 채널이 여러 개면 **전부**로 보낸다. 중복 방지는 `store`가 (task, kind, due) 단위로
+  하므로 한 번의 논리적 알림이 여러 채널로 나가도 한 건으로 센다.
+- 목록을 **읽는 데 성공하면** 그 목록이 답이다. 빈 목록은 "보낼 곳 없음"이므로 예비 주소로
+  넘기지 않고 `RuntimeError`로 실패시킨다(관리자가 화면에서 전부 끈 것을 존중한다).
+- core가 **일시적으로** 안 될 때만(5xx·네트워크) 마지막으로 읽은 목록을 쓰고, 그것도 없으면
+  `DISCORD_WEBHOOK_URL`을 쓴다. core가 4xx로 답하면(토큰·권한·팀 설정) 감추지 않고 실패시킨다.
+- 채널 하나가 죽어도 나머지 채널에는 보낸 뒤 첫 예외를 다시 던진다. 그 알림은 실패로 남지만
+  `store`가 자리를 잡아 두었으니 살아 있는 채널에 중복으로 가지 않는다.
+
 ### `discord_service/notify.py`
 
 ```python
@@ -373,7 +453,7 @@ import logging
 from datetime import date, timedelta
 
 from .core_client import CoreClient
-from .discord import UnknownResult, Webhook
+from .discord import Sender, UnknownResult
 from .messages import deadline_message
 from .store import Store
 
@@ -398,7 +478,7 @@ def classify(task: dict, today: date) -> str | None:
     return None
 
 
-def run_deadlines(core: CoreClient, hook: Webhook, store: Store, team_id: int, today: date) -> dict:
+def run_deadlines(core: CoreClient, hook: Sender, store: Store, team_id: int, today: date) -> dict:
     """하루 1회. 결과 dict: {sent, skipped, failed, unknown}."""
     today_s = today.isoformat()
     result = {"sent": 0, "skipped": 0, "failed": 0, "unknown": 0}
@@ -551,7 +631,7 @@ import logging
 from datetime import date, timedelta
 
 from .core_client import CoreClient
-from .discord import UnknownResult, Webhook
+from .discord import Sender, UnknownResult
 from .store import Store
 from .summarize import summarize
 
@@ -563,7 +643,7 @@ def last_monday(today: date) -> date:
     return this_monday - timedelta(days=7)
 
 
-def run_weekly(core: CoreClient, hook: Webhook, store: Store, team_id: int, week_start: date, provider: str, force: bool = False) -> dict:
+def run_weekly(core: CoreClient, hook: Sender, store: Store, team_id: int, week_start: date, provider: str, force: bool = False) -> dict:
     ws = week_start.isoformat()
     if not force and store.weekly_sent(ws):
         return {"status": "skipped", "period_start": ws}
@@ -594,7 +674,7 @@ from datetime import datetime
 
 from .config import Config
 from .core_client import CoreClient
-from .discord import Webhook
+from .discord import Fanout, Sender
 from .notify import run_deadlines
 from .store import Store
 from .weekly import last_monday, run_weekly
@@ -602,15 +682,18 @@ from .weekly import last_monday, run_weekly
 log = logging.getLogger(__name__)
 
 
-def tick(cfg: Config, core: CoreClient, hook: Webhook, store: Store, now: datetime) -> list[dict]:
+def tick(cfg: Config, core: CoreClient, hook: Sender, store: Store, now: datetime) -> list[dict]:
     """1분마다 호출. 실행한 작업 결과 목록."""
     results = []
     today = now.date()
     if now.hour >= cfg.send_hour and store.claim_daily("deadline", today.isoformat()):
         try:
             r = run_deadlines(core, hook, store, cfg.team_id, today)
-            store.record_run("deadline", True, str(r))
-            core.report_status(True, {"job": "deadline", **r})
+            # 발송 실패는 예외로 올라오지 않고 결과에 세어진다(채널 하나가 죽었거나
+            # 등록된 채널이 아예 없을 때). /ops에 ok로 보이면 아무도 모른다.
+            ok = r["failed"] == 0
+            store.record_run("deadline", ok, str(r))
+            core.report_status(ok, {"job": "deadline", **r})
             results.append({"job": "deadline", **r})
         except Exception as e:  # noqa: BLE001
             store.release_daily("deadline", today.isoformat())  # 다음 tick에 다시 시도
@@ -635,7 +718,7 @@ def tick(cfg: Config, core: CoreClient, hook: Webhook, store: Store, now: dateti
 def loop(cfg: Config):
     # ponytail: 단일 프로세스 전제. 복제 수를 늘리면 SQLite 파일을 공유하지 못하므로 1개만 띄운다.
     core = CoreClient(cfg.core_url, cfg.core_token)
-    hook = Webhook(cfg.webhook_url)
+    hook = Fanout(core, cfg.team_id, cfg.webhook_url)
     store = Store(cfg.db_path)
     log.info("discord_service 시작 (team=%s, send_hour=%s)", cfg.team_id, cfg.send_hour)
     while True:
@@ -658,7 +741,7 @@ from datetime import date, datetime
 
 from .config import Config
 from .core_client import CoreClient
-from .discord import Webhook
+from .discord import Fanout
 from .messages import test_message
 from .notify import run_deadlines
 from .scheduler import loop, tick
@@ -684,7 +767,7 @@ def main():
     cfg = Config.from_env()
     store = Store(cfg.db_path)
     core = CoreClient(cfg.core_url, cfg.core_token)
-    hook = Webhook(cfg.webhook_url)
+    hook = Fanout(core, cfg.team_id, cfg.webhook_url)
 
     if a.cmd == "run":
         loop(cfg)
@@ -742,10 +825,13 @@ def task(i, due, status="todo", stop_reason=""):
 class FakeCore:
     """core API 흉내. tasks dict를 바꾸면 응답이 바뀐다."""
 
-    def __init__(self, tasks: list[dict], weekly: dict | None = None):
+    def __init__(self, tasks: list[dict], weekly: dict | None = None, webhook_urls: list[str] | None = None):
         self.tasks = {t["id"]: t for t in tasks}
         self.weekly_data = weekly
         self.status_reports = []
+        self.webhook_urls = ["https://discord.com/api/webhooks/1/aaa"] if webhook_urls is None else webhook_urls
+        self.webhook_status = 200  # 500으로 바꾸면 목록 조회가 실패한다
+        self.webhook_calls = 0
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -760,6 +846,11 @@ class FakeCore:
             return httpx.Response(200, json=t) if t else httpx.Response(404, json={"detail": "x"})
         if path == "/api/reports/weekly":
             return httpx.Response(200, json=self.weekly_data)
+        if path == "/api/integrations/discord/webhooks":
+            self.webhook_calls += 1
+            if self.webhook_status != 200:
+                return httpx.Response(self.webhook_status, json={"detail": "x"})
+            return httpx.Response(200, json={"urls": self.webhook_urls})
         if path.startswith("/api/integrations/"):
             self.status_reports.append(json.loads(request.content))
             return httpx.Response(204)
@@ -770,11 +861,13 @@ class FakeHook:
     def __init__(self, statuses=None):
         self.sent = []
         self.payloads = []          # test_no_everyone_mentions가 allowed_mentions를 본다
+        self.urls = []              # test_fanout이 어느 채널로 갔는지 본다
         self.statuses = list(statuses or [])
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         self.payloads.append(payload)
+        self.urls.append(str(request.url))
         self.sent.append(payload["content"])
         code = self.statuses.pop(0) if self.statuses else 204
         return httpx.Response(code, headers={"Retry-After": "0"} if code == 429 else {})
@@ -833,6 +926,20 @@ def make_core(fake: FakeCore) -> CoreClient:
 | `test_chunk_splits_long_text` | 3000자 **초과**(줄 100개 × 35자 = 3500자) → 조각 2개 이상, 각 ≤1900, 이어 붙이면 원문 |
 | `test_no_everyone_mentions` | 전송 payload의 `allowed_mentions == {"parse": ["users"]}` |
 
+`tests/test_fanout.py`
+
+| 테스트 | 검증 |
+|---|---|
+| `test_sends_to_every_registered_channel` | core가 주소 2개를 주면 두 곳 모두에 같은 본문이 간다 |
+| `test_channel_list_is_cached_for_ttl` | 메시지 2건을 보내도 목록 조회는 1회 (`webhook_calls == 1`) |
+| `test_keeps_last_list_when_core_goes_down` | 한 번 읽은 뒤 core가 500이 되어도 마지막 목록으로 계속 보낸다 |
+| `test_falls_back_to_env_url_when_core_never_answers` | core가 처음부터 500이면 `DISCORD_WEBHOOK_URL`로 보낸다 |
+| `test_no_channel_no_send` | 등록도 예비값도 없으면 `RuntimeError`, 발송 0건 |
+| `test_turning_every_channel_off_stops_sending` | 예비 주소가 있어도, core가 빈 목록을 주면 보내지 않는다 |
+| `test_config_error_from_core_is_not_papered_over` | core가 403이면 예비 주소로 보내지 않고 `HTTPStatusError` |
+| `test_one_dead_channel_does_not_block_the_others` | A가 3회 실패해도 B는 받는다. 그 뒤 예외 |
+| `test_send_failure_is_reported_to_core_as_not_ok` | 전부 실패한 tick은 `/ops`에 `ok: false`로 보고된다 |
+
 `tests/test_store.py`
 
 | 테스트 | 검증 |
@@ -872,8 +979,8 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-- [x] 위 두 명령 통과 (20 passed, ruff 0)
-- [ ] 실제 Discord 채널 발송  ← 사용자 인프라 필요 — 컨테이너에서 로컬 싱크로 `test`·`deadlines`·`weekly` 경로와 메시지 본문을 검증했다. 진짜 `DISCORD_WEBHOOK_URL`만 넣으면 된다
+- [x] 위 두 명령 통과 (29 passed, ruff 0)
+- [ ] 실제 Discord 채널 발송  ← 사용자 인프라 필요 — 컨테이너에서 로컬 싱크로 `test`·`deadlines`·`weekly` 경로와 메시지 본문을 검증했다. 웹 화면 `팀 → 알림 채널`에 진짜 Webhook 주소를 등록하고 [테스트 발송]을 누르면 된다 (`DISCORD_WEBHOOK_URL`은 예비용)
 - [x] `deadlines` 1회 발송 후 재실행 시 `skipped` (sent 3 → skipped 3, 로컬 싱크)
 - [x] `weekly --now`로 고정 형식 주간 보고 1건 발송 (`source: fixed`)
 - [x] core `/ops`에 `discord` 행이 생긴다 (`POST /api/integrations/discord/status` → 204, Postgres 확인)

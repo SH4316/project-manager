@@ -10,9 +10,9 @@ from common.errors import ServiceError
 from projects.services import project_stats
 from reports.services import team_status
 from teams import services as tsv
-from teams.models import Invite, Membership
+from teams.models import DiscordWebhook, Invite, Membership
 
-from ..forms import InviteForm, TeamForm
+from ..forms import InviteForm, TeamForm, WebhookForm
 from .common import apply_service_error, can_admin, current_team, team_or_404
 
 
@@ -81,17 +81,30 @@ def team_detail(request, team_id):
     )
 
 
-@login_required
-def members(request, team_id):
+def _admin_only(request, team_id):
+    """팀 관리자 전용 화면의 공통 관문. 팀원에게는 화면 자체를 숨긴다(404)."""
     team = team_or_404(request.user, team_id)
     if not can_admin(request.user, team):
         raise Http404
+    return team
+
+
+@login_required
+def members(request, team_id):
+    """팀원 관리. 역할·제거·초대에 더해, 제거 판단에 필요한 업무량을 함께 보여준다."""
+    team = _admin_only(request, team_id)
+    load = {r["assignee_id"]: r for r in team_status(team)["by_assignee"]}
+    rows = [
+        {"m": m, "load": load.get(m.user_id)}
+        for m in team.memberships.select_related("user").order_by("user__display_name")
+    ]
     return render(
         request,
         "teams/members.html",
         {
             "team": team,
-            "memberships": team.memberships.select_related("user").order_by("user__display_name"),
+            "rows": rows,
+            "admin_count": sum(1 for r in rows if r["m"].role == "admin"),
             "invites": team.invites.filter(revoked_at__isnull=True),
             "form": InviteForm(),
             "site_url": settings.SITE_URL,
@@ -153,3 +166,92 @@ def member_remove(request, membership_id):
     except ServiceError as e:
         messages.error(request, " ".join(e.errors.values()))
     return _member_redirect(request, team_id)
+
+
+# ---------- Discord 알림 채널 ----------
+
+
+def _webhook_or_404(request, webhook_id):
+    """팀 관리자만 만질 수 있다. 남의 팀 id를 넣어도 화면과 같은 404가 된다."""
+    wh = get_object_or_404(DiscordWebhook.objects.select_related("team"), pk=webhook_id)
+    _admin_only(request, wh.team_id)
+    return wh
+
+
+def _webhook_page(request, team, form):
+    return render(
+        request,
+        "teams/webhooks.html",
+        {
+            "team": team,
+            "webhooks": tsv.webhooks_of(team),
+            "form": form,
+            "help": tsv.WEBHOOK_HELP,
+            "is_admin": True,
+        },
+    )
+
+
+@login_required
+def webhooks(request, team_id):
+    return _webhook_page(request, _admin_only(request, team_id), WebhookForm())
+
+
+@login_required
+@require_POST
+def webhook_create(request, team_id):
+    team = _admin_only(request, team_id)
+    form = WebhookForm(request.POST)
+    if form.is_valid():
+        try:
+            wh = tsv.add_webhook(
+                team, form.cleaned_data["name"], form.cleaned_data["url"], request.user
+            )
+            messages.success(
+                request, f"{wh.name} 채널을 등록했습니다. 테스트 발송으로 확인해 보세요."
+            )
+        except ServiceError as e:
+            apply_service_error(form, e)
+    if form.errors:
+        return _webhook_page(request, team, form)
+    return redirect("team_webhooks", team_id=team.pk)
+
+
+@login_required
+@require_POST
+def webhook_toggle(request, webhook_id):
+    wh = _webhook_or_404(request, webhook_id)
+    try:
+        tsv.set_webhook_active(wh, not wh.is_active, request.user)
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+    return redirect("team_webhooks", team_id=wh.team_id)
+
+
+@login_required
+@require_POST
+def webhook_delete(request, webhook_id):
+    wh = _webhook_or_404(request, webhook_id)
+    team_id = wh.team_id
+    try:
+        tsv.delete_webhook(wh, request.user)
+        messages.success(request, "채널을 삭제했습니다.")
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+    return redirect("team_webhooks", team_id=team_id)
+
+
+@login_required
+@require_POST
+def webhook_test(request, webhook_id):
+    wh = _webhook_or_404(request, webhook_id)
+    try:
+        ok, detail = tsv.send_test_message(wh, request.user)
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+    else:
+        if ok:
+            messages.success(request, f"{wh.name} 채널로 확인 메시지를 보냈습니다.")
+        else:
+            messages.error(request, f"{wh.name} 발송 실패 — {detail}")
+    return redirect("team_webhooks", team_id=wh.team_id)

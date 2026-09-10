@@ -95,7 +95,93 @@ def remove_member(membership, actor):
 
 def _admin_count(team) -> int:
     return Membership.objects.filter(team=team, role="admin").count()
+
+
+# ---------- Discord 알림 채널 ----------
+
+WEBHOOK_HELP = "Discord 채널 → 설정 → 연동 → 웹후크에서 만든 주소를 붙여넣으세요."
+
+
+def webhooks_of(team):
+    return DiscordWebhook.objects.filter(team=team).select_related("created_by")
+
+
+def active_webhook_urls(team) -> list[str]:
+    """discord 서비스가 읽어 가는 발송 대상. 순서는 이름순으로 고정한다."""
+    return list(webhooks_of(team).filter(is_active=True).values_list("url", flat=True))
+
+
+def add_webhook(team, name: str, url: str, actor) -> DiscordWebhook:
+    require_admin(actor, team)
+    name, url = name.strip()[:50], url.strip()
+    if not name:
+        raise ServiceError({"name": "채널 이름을 입력하세요."})
+    if not WEBHOOK_RE.match(url):
+        raise ServiceError({"url": "Discord Webhook 주소 형식이 아닙니다."})
+    if DiscordWebhook.objects.filter(team=team, url=url).exists():
+        raise ServiceError({"url": "이미 등록한 Webhook입니다."})
+    return DiscordWebhook.objects.create(team=team, name=name, url=url, created_by=actor)
+
+
+def set_webhook_active(webhook, active: bool, actor):
+    require_admin(actor, webhook.team)
+    if webhook.is_active != active:
+        webhook.is_active = active
+        webhook.save(update_fields=["is_active"])
+
+
+def delete_webhook(webhook, actor):
+    require_admin(actor, webhook.team)
+    webhook.delete()
+
+
+def send_test_message(webhook, actor, send=None) -> tuple[bool, str]:
+    """확인용 메시지 1건을 보내고 결과를 기록한다. (성공?, 사유) 를 돌려준다.
+
+    실패 사유에 URL이 섞이지 않도록 예외 원문은 쓰지 않는다(GUIDE-00 §3).
+    """
+    require_admin(actor, webhook.team)
+    if webhook.last_test_at and (timezone.now() - webhook.last_test_at).total_seconds() < 30:
+        raise ServiceError({"url": "잠시 후 다시 시도하세요."})
+    send = send or post_discord
+    try:
+        send(webhook.url, f"✅ {webhook.team.name} 알림 연결 확인")
+        ok, detail = True, ""
+    except urllib.error.HTTPError as e:
+        ok, detail = (
+            False,
+            f"Discord 응답 {e.code}" + (" (삭제된 Webhook)" if e.code == 404 else ""),
+        )
+    except Exception:  # noqa: BLE001  네트워크·DNS·타임아웃
+        ok, detail = False, "Discord에 연결하지 못했습니다."
+    DiscordWebhook.objects.filter(pk=webhook.pk).update(
+        last_test_at=timezone.now(), last_test_ok=ok, last_test_detail=detail
+    )
+    return ok, detail
+
+
+def post_discord(url: str, text: str) -> None:
+    """core가 Discord로 직접 보내는 유일한 곳(등록 확인용 1건).
+
+    정기 알림은 discord 서비스의 일이다. 주소는 add_webhook의 WEBHOOK_RE로 이미 검증되어
+    discord.com 밖으로는 나가지 않는다.
+    """
+    body = json.dumps({"content": text, "allowed_mentions": {"parse": []}}).encode()
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=5) as r:
+        r.read()
 ```
+
+- 웹훅 관리는 전부 `require_admin`을 거친다. 화면(`views/teams.py`)은 팀 관리자가 아니면
+  404로 감추고, 실제 차단은 여기서 한다.
+- `add_webhook`은 `WEBHOOK_RE`로 주소를 검사한다. 이 검사가 곧 SSRF 방지다
+  (검사를 통과한 주소만 `post_discord`가 연다).
+- `send_test_message`의 실패 사유에는 예외 원문을 쓰지 않는다. 예외 문구에 주소가 섞여
+  화면·로그로 새는 것을 막는다(GUIDE-00 §3).
+- 정기 알림은 discord 서비스가 보낸다. core가 Discord로 직접 보내는 곳은
+  `post_discord`(등록 확인용 1건) 하나뿐이다.
 
 ### 3.2 `core/projects/services.py`
 
@@ -187,7 +273,12 @@ def update_project(project, changes: dict, *, actor, source="web", token=None, e
     old_owners = list(project.owners.all())
     new_owners = list(changes.get("owners", old_owners))
     new = {f: changes.get(f, getattr(project, f)) for f in ("name", "purpose", "status")}
-    _validate(project.team, new["name"], new_owners, new["status"])
+    # 새로 넣는 관리자만 검사한다. 이미 있던 사람이 팀에서 빠지면 그 프로젝트의
+    # 이름·상태조차 못 고치게 되기 때문이다(태스크 담당자와 같은 이유).
+    old_ids = {u.pk for u in old_owners}
+    _validate(
+        project.team, new["name"], [u for u in new_owners if u.pk not in old_ids], new["status"]
+    )
     new["name"] = new["name"].strip()[:100]
     new["purpose"] = (new["purpose"] or "").strip()[:200]
     if (
@@ -333,7 +424,24 @@ def _require_member(actor, project):
         raise ServiceError({"project": "이 팀의 멤버가 아닙니다."})
 
 
-def _validate(*, project, assignee, status, priority, due_date, no_due_reason, stop_reason, title):
+def _validate(
+    *,
+    project,
+    assignee,
+    status,
+    priority,
+    due_date,
+    no_due_reason,
+    stop_reason,
+    title,
+    check_assignee=True,
+):
+    """check_assignee=False면 담당자가 팀의 활성 멤버인지 보지 않는다.
+
+    담당자를 바꾸지 않는 수정에는 이 검사를 걸지 않는다. 담당자가 팀에서 빠지거나
+    비활성이 되면(팀원 관리 화면의 [제거]) 그 태스크의 중요도·기한조차 못 고치게 되고,
+    화면에는 이미 나간 사람 이름이 담긴 오류만 나온다.
+    """
     errors = {}
     if not title or not title.strip():
         errors["title"] = "제목을 입력하세요."
@@ -341,7 +449,7 @@ def _validate(*, project, assignee, status, priority, due_date, no_due_reason, s
         errors["project"] = "보관된 프로젝트에는 태스크를 둘 수 없습니다."
     if assignee is None:
         errors["assignee"] = "담당자를 지정하세요."
-    elif not assignee.is_active or not is_member(assignee, project.team):
+    elif check_assignee and (not assignee.is_active or not is_member(assignee, project.team)):
         errors["assignee"] = "담당자는 이 팀의 활성 멤버여야 합니다."
     if not isinstance(priority, int) or isinstance(priority, bool) or not 1 <= priority <= 10:
         errors["priority"] = "중요도는 1~10 사이의 정수여야 합니다."
@@ -463,6 +571,7 @@ def update_task(task, changes: dict, *, actor, source, token=None, expected_vers
         project=new["project"], assignee=new["assignee"], status=task.status,
         priority=new["priority"], due_date=new["due_date"], no_due_reason=new["no_due_reason"],
         stop_reason=new["stop_reason"], title=task.title,
+        check_assignee="assignee" in changes,
     )
     old = {f: getattr(task, f) for f in LOCKED_FIELDS}
     fields = {f: v for f, v in new.items() if v != old[f]}

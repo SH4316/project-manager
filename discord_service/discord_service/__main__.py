@@ -5,7 +5,7 @@ from datetime import date, datetime
 
 from .config import Config
 from .core_client import CoreClient
-from .discord import Webhook
+from .discord import Fanout
 from .messages import test_message
 from .notify import run_deadlines
 from .scheduler import loop, tick
@@ -31,7 +31,7 @@ def main():
     cfg = Config.from_env()
     store = Store(cfg.db_path)
     core = CoreClient(cfg.core_url, cfg.core_token)
-    hook = Webhook(cfg.webhook_url)
+    hook = Fanout(core, cfg.team_id, cfg.webhook_url)
 
     if a.cmd == "run":
         loop(cfg)
