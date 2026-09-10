@@ -394,7 +394,9 @@ Cloudflare Tunnel 뒤에 놓였을 때를 흉내 내 `.env`를 `DEBUG=0`,
   "Found another file with the destination path" 경고를 낸다. `web`이 `INSTALLED_APPS`에 있어
   `web/static/`이 `STATICFILES_DIRS`와 앱 static 디렉터리로 **두 번** 잡히기 때문이다.
   같은 파일이라 결과는 정상이고, 지시서가 지정한 설정 그대로여서 고치지 않았다.
-- 로컬 compose는 host 포트 **5432 하나만** 쓴다(`web`·`mcp`는 포트를 열지 않는다).
+- (이후 변경) `web`·`mcp`도 `127.0.0.1`에 포트를 연다(`8000`·`8080`). Docker가 기본 로컬 실행
+  경로가 되면서 브라우저·AI 클라이언트가 호스트에서 바로 붙어야 했다. 루프백만 바인딩하므로
+  밖에서는 들어올 수 없고, 서버에서도 지우지 않는다.
 
 ---
 
@@ -890,4 +892,4 @@ GUIDE-04 Step 5~8을 그대로 진행하면 된다.
 - UptimeRobot 모니터 등록, Proxmox vzdump 예약
 - Claude Code / Codex CLI / Claude 앱 / ChatGPT 커넥터 등록 (개인 토큰과 공개 MCP URL 필요)
 
-서버에 올릴 때 `compose.yml`의 `db` 포트 두 줄을 지우는 것을 잊지 말 것.
+포트는 `db`·`web`·`mcp` 모두 `127.0.0.1`에만 붙는다 — 서버에서도 지울 필요가 없다.

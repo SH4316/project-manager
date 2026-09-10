@@ -25,8 +25,12 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    ports:
+      # 루프백만. 밖에서는 못 들어온다(공개는 cloudflared가 한다) — 서버에서도 지울 필요 없다.
+      - "127.0.0.1:8000:8000"
 
   discord:                       # 발송(60초 틱): 마감 DM·주간 보고
+    profiles: ["discord"]        # DISCORD_BOT_TOKEN 없이는 기동에 실패한다 → 기본에서 뺀다
     build: ./discord_service
     env_file: .env.discord
     environment:
@@ -39,6 +43,7 @@ services:
     restart: unless-stopped
 
   discord-bot:                   # 수신(게이트웨이): DM 평문 명령. 같은 이미지, 리스너만 돈다
+    profiles: ["discord"]
     build: ./discord_service
     env_file: .env.discord
     environment:
@@ -57,8 +62,11 @@ services:
     depends_on:
       - web
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # 루프백만. AI 클라이언트를 로컬에서 붙여 볼 때 쓴다
 
   cloudflared:
+    profiles: ["tunnel"]         # TUNNEL_TOKEN 없이는 기동에 실패한다 → 기본에서 뺀다
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run
     environment:

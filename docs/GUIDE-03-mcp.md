@@ -544,6 +544,10 @@ uv run ruff check .
 CORE_URL=http://localhost:8000 uv run python -m mcp_server
 ```
 
+Docker로 띄웠으면 따로 실행할 필요가 없다 — `docker compose up -d`가 `mcp`를
+`127.0.0.1:8080`에 올린다. 로컬에서 AI 클라이언트를 붙여 볼 때는
+`http://127.0.0.1:8080/mcp`(헤더 인증) 또는 `http://127.0.0.1:8080/u/<TOKEN>/mcp`를 쓴다.
+
 - [x] 테스트·린트 통과 (16 passed, ruff 0)
 - [x] Claude Code 연결 확인 — `claude mcp add --transport http … --header`로 등록 후 `claude mcp list` → **✔ Connected** (MCP 핸드셰이크·도구 목록 성공). 같은 `list_teams` 호출은 JSON-RPC로 직접 확인했다(중첩 `claude -p`는 OAuth 만료로 불가). 확인 후 등록 해제
 - [x] Codex CLI 확인 — `codex mcp add --url … --bearer-token-env-var SANDOL_TOKEN`이 이 지시서 표의 `[mcp_servers.*]` `url`·`bearer_token_env_var` 형태를 그대로 만든다. 확인 후 제거하고 사용자 `~/.codex/config.toml`을 md5 동일하게 원복

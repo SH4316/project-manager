@@ -48,25 +48,53 @@ Postgres로도 한 번 돌린다(아래 Docker 실행으로 `db`만 띄운 상�
 cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q
 ```
 
-## Docker 로컬 실행
+## Docker 로컬 실행 (기본)
 
 ```bash
 cp .env.example .env
 cp .env.discord.example .env.discord   # 비어 있어도 된다. 없으면 compose가 파일 전체를 못 읽는다
-# .env를 로컬용으로: DEBUG=1, ALLOWED_HOSTS=localhost,127.0.0.1,
-#                  CSRF_TRUSTED_ORIGINS=http://localhost:8000, SITE_URL=http://localhost:8000
-docker compose up -d --build db web mcp
-docker compose exec web python manage.py createsuperuser
-docker compose exec web python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/healthz').read())"
 ```
 
-`web`은 포트를 열지 않는다. 바깥에서 들어오는 HTTPS는 Cloudflare Tunnel(`cloudflared`)이 넘긴다.
+`.env`에서 네 줄만 로컬용으로 바꾼다:
+
+```
+DEBUG=1
+ALLOWED_HOSTS=localhost,127.0.0.1,web
+CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+SITE_URL=http://localhost:8000
+```
+
+```bash
+docker compose up -d --build              # db·web·mcp만 뜬다
+docker compose exec web python manage.py createsuperuser
+```
+
+- 웹: **http://localhost:8000** (`web`이 `127.0.0.1:8000`에 붙는다)
+- MCP: **http://localhost:8080** · Postgres: `127.0.0.1:5432`
+- 세 포트 모두 **루프백만** 바인딩한다. 바깥에서 들어오는 HTTPS는 Cloudflare Tunnel(`cloudflared`)이 넘긴다.
+
+`discord`·`discord-bot`·`cloudflared`는 **프로필**로 빼 두었다. 시크릿이 없으면 기동에 실패하므로
+기본 `up`에서 뜨지 않고, 필요할 때만 켠다:
+
+```bash
+docker compose --profile discord up -d    # .env.discord를 채운 뒤
+docker compose --profile tunnel up -d     # CLOUDFLARE_TUNNEL_TOKEN을 채운 뒤
+```
+
+이름을 직접 대면(`docker compose up -d discord`) 프로필과 무관하게 뜬다 — 배포 명령은 그대로 쓴다.
+
+SQLite로 개발하던 데이터를 Docker(Postgres)로 옮기려면:
+
+```bash
+uv run --project core python core/manage.py dumpdata --natural-foreign --natural-primary   --exclude contenttypes --exclude auth.permission --exclude sessions -o devdata.json
+docker compose exec -T web python manage.py loaddata --format=json - < devdata.json
+```
 
 ## 서버 배포 요약
 
 1. Proxmox에 Debian 12 LXC(`nesting=1`, `keyctl=1`)를 만들고 Docker를 설치한다.
 2. 저장소를 `/opt/project-manager`에 복사한다(`.venv/`, `db.sqlite3` 제외).
-3. `.env`와 `.env.discord`를 실제 값으로 채우고 `compose.yml`의 `db` 포트 두 줄을 지운다.
+3. `.env`와 `.env.discord`를 실제 값으로 채운다(포트는 셋 다 루프백이라 그대로 둔다).
 4. Cloudflare Zero Trust에서 터널을 만들고 공개 호스트 **두 개**를 연결한다: `pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`. Discord 봇은 밖으로 나가는 연결만 쓰므로 공개 경로가 필요 없다.
 5. `docker compose up -d --build db web mcp cloudflared` 후 superuser 생성.
 6. 팀 생성 → 초대 링크 배포.

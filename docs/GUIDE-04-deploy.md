@@ -194,17 +194,35 @@ SITE_NAME=산돌이 업무
 ```bash
 cp .env.example .env
 cp .env.discord.example .env.discord   # 비어 있어도 된다. 없으면 compose가 파일 전체를 못 읽는다.
-# .env에서 ALLOWED_HOSTS=localhost,127.0.0.1  CSRF_TRUSTED_ORIGINS=http://localhost:8000  SITE_URL=http://localhost:8000  DEBUG=1 로 바꾼다.
-docker compose up -d --build db web mcp
+# .env에서 DEBUG=1  ALLOWED_HOSTS=localhost,127.0.0.1,web
+#          CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+#          SITE_URL=http://localhost:8000  으로 바꾼다.
+docker compose up -d --build           # db·web·mcp. discord·cloudflared는 프로필이라 안 뜬다
 docker compose exec web python manage.py createsuperuser
 docker compose logs -f web
 ```
 
+`db`·`web`·`mcp`는 `127.0.0.1`에만 포트를 연다(`5432`·`8000`·`8080`). 루프백이라 밖에서는 못 들어오고,
+공개는 `cloudflared`가 한다 — 그래서 서버에서도 이 줄들을 지울 필요가 없다.
+
+시크릿이 필요한 세 서비스는 프로필로 빼 두었다. 없는 상태로 `up` 하면 `Config.need`가
+`SystemExit`을 내고 `restart: unless-stopped`가 크래시 루프를 만들기 때문이다:
+
+| 프로필 | 서비스 | 켜기 전에 채울 것 |
+|---|---|---|
+| `discord` | `discord`, `discord-bot` | `.env.discord`의 `CORE_TOKEN`·`DISCORD_BOT_TOKEN`·`DISCORD_CHANNEL_ID` |
+| `tunnel` | `cloudflared` | `.env`의 `CLOUDFLARE_TUNNEL_TOKEN` |
+
+`docker compose --profile discord up -d` 또는 이름을 직접 대서(`docker compose up -d discord`) 켠다.
+이름을 대면 프로필이 자동으로 켜지므로 Step 7의 배포 명령은 그대로 쓸 수 있다.
+
 확인:
 
 - `docker compose exec web python manage.py check` 오류 없음.
-- 호스트에서 `curl -s http://$(docker compose port web 8000)/healthz` 대신, `web`은 포트를 노출하지 않으므로 `docker compose exec web python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/healthz').read())"` → `{"ok": true}`.
+- 호스트에서 `curl -s http://127.0.0.1:8000/healthz` → `{"ok": true}`. 브라우저로 `http://localhost:8000/login`.
 - core 테스트를 Postgres로: `cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q` 통과.
+- SQLite로 개발하던 데이터를 옮기려면 `dumpdata`(`--exclude contenttypes --exclude auth.permission --exclude sessions`) 후
+  `docker compose exec -T web python manage.py loaddata --format=json - < devdata.json`. 비밀번호 해시가 함께 넘어와 기존 계정으로 로그인된다.
 
 ---
 
@@ -253,7 +271,7 @@ Cloudflare 대시보드 → Zero Trust → Networks → Tunnels:
 cd /opt/project-manager
 cp .env.example .env && nano .env      # 실제 값 입력. SECRET_KEY는 `python3 -c "import secrets;print(secrets.token_urlsafe(50))"`
 cp .env.discord.example .env.discord   # 봇 토큰·CORE_TOKEN은 아래 3~4번에서 채운다
-# compose.yml의 db ports 두 줄 삭제
+# 포트는 셋 다 127.0.0.1에만 붙는다 — 지울 필요 없다(밖에서는 못 들어온다)
 docker compose up -d --build db web mcp cloudflared
 docker compose exec web python manage.py createsuperuser
 docker compose logs --tail=50 web cloudflared
