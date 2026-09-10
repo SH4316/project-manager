@@ -6,14 +6,15 @@
 
 ## 요약
 
-| 파트 | 테스트 | ruff check | ruff format |
-|---|---|---|---|
-| `core/` | **105 passed**, skip 0 | 0 | 통과 |
-| `discord_service/` | **20 passed**, skip 0 | 0 | 통과 |
-| `mcp_server/` | **16 passed**, skip 0 | 0 | 통과 |
+| 파트 | 테스트 (SQLite) | 테스트 (Postgres 16) | ruff check | ruff format |
+|---|---|---|---|---|
+| `core/` | **105 passed**, skip 0 | **105 passed**, skip 0 | 0 | 통과 |
+| `discord_service/` | **20 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
+| `mcp_server/` | **16 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 
 `/api/docs`에 [GUIDE-01-3](GUIDE-01-core-3-api.md) 5.7 표의 엔드포인트 20개가 모두 보인다.
 MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_note`·이력 경로 `mcp`·폐기 토큰 오류)를 확인했다.
+Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경로까지 실행했다(아래 [Docker 검증](#docker-검증-2026-09-10-재실행-전부-통과) 절).
 
 ---
 
@@ -77,7 +78,7 @@ MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_
 - 지시서와 다르게 한 것: 지시서 7.6 목록에 없는 테스트 2개를 추가했다
   (`test_bearer_write_passes_csrf`, `test_session_write_still_needs_csrf`).
   아래 2번 수정이 회귀하지 않게 막는 테스트다.
-- 실패하거나 못 한 것: **Postgres 실행 미확인** (아래 "남은 것" 참고). SQLite에서는 전부 통과.
+- 실패하거나 못 한 것: 없음. SQLite와 **Postgres 16 모두 105개 통과**(Docker 검증 절).
 
 ### discord_service (`discord_service: notifications and weekly report`)
 
@@ -87,7 +88,9 @@ MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_
 - 검증: `uv run pytest -q` → **20 passed**. `ruff check` 0.
   `grep -r "from core\|import django" discord_service/` 결과 없음(core 미의존 확인).
 - 지시서와 다르게 한 것: **2건** (7·8번)
-- 실패하거나 못 한 것: 실제 Discord 채널 발송(`test`/`deadlines`/`weekly`)은 Webhook URL이 필요해 하지 못했다.
+- 컨테이너에서 실제 core에 붙여 `deadlines`(sent 3 → 재실행 skipped 3)·`weekly --now`·`test`·`once`를
+  전부 실행하고 메시지 본문까지 검증했다(Docker 검증 절). Webhook은 로컬 싱크를 썼다.
+- 실패하거나 못 한 것: **실제 Discord 채널** 발송만 남았다(진짜 Webhook URL 필요).
 
 ### mcp_server (`mcp_server: tools and auth`)
 
@@ -102,6 +105,8 @@ MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_
   4. `append_note` → 기존 메모 뒤에 줄 추가
   5. `transition_task` 뒤 core 변경 이력의 `source == "mcp"` (A05)
   6. 폐기·오류 토큰 → "토큰이 유효하지 않습니다" (A14)
+- 컨테이너에서도 같은 E2E를 다시 확인했다: mcp 컨테이너 → `http://web:8000`(compose 네트워크) →
+  Postgres. 도구 14개, 두 인증 방식 모두 동작(Docker 검증 절).
 - 지시서와 다르게 한 것: **1건** (6번)
 - 실패하거나 못 한 것: Claude Code·Codex CLI·커넥터 등록은 사용자 계정·공개 URL이 필요해 하지 못했다.
 
@@ -110,7 +115,8 @@ MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_
 - 만든 파일: `core/Dockerfile`, `core/entrypoint.sh`, `core/.dockerignore`, `compose.yml`,
   `.env.example`, `.gitattributes`, `README.md`의 실행 안내 절
 - 지시서와 다르게 한 것: **2건** (9·10번)
-- 실패하거나 못 한 것: **`docker compose build`·Postgres 테스트·Proxmox 배포 미실행** (아래).
+- 검증: `docker compose build` 3개 성공, 스택 기동·`/healthz`·정적 파일·재시작 멱등까지 확인(Docker 검증 절).
+- 실패하거나 못 한 것: Proxmox·Cloudflare 실제 배포는 사용자 인프라가 필요해 하지 못했다.
 
 ---
 
@@ -198,32 +204,115 @@ A01 A03 A04 A05 A06 A07 A09 A10 A11 A12 A13 A14, B01~B05 에 대응하는 테스
 
 ---
 
-## 남은 것 (환경 때문에 못 한 것)
+## Docker 검증 (2026-09-10 재실행, 전부 통과)
 
-**Docker 엔진이 이 환경에서 뜨지 않아** 아래 세 가지를 실행하지 못했다.
-Docker Desktop 프로세스는 떠 있지만 `docker-desktop` WSL 배포판이 응답하지 않아 모든 `docker` 명령이 멈춘다
-(수동 시작·재시도 모두 실패). Docker Desktop을 정상 기동한 뒤 아래를 그대로 실행하면 된다.
+첫 시도에서는 Docker 엔진이 먹통이어서 미실행으로 남겼다. 이후 엔진이 정상 기동해 전부 실행했다.
+Docker 29.1.2 / linux / overlayfs.
+
+### Postgres 16에서 core 테스트
 
 ```bash
-# 1) Postgres에서 core 테스트
-docker compose up -d db
-cd core && DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q
-
-# 2) 이미지 3개 빌드
-docker compose build web discord mcp
-
-# 3) 로컬 기동 확인
-cp .env.example .env   # DEBUG=1, ALLOWED_HOSTS=localhost,127.0.0.1, SITE_URL=http://localhost:8000
-docker compose up -d --build db web mcp
-docker compose exec web python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/healthz').read())"
+docker compose up -d db     # postgres:16-alpine, healthcheck healthy
+cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q
 ```
 
-SQLite 전용 코드는 쓰지 않았고(모델 제약·집계 모두 표준 Django), `psycopg[binary]`와
-`dj_database_url`은 이미 설정에 들어가 있다.
+**105 passed, skip 0.** SQLite 결과와 동일하다. GUIDE-01-5 §7.9의 "SQLite·Postgres 모두 통과" 충족.
 
-사용자 자산이 있어야 하는 것들도 남아 있다. GUIDE-04 Step 5~8 그대로 진행하면 된다.
+### 이미지 3개 빌드
 
-- 실제 Discord 채널 발송 (`DISCORD_WEBHOOK_URL` 필요) — `python -m discord_service test`
-- Cloudflare Tunnel 토큰과 공개 호스트 2개 등록
-- Proxmox LXC 생성·배포, UptimeRobot 모니터, vzdump 예약
+```bash
+docker compose build web discord mcp     # exit 0
+```
+
+| 이미지 | 크기 |
+|---|---|
+| `…-web` | 376MB |
+| `…-mcp` | 308MB |
+| `…-discord` | 269MB |
+
+### 스택 기동과 실제 동작
+
+`docker compose up -d web mcp` 후 확인한 것:
+
+| 확인 | 결과 |
+|---|---|
+| `entrypoint.sh` migrate | Postgres에 마이그레이션 14개 적용 OK |
+| `entrypoint.sh` collectstatic | 130개 수집·후처리 (whitenoise 압축) |
+| gunicorn | `Listening at: http://0.0.0.0:8000`, worker 2개 |
+| `/healthz` | `{"ok": true}` |
+| `manage.py check` (컨테이너 안) | 오류 0 |
+| `/login` | 200, 로그인 폼·`/static/app.css` 링크 포함 |
+| 정적 파일 서빙 | `app.css` 16,619B · `app.js` 4,970B · `vendor/htmx.min.js` 50,917B 모두 200 |
+| `docker compose restart web` | 재기동에서도 migrate·collectstatic 멱등, `/healthz` OK |
+| mcp 컨테이너 | uvicorn `0.0.0.0:8080`, StreamableHTTP 세션 매니저 시작 |
+| discord 이미지 | `status` 명령으로 설정 파싱·`/data` 볼륨에 SQLite 생성 확인 |
+
+### MCP: 컨테이너에서 compose 네트워크로 core 호출
+
+Postgres에 팀·프로젝트·태스크를 심고 쓰기 토큰을 발급한 뒤, **mcp 컨테이너 안에서** 확인했다.
+`CORE_URL=http://web:8000` 경로가 실제로 동작한다.
+
+| # | 확인 | 결과 |
+|---|---|---|
+| 1 | `tools/list` | 도구 **14개** |
+| 2 | `list_teams` (mcp → web:8000) | `['산돌이 서비스']` |
+| 3 | `list_tasks(team_id=1)` | total 1, `TASK-1 배포 확인 태스크` |
+| 4 | `get_task` | version 1, priority 8 |
+| 5 | `append_note` | `'컨테이너 배포 확인'` |
+| 6 | `transition_task` | `doing` |
+| 7 | `get_team_status` | `{open:1, overdue:0, due_this_week:1, review:0, blocked:0, no_due:0}` |
+| 8 | 잘못된 토큰 | "토큰이 유효하지 않습니다" (A14) |
+| 9 | URL 토큰 경로 `/u/<TOKEN>/mcp` | 도구 14개 |
+
+### Discord: 실제 core + 로컬 Webhook 싱크
+
+컨테이너 안에 204를 돌려주는 임시 HTTP 싱크를 띄우고 발송 경로 전체를 태웠다(실제 Discord 채널은 쓰지 않았다).
+태스크를 D-3 / D-1(막힘) / 기한 초과로 심어 두고 실행했다.
+
+| 명령 | 결과 |
+|---|---|
+| `deadlines` | `{'sent': 3, 'skipped': 0, 'failed': 0, 'unknown': 0}` |
+| `deadlines` 재실행 | `{'sent': 0, 'skipped': 3, ...}` — 중복 방지 (A11) |
+| `weekly --now` | `{'status': 'sent', 'period_start': '2026-08-31', 'source': 'fixed'}` (A12 고정 형식) |
+| `test` | `sent` |
+| `once` (tick) | core `/api/integrations/discord/status` → **204**. `/ops`에 보고되는 경로 확인 |
+
+싱크가 받은 메시지 5건을 그대로 검증했다.
+
+- D-3 / D-1 / 기한 초과가 각각 지시서 문구대로 온다:
+  `📌 마감 알림 · D-1 · 2026-09-10` / `• **TASK-4** … — 막힘 (서류 대기)` / 기한 초과에는 `(기한 2026-09-08)`
+- 주간 보고 고정 형식에 `이번 주 마감`·`기한 초과`·`막힘`·`프로젝트별`·`검토 대기 n건 · 기한 미정 n건`이 모두 있다
+- 모든 payload의 `allowed_mentions == {'parse': ['users']}` — `@everyone`·역할 멘션 차단
+- `discord_user_id`가 없는 담당자는 `display_name`으로 표시된다(멘션 fallback)
+
+### 배포 파일 무결성
+
+- `core/uv.lock`, `discord_service/uv.lock`, `mcp_server/uv.lock`, 세 `Dockerfile`, `entrypoint.sh`,
+  `.dockerignore`, `compose.yml`, `.env.example`, `.gitattributes` 모두 git에 추적된다
+  (`uv sync --frozen`이 락파일을 요구한다).
+- `core/entrypoint.sh`는 git blob·작업 트리 모두 **CR 바이트 0개**, `git check-attr` → `text: set`, `eol: lf`.
+  Windows에서 클론해도 컨테이너가 뜬다.
+
+### 알아 둘 것
+
+- `collectstatic`이 `app.css`·`app.js`·`vendor/htmx.min.js`에 대해
+  "Found another file with the destination path" 경고를 낸다. `web`이 `INSTALLED_APPS`에 있어
+  `web/static/`이 `STATICFILES_DIRS`와 앱 static 디렉터리로 **두 번** 잡히기 때문이다.
+  같은 파일이라 결과는 정상이고, 지시서가 지정한 설정 그대로여서 고치지 않았다.
+- 로컬 compose는 host 포트 **5432 하나만** 쓴다(`web`·`mcp`는 포트를 열지 않는다).
+
+---
+
+## 남은 것 (사용자 인프라가 필요한 것)
+
+Docker 관련 항목은 위에서 모두 실행했다. 남은 것은 **사용자 계정·인프라가 있어야 하는 것들**뿐이다.
+GUIDE-04 Step 5~8을 그대로 진행하면 된다.
+
+- 실제 Discord 채널 발송 — `DISCORD_WEBHOOK_URL`에 진짜 Webhook을 넣고
+  `docker compose run --rm discord python -m discord_service test`
+- Cloudflare Tunnel 토큰 발급과 공개 호스트 2개 등록 (`pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`)
+- Proxmox LXC(`nesting=1`, `keyctl=1`) 생성·배포, `https://pm.<도메인>/healthz` 확인
+- UptimeRobot 모니터 등록, Proxmox vzdump 예약
 - Claude Code / Codex CLI / Claude 앱 / ChatGPT 커넥터 등록 (개인 토큰과 공개 MCP URL 필요)
+
+서버에 올릴 때 `compose.yml`의 `db` 포트 두 줄을 지우는 것을 잊지 말 것.
