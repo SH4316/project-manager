@@ -45,7 +45,14 @@ def run_deadlines(core: CoreClient, hook: Webhook, store: Store, team_id: int, t
             if not store.claim(t["id"], kind, t["due_date"]):
                 result["skipped"] += 1
                 continue
-            fresh = core.task(t["id"])  # 발송 직전 재확인 (A09, A10)
+            try:
+                fresh = core.task(t["id"])  # 발송 직전 재확인 (A09, A10)
+            except Exception as e:  # noqa: BLE001
+                # 자리를 잡아 둔 채 예외가 나가면 그 알림은 영구히 안 나간다. 놓아주고 다음 tick에 다시 시도.
+                store.release(t["id"], kind, t["due_date"])
+                result["skipped"] += 1
+                log.warning("재확인 실패, 다음 실행에서 재시도: %s %s: %s", kind, t["id"], e)
+                continue
             if (
                 fresh is None
                 or classify(fresh, today) != kind
@@ -68,10 +75,17 @@ def run_deadlines(core: CoreClient, hook: Webhook, store: Store, team_id: int, t
     if per_kind["overdue"]:
         if store.claim_daily("overdue", today_s):
             fresh_list = []
-            for t in per_kind["overdue"]:
-                fresh = core.task(t["id"])
-                if fresh and classify(fresh, today) == "overdue":
-                    fresh_list.append(fresh)
+            try:
+                for t in per_kind["overdue"]:
+                    fresh = core.task(t["id"])
+                    if fresh and classify(fresh, today) == "overdue":
+                        fresh_list.append(fresh)
+            except Exception as e:  # noqa: BLE001
+                # 하루치 자리를 놓아주어 다음 tick에 다시 시도한다.
+                store.release_daily("overdue", today_s)
+                result["skipped"] += 1
+                log.warning("기한 초과 재확인 실패, 다음 실행에서 재시도: %s", e)
+                return result
             if fresh_list:
                 fresh_list.sort(key=lambda x: (x["due_date"], x["id"]))
                 _send(

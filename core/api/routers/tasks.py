@@ -1,3 +1,6 @@
+from datetime import date
+
+from django.db.models import F
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -39,8 +42,8 @@ def list_tasks(
     project: int | None = None,
     assignee: int | None = None,
     status: str | None = None,
-    due_from: str | None = None,
-    due_to: str | None = None,
+    due_from: date | None = None,
+    due_to: date | None = None,
     q: str | None = None,
     include_archived: bool = False,
     limit: int = 50,
@@ -68,7 +71,8 @@ def list_tasks(
     if not include_archived:
         qs = qs.filter(project__is_archived=False)
     limit, offset = clamp_page(limit, offset)
-    qs = qs.order_by("due_date", "id")
+    # nulls_last를 명시해야 SQLite(기한 미정이 앞)와 Postgres(뒤)가 같아지고, by_due()와도 맞는다.
+    qs = qs.order_by(F("due_date").asc(nulls_last=True), "id")
     total = qs.count()
     return {
         "items": [task_brief(t) for t in qs[offset : offset + limit]],

@@ -167,7 +167,8 @@ def create_project(
     if Project.objects.filter(team=team, name=name.strip()).exists():
         raise ServiceError({"name": "같은 이름의 프로젝트가 이미 있습니다."})
     project = Project.objects.create(
-        team=team, name=name.strip(), purpose=purpose.strip(), status=status, created_by=actor
+        team=team, name=name.strip()[:100], purpose=purpose.strip()[:200],
+        status=status, created_by=actor,
     )
     project.owners.set(owners)
     _log(project, "created", "", project.name, actor, source, token)
@@ -185,8 +186,8 @@ def update_project(project, changes: dict, *, actor, source="web", token=None, e
     new_owners = list(changes.get("owners", old_owners))
     new = {f: changes.get(f, getattr(project, f)) for f in ("name", "purpose", "status")}
     _validate(project.team, new["name"], new_owners, new["status"])
-    new["name"] = new["name"].strip()
-    new["purpose"] = (new["purpose"] or "").strip()
+    new["name"] = new["name"].strip()[:100]
+    new["purpose"] = (new["purpose"] or "").strip()[:200]
     if (
         new["name"] != project.name
         and Project.objects.filter(team=project.team, name=new["name"]).exists()
@@ -406,7 +407,7 @@ def create_task(
         project=project, title=title.strip()[:200], description=description or "",
         done_when=(done_when or "")[:300], next_action=(next_action or "")[:200],
         assignee=assignee, priority=priority, due_date=due_date,
-        no_due_reason=(no_due_reason or "").strip(), created_by=actor,
+        no_due_reason=(no_due_reason or "").strip()[:200], created_by=actor,
     )
     _log(task, "created", "", task.number, actor, source, token)
     if idempotency_key:
@@ -453,7 +454,7 @@ def update_task(task, changes: dict, *, actor, source, token=None, expected_vers
         _require_member(actor, new["project"])
         if new["project"].team_id != task.project.team_id:
             raise ServiceError({"project": "다른 팀의 프로젝트로 옮길 수 없습니다."})
-    new["no_due_reason"] = (new["no_due_reason"] or "").strip()
+    new["no_due_reason"] = (new["no_due_reason"] or "").strip()[:200]
     new["stop_reason"] = (new["stop_reason"] or "").strip()[:300]
     _validate(
         project=new["project"], assignee=new["assignee"], status=task.status,
@@ -722,7 +723,8 @@ def today_view(user, day: date | None = None) -> dict:
         .select_related("task__project", "task__assignee")
         .order_by("position", "id")
     ]
-    mine = Task.objects.filter(assignee=user).select_related("project", "assignee")
+    # 팀에서 빠진 뒤에도 담당으로 남은 태스크가 새지 않도록 다른 읽기 경로와 같은 범위를 쓴다.
+    mine = visible_tasks(user).filter(assignee=user)
     my_open = mine.filter(status__in=Task.OPEN)
     auto = []
     if m["pull_end"] is not None:
@@ -874,7 +876,8 @@ def search(user, q: str, *, include_closed=False, include_archived=False):
         return qs.none()
     cond = Q(title__icontains=q) | Q(project__name__icontains=q)
     num = q.upper().replace("TASK-", "")
-    if num.isdigit():
+    # isdigit()은 '²'에도 True다. int()가 받는 것은 isdecimal()뿐이다.
+    if num.isdecimal():
         cond |= Q(pk=int(num))
     return qs.filter(cond).order_by("-id")[:100]
 ```

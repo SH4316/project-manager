@@ -8,13 +8,14 @@
 
 | 파트 | 테스트 (SQLite) | 테스트 (Postgres 16) | ruff check | ruff format |
 |---|---|---|---|---|
-| `core/` | **108 passed**, skip 0 | **108 passed**, skip 0 | 0 | 통과 |
+| `core/` | **115 passed**, skip 0 | **115 passed**, skip 0 | 0 | 통과 |
 | `discord_service/` | **20 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 | `mcp_server/` | **16 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 
 `/api/docs`에 [GUIDE-01-3](GUIDE-01-core-3-api.md) 5.7 표의 엔드포인트 20개가 모두 보인다.
 MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_note`·이력 경로 `mcp`·폐기 토큰 오류)를 확인했다.
-Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경로까지 실행했다(아래 [Docker 검증](#docker-검증-2026-09-10-재실행-전부-통과) 절).
+Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경로까지 실행했다(Docker 검증 절).
+그 뒤 독립 렌즈 6개로 심층 감사를 돌려 **확정 16건 중 15건을 고쳤다**(심층 감사 절).
 
 ---
 
@@ -74,12 +75,12 @@ Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경�
 ### Step 7. 테스트 (`step 7: tests`)
 
 - 만든 파일: `core/conftest.py`, `{teams,projects,tasks,reports,api,web}/tests.py`
-- 검증: `uv run pytest -q` → **108 passed**, skip 0. `ruff check`·`ruff format --check` 통과.
-  (지시서 목록 105개 + 심층 감사에서 나온 회귀 테스트 3개)
+- 검증: `uv run pytest -q` → **115 passed**, skip 0. `ruff check`·`ruff format --check` 통과.
+  (지시서 목록 103개 + CSRF 회귀 2개 + 심층 감사 회귀 10개. 전부 지시서 §7 표에도 추가했다)
 - 지시서와 다르게 한 것: 지시서 7.6 목록에 없는 테스트 2개를 추가했다
   (`test_bearer_write_passes_csrf`, `test_session_write_still_needs_csrf`).
   아래 2번 수정이 회귀하지 않게 막는 테스트다.
-- 실패하거나 못 한 것: 없음. SQLite와 **Postgres 16 모두 108개 통과**(Docker 검증 절).
+- 실패하거나 못 한 것: 없음. SQLite와 **Postgres 16 모두 115개 통과**(Docker 검증 절).
 
 ### discord_service (`discord_service: notifications and weekly report`)
 
@@ -217,7 +218,8 @@ docker compose up -d db     # postgres:16-alpine, healthcheck healthy
 cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q
 ```
 
-**108 passed, skip 0.** SQLite 결과와 동일하다. GUIDE-01-5 §7.9의 "SQLite·Postgres 모두 통과" 충족.
+**115 passed, skip 0.** SQLite 결과와 동일하다. GUIDE-01-5 §7.9의 "SQLite·Postgres 모두 통과" 충족.
+(처음 실행은 105개였고, 심층 감사 수정과 함께 115개가 됐다.)
 
 ### 이미지 3개 빌드
 
@@ -343,68 +345,93 @@ Cloudflare Tunnel 뒤에 놓였을 때를 흉내 내 `.env`를 `DEBUG=0`,
 
 **결과: 확정 16건, 반박 11건.**
 
-### 고쳤다 (4건)
+### 고쳤다 (전부, 15건)
 
-전부 형제 코드와의 불일치(GUIDE-00 §1.3의 "오타" 범주) 또는 내가 만든 배포 산출물의 깨진 값이다.
-각각 회귀 테스트를 붙였다.
+확정 16건 중 **15건을 고쳤고 1건은 근거를 들어 남겼다.** 처음에는 HIGH 4건만 고쳤고,
+사용자 확인 뒤 나머지도 전부 고쳤다. 각각 회귀 테스트를 붙였고 지시서에도 반영했다.
 
-| # | 위치 | 문제 | 고친 것 |
-|---|---|---|---|
-| 1 | `core/tasks/services.py:175, 223` | **`no_due_reason`이 `varchar(200)`에 절단 없이 들어간다.** 형제 필드는 모두 자른다(`title[:200]`, `done_when[:300]`, `next_action[:200]`, `stop_reason[:300]`). API·MCP 스키마는 길이 제한이 없어 LLM이 쓴 긴 사유가 그대로 온다. SQLite는 조용히 저장하고 **Postgres는 `DataError` → 500** | `.strip()[:200]` 두 곳 |
-| 2 | `.env.example:4` | **`ALLOWED_HOSTS=pm.example.com`에 `web`이 없다.** compose가 mcp·discord에 `CORE_URL=http://web:8000`을 주므로 그 요청의 Host는 `web` → **DisallowedHost 400**. 내가 컨테이너 검증할 때 실제로 `web`을 넣어야 통과했다 | `pm.example.com,web` + 이유 주석 |
-| 3 | `core/tasks/services.py:509` · `core/web/views/today.py:53` | **`today_view()`·일정 카드가 팀 범위를 안 탄다.** 다른 모든 읽기 경로는 `visible_tasks(user)`를 쓰는데 이 둘만 `Task.objects.filter(assignee=user)`. 팀에서 제거된 뒤에도 담당으로 남은 태스크의 제목·기한·완료 수가 계속 보인다 | `visible_tasks(user).filter(assignee=user)` |
-| 4 | `compose.yml:2` | **`db`에만 `restart` 정책이 없다.** 나머지 네 서비스는 `unless-stopped`. 호스트 재부팅 시 Postgres만 안 올라오고 web이 `migrate`에서 크래시 루프 | `restart: unless-stopped` |
+**A. `varchar` 초과 → Postgres에서 `DataError` → 500** (SQLite는 조용히 저장한다)
 
-확인:
+| 위치 | 문제 | 고친 것 |
+|---|---|---|
+| `core/tasks/services.py` (생성·수정) | `no_due_reason`이 `varchar(200)`에 절단 없이 들어간다. 형제 필드는 모두 자른다(`title[:200]`, `done_when[:300]`, `next_action[:200]`, `stop_reason[:300]`). API·MCP 스키마에 길이 제한이 없어 LLM이 쓴 긴 사유가 그대로 온다 | `.strip()[:200]` 두 곳 |
+| `core/accounts/models.py` | `User.save()`가 `username`(150자)을 `display_name`(50자)에 복사한다. 50자 넘는 아이디로 가입하면 Postgres에서 500 | `self.username[:50]` |
+| `core/projects/services.py` (생성·수정) | `name`(100자)·`purpose`(200자)를 자르지 않는다 | `[:100]`, `[:200]` 네 곳 |
 
-- SQLite **108 passed**, Postgres 16 **108 passed** (회귀 테스트 3개 추가), `ruff check` 0, `ruff format` 통과.
-- 1번은 라이브 컨테이너 API로 재확인: 250자 `no_due_reason`으로 `POST /api/tasks` → **201, 저장값 200자**
-  (수정 전 같은 요청이 Postgres에서 500이었다).
-- 3번 회귀 테스트는 멤버십을 지운 뒤 `today_view`·`/today?schedule=1`에서 태스크가 사라지는지 본다.
+**B. 검증 안 된 요청 값 → 400·404여야 할 곳에서 500**
 
-### 확정했지만 안 고쳤다 (12건)
-
-요청 범위(Docker·Postgres·빌드)를 넘고, 지시서가 지정한 코드에 손을 대야 하는 것들이라 남겼다.
-같은 문제가 두 렌즈에서 중복으로 잡힌 2건을 합쳐 12건이다. 클래스별로 묶으면 다음과 같다.
-
-**A. `varchar` 초과 → Postgres 500** (고친 1번과 같은 클래스, 각 한 줄)
-
-- `core/accounts/models.py:24` — `User.save()`가 `username`(150자)을 `display_name`(50자)에 복사한다.
-  50자 넘는 아이디로 가입하면 Postgres에서 500. → `self.username[:50]`
-- `core/projects/services.py:68` — `name`(100자)·`purpose`(200자)를 자르지 않는다. → `[:100]`, `[:200]`
-
-**B. 검증 안 된 쿼리 파라미터 → 400이어야 할 곳에서 500**
-
-- `core/api/routers/tasks.py:62` — `due_from`/`due_to`가 `str`로 선언되어 `DateField` 조회에 그대로 간다.
-  MCP가 `due_from="next week"`를 보내면 500. → 스키마를 `date | None`으로
-- `core/web/views/projects.py:53` — `?team=abc`가 `filter(pk=...)`로 들어가 `ValueError` → 500
-- `core/tasks/services.py:698` · `core/web/views/me.py:21` — `str.isdigit()`가 `int()` 성공을 보장하지 않는다.
-  `/search?q=²`, `/me?member=²`, `/me?project=²` 모두 500. → `isdecimal()`
+| 위치 | 문제 | 고친 것 |
+|---|---|---|
+| `core/api/routers/tasks.py` | `due_from`/`due_to`가 `str`로 선언돼 `DateField` 조회에 그대로 간다. MCP가 `due_from="next week"`를 보내면 `ValidationError` → 500 | `date \| None`로 선언 (이제 **422**) |
+| `core/web/views/common.py` | `filter(pk="abc")`가 `ValueError` → 500. `/projects/new?team=abc`로 도달 | `_pk_or_404()` 헬퍼를 만들어 `team_or_404`·`project_or_404`가 공유. **공유 헬퍼 한 곳**을 막아 모든 호출자가 함께 보호된다 |
+| `core/tasks/services.py` (search) · `core/web/views/me.py` (2곳) | `str.isdigit()`은 `²`·`①`에도 True인데 `int()`는 실패한다. `/search?q=²`, `/me?member=²`, `/me?project=²` 모두 500 | `isdecimal()` |
 
 **C. 처리 안 된 `IntegrityError` → 500**
 
-- `core/web/views/settings.py:26` — 남이 쓰는 `discord_user_id`를 넣으면 필드 오류가 아니라 500
-- `core/tasks/admin.py:11` — `completed_at`이 `readonly_fields`라 admin에서 상태를 `done`으로 바꾸면
-  DB CHECK 제약에 걸려 500(입력 내용도 사라진다)
+| 위치 | 문제 | 고친 것 |
+|---|---|---|
+| `core/web/views/settings.py` | 남이 쓰는 `discord_user_id`를 넣으면 `unique=True`에 걸려 500. 폼이 `forms.Form`이라 `validate_unique`가 돌지 않는다 | 저장 전 중복 검사 → 필드 오류 "다른 사용자가 이미 쓰는 Discord 사용자 ID입니다." |
 
-**D. discord 복원력**
+**D. 데이터 격리**
 
-- `discord_service/discord_service/notify.py:48` — `store.claim()`과 발송 사이의 `core.task()`가 무방비다.
-  core가 일시적으로 429/502를 주면 예외가 `run_deadlines`를 벗어나 `sending` 행이 남고,
-  그 마감 알림은 **영구히 안 나간다**. → `core.task()`를 감싸고 실패 시 `store.release()`
+| 위치 | 문제 | 고친 것 |
+|---|---|---|
+| `core/tasks/services.py` (`today_view`) · `core/web/views/today.py` (`_schedule`) | 다른 모든 읽기 경로는 `visible_tasks(user)`를 쓰는데 이 둘만 `Task.objects.filter(assignee=user)`. 팀에서 제거된 뒤에도 담당으로 남은 태스크의 제목·기한·완료 수가 계속 보인다 | `visible_tasks(user).filter(assignee=user)` |
 
-**E. 개발/운영 정렬 차이 (내가 직접 양쪽에서 확인)**
+**E. 배포 산출물**
 
-- `core/api/routers/tasks.py:71` — `order_by("due_date", "id")`의 NULL 위치가 다르다.
-  **SQLite는 기한 미정이 맨 앞, Postgres는 맨 뒤.** 직접 측정한 값:
+| 위치 | 문제 | 고친 것 |
+|---|---|---|
+| `.env.example` | `ALLOWED_HOSTS=pm.example.com`에 `web`이 없다. compose가 mcp·discord에 `CORE_URL=http://web:8000`을 주므로 그 요청의 Host는 `web` → **DisallowedHost 400**. 내가 컨테이너 검증할 때 실제로 `web`을 넣어야 통과했다 | `pm.example.com,web` + 이유 주석 |
+| `compose.yml` | `db`에만 `restart` 정책이 없다(나머지 넷은 `unless-stopped`). 호스트 재부팅 시 Postgres만 안 올라오고 web이 `migrate`에서 크래시 루프 | `restart: unless-stopped` |
 
-  | | SQL 정렬 | Python `by_due()` | 일치 |
-  |---|---|---|---|
-  | SQLite | `undated0, undated1, dated0…` | `dated0, dated1, dated2, undated0…` | ✗ |
-  | Postgres 16 | `dated0, dated1, dated2, undated0…` | 같음 | ✓ |
+**F. discord 복원력**
 
-  **운영(Postgres)에서는 이미 옳다.** 개발용 SQLite에서만 API 목록·페이지네이션이 웹 화면과 다르게 보인다.
-  양쪽을 맞추려면 `order_by(F("due_date").asc(nulls_last=True), "id")` 한 줄.
+| 위치 | 문제 | 고친 것 |
+|---|---|---|
+| `discord_service/discord_service/notify.py` | `store.claim()`과 발송 사이의 `core.task()`가 무방비다. core가 일시적으로 429/502를 주면 예외가 `run_deadlines`를 벗어나 `sending` 행이 남고 **그 마감 알림은 영구히 안 나간다** | 개별 알림은 `store.release()`, 기한 초과 묶음은 `store.release_daily()` 후 다음 tick에 재시도 |
+
+**G. 개발/운영 정렬 차이** (내가 직접 양쪽에서 측정)
+
+`core/api/routers/tasks.py`의 `order_by("due_date", "id")`는 NULL 위치가 백엔드마다 다르다.
+
+| | SQL 정렬 | Python `by_due()` | 일치 |
+|---|---|---|---|
+| SQLite (수정 전) | `undated0, undated1, dated0…` | `dated0, dated1, dated2, undated0…` | ✗ |
+| Postgres 16 (수정 전) | `dated0, dated1, dated2, undated0…` | 같음 | ✓ |
+
+운영(Postgres)에서는 이미 옳았고 개발용 SQLite에서만 어긋났다.
+`order_by(F("due_date").asc(nulls_last=True), "id")`로 명시해 양쪽을 맞췄다.
+
+### 안 고친 1건 (근거 있음)
+
+`core/tasks/admin.py` — `completed_at`이 `readonly_fields`에 있어 Django admin에서 상태를 `done`으로
+바꾸면 `task_done_requires_completed_at` DB CHECK에 걸려 500이 난다(입력 내용도 사라진다).
+
+남긴 이유:
+
+1. **지시서가 명시적으로 허용한다.** GUIDE-01-1 §2.6이 admin 검증 절차에서
+   "admin 화면에서 500이 떠도 이 단계에서는 정상이다. 제약이 동작한다는 확인이 목적"이라고 적고 있다.
+2. **고치면 GUIDE-00 §3을 위반한다.** admin에서 `status → done`을 안전하게 만들려면 `completed_at`을
+   채우는 생명주기 규칙을 admin에 써야 하는데, "업무 규칙을 `services.py` 밖에 쓰지 않는다"는 규칙에 걸린다.
+
+즉 admin은 Task 생명주기의 쓰기 경로가 아니다. 정상 경로(웹·API·MCP)는 모두 `services.transition()`을
+지나므로 이 상태에 도달하지 않는다.
+
+### 확인
+
+| 항목 | 결과 |
+|---|---|
+| core 테스트 (SQLite) | **115 passed**, skip 0 |
+| core 테스트 (Postgres 16) | **115 passed**, skip 0 |
+| discord_service | **20 passed** |
+| mcp_server | **16 passed** |
+| `ruff check` · `ruff format --check` | 세 파트 모두 통과 |
+| 라이브 컨테이너 API + Postgres | 250자 `no_due_reason`으로 `POST /api/tasks` → **201, 저장값 200자** (수정 전 500) |
+
+신규 회귀 테스트 10개를 지시서 §7.1a·7.3·7.4·7.6·7.7 표에도 추가했고,
+§7.8의 Postgres 실행을 "권장"에서 **"반드시"**로 격상했다(varchar 초과·NULL 정렬은 SQLite에서 안 드러난다).
+
 
 ### 반박된 11건
 
@@ -420,18 +447,29 @@ Cloudflare Tunnel 뒤에 놓였을 때를 흉내 내 `.env`를 `DEBUG=0`,
 - `archive_project`/`restore_project`의 stale version(2표), `DATABASE_URL` 비밀번호 이스케이프(2표),
   일정 카드가 프로젝트 이름을 노출(2표 — 템플릿은 제목만 그린다), NULL 정렬 중복 보고(2표)
 
-### 지시서와의 불일치
+### 지시서 반영 (17곳)
 
-고친 1·2·3·4번은 모두 지시서가 그대로 적어 준 코드·값에서 왔다. 지시서 자체는 건드리지 않았다.
-다시 구현할 때 같은 문제가 되살아나지 않게 하려면 지시서도 같이 고쳐야 한다.
+고친 것은 모두 지시서가 그대로 적어 준 코드·값에서 왔다. 이 문서로 다시 구현했을 때 같은 버그가
+되살아나지 않도록 **지시서의 해당 코드 블록도 함께 고쳤다.**
 
-| 지시서 | 고칠 곳 |
+| 지시서 | 고친 내용 |
 |---|---|
-| GUIDE-01-2 §3.3 `create_task`/`update_task` | `no_due_reason`에 `[:200]` |
+| GUIDE-01-1 §1.6 `User.save` | `display_name = self.username[:50]` |
+| GUIDE-01-2 §3.2 `create_project`/`update_project` | `name[:100]`, `purpose[:200]` (4곳) |
+| GUIDE-01-2 §3.3 `create_task`/`update_task` | `no_due_reason` `[:200]` (2곳) |
 | GUIDE-01-2 §3.3 `today_view` | `mine = visible_tasks(user).filter(assignee=user)` |
-| GUIDE-01-4 §6.6 `_schedule` | 같은 범위로 |
+| GUIDE-01-2 §3.3 `search` | `isdigit()` → `isdecimal()` |
+| GUIDE-01-3 §5.6 tasks 라우터 | `due_from`/`due_to`를 `date`로, `order_by`에 `nulls_last`, import에 `date`·`F` 추가 |
+| GUIDE-01-4 §6.4 `common.py` | `_pk_or_404()` 추가, `team_or_404`·`project_or_404`가 사용 |
+| GUIDE-01-4 §6.6 `_schedule` | `ts.visible_tasks(...)` 범위로 |
+| GUIDE-01-4 §6.9 `me.py` | `isdigit()` → `isdecimal()` (2곳) |
+| GUIDE-01-5 §7.1a·7.3·7.4·7.6·7.7 | 신규 회귀 테스트 12행 추가 |
+| GUIDE-01-5 §7.8 | Postgres 실행을 "권장" → **"반드시"** |
 | GUIDE-04 Step 2 `compose.yml` | `db`에 `restart: unless-stopped` |
-| GUIDE-04 Step 3 `.env.example` | `ALLOWED_HOSTS=pm.example.com,web` |
+| GUIDE-04 Step 3 `.env.example` | `ALLOWED_HOSTS=pm.example.com,web` + 이유 주석 |
+
+`core/web/views/settings.py`의 중복 `discord_user_id` 검사는 GUIDE-01-4 §6.11이 산문 명세라
+코드 블록이 없어 문서 수정 대상이 아니다. 동작은 "폼 오류로 돌려준다"는 그 절의 서술과 어긋나지 않는다.
 
 ---
 

@@ -695,6 +695,7 @@ def search(user, q: str, *, include_closed=False, include_archived=False):
         return qs.none()
     cond = Q(title__icontains=q) | Q(project__name__icontains=q)
     num = q.upper().replace("TASK-", "")
-    if num.isdigit():
+    # isdigit()은 '²' 같은 문자에도 True다. int()가 받는 것은 isdecimal()뿐이다.
+    if num.isdecimal():
         cond |= Q(pk=int(num))
     return qs.filter(cond).order_by("-id")[:100]

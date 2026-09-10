@@ -94,3 +94,15 @@ def test_project_stats_total_excludes_cancelled(project, member):
     assert st["total"] == 2
     assert st["done"] == 1
     assert st["open"] == 1
+
+
+def test_project_name_and_purpose_truncated_to_column_length(team, admin):
+    """name varchar(100) / purpose varchar(200). 자르지 않으면 Postgres에서 DataError."""
+    p = create_project(team=team, name="N" * 150, purpose="P" * 300, actor=admin)
+    assert len(p.name) == 100
+    assert len(p.purpose) == 200
+    p = update_project(
+        p, {"name": "M" * 150, "purpose": "Q" * 300}, actor=admin, expected_version=p.version
+    )
+    assert len(p.name) == 100
+    assert len(p.purpose) == 200

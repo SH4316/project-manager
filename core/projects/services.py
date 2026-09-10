@@ -65,7 +65,11 @@ def create_project(
     if Project.objects.filter(team=team, name=name.strip()).exists():
         raise ServiceError({"name": "같은 이름의 프로젝트가 이미 있습니다."})
     project = Project.objects.create(
-        team=team, name=name.strip(), purpose=purpose.strip(), status=status, created_by=actor
+        team=team,
+        name=name.strip()[:100],
+        purpose=purpose.strip()[:200],
+        status=status,
+        created_by=actor,
     )
     project.owners.set(owners)
     _log(project, "created", "", project.name, actor, source, token)
@@ -85,8 +89,8 @@ def update_project(
     new_owners = list(changes.get("owners", old_owners))
     new = {f: changes.get(f, getattr(project, f)) for f in ("name", "purpose", "status")}
     _validate(project.team, new["name"], new_owners, new["status"])
-    new["name"] = new["name"].strip()
-    new["purpose"] = (new["purpose"] or "").strip()
+    new["name"] = new["name"].strip()[:100]
+    new["purpose"] = (new["purpose"] or "").strip()[:200]
     if (
         new["name"] != project.name
         and Project.objects.filter(team=project.team, name=new["name"]).exists()

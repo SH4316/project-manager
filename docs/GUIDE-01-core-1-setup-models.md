@@ -336,7 +336,8 @@ class User(AbstractUser):
         if not self.discord_user_id:
             self.discord_user_id = None
         if not self.display_name:
-            self.display_name = self.username
+            # username은 150자, display_name은 50자다. 자르지 않으면 Postgres에서 DataError.
+            self.display_name = self.username[:50]
         super().save(*args, **kwargs)
 
     def __str__(self):

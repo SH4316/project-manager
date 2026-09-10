@@ -65,6 +65,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped     # 없으면 호스트 재부팅 뒤 db만 내려가 web이 migrate에서 크래시 루프한다.
     ports:
       - "127.0.0.1:5432:5432"   # 로컬 개발·테스트용. 서버에서는 이 두 줄을 지운다.
 
@@ -124,7 +125,8 @@ volumes:
 # --- core (web) ---
 SECRET_KEY=change-me-to-a-long-random-string
 DEBUG=0
-ALLOWED_HOSTS=pm.example.com
+# `web`는 compose 내부 호출용(mcp·discord가 http://web:8000 으로 부른다). 빼면 그 요청이 400이 된다.
+ALLOWED_HOSTS=pm.example.com,web
 CSRF_TRUSTED_ORIGINS=https://pm.example.com
 SITE_URL=https://pm.example.com
 POSTGRES_PASSWORD=change-me

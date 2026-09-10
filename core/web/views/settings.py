@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from accounts.models import ApiToken
+from accounts.models import ApiToken, User
 
 from ..forms import ProfileForm, TokenForm
 
@@ -18,8 +18,12 @@ def profile(request):
     if request.method == "POST" and form.is_valid():
         d = form.cleaned_data
         discord = (d["discord_user_id"] or "").strip()
-        if discord and not discord.isdigit():
+        taken = discord and User.objects.filter(discord_user_id=discord).exclude(pk=u.pk).exists()
+        if discord and not discord.isdecimal():
             form.add_error("discord_user_id", "숫자만 입력하세요.")
+        elif taken:
+            # unique=True라서 그냥 저장하면 IntegrityError로 500이 된다.
+            form.add_error("discord_user_id", "다른 사용자가 이미 쓰는 Discord 사용자 ID입니다.")
         else:
             u.display_name = d["display_name"]
             u.discord_user_id = discord or None

@@ -661,15 +661,26 @@ def task_or_404(user, task_id):
     return task
 
 
+def _pk_or_404(value) -> int:
+    """URL·쿼리에서 온 id를 정수로. 숫자가 아니면 404.
+
+    filter(pk="abc")는 Django가 ValueError를 던져 500이 된다. 공유 헬퍼에서 한 번 막는다.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise Http404 from None
+
+
 def team_or_404(user, team_id):
-    team = Team.objects.filter(pk=team_id).first()
+    team = Team.objects.filter(pk=_pk_or_404(team_id)).first()
     if team is None or not is_member(user, team):
         raise Http404
     return team
 
 
 def project_or_404(user, project_id):
-    p = Project.objects.filter(pk=project_id).select_related("team").prefetch_related("owners").first()
+    p = Project.objects.filter(pk=_pk_or_404(project_id)).select_related("team").prefetch_related("owners").first()
     if p is None or not is_member(user, p.team):
         raise Http404
     return p
@@ -994,7 +1005,8 @@ def _schedule(request, day: date) -> dict:
         sel = date.fromisoformat(request.GET.get("day", "")) if request.GET.get("day") else day
     except ValueError:
         sel = day
-    my_open = Task.objects.filter(assignee=request.user, status__in=Task.OPEN).select_related("project")
+    # today_view와 같은 범위(팀 소속 태스크만)를 쓴다.
+    my_open = ts.visible_tasks(request.user).filter(assignee=request.user, status__in=Task.OPEN)
     counts = dict(
         my_open.filter(due_date__year=sel.year, due_date__month=sel.month)
         .values_list("due_date").annotate(n=Count("id"))
@@ -1554,7 +1566,7 @@ def me(request):
     raw = g.get("member", "")
     if raw == "0":
         member, member_id = 0, 0
-    elif raw.isdigit() and int(raw) != request.user.pk:
+    elif raw.isdecimal() and int(raw) != request.user.pk:
         member = (
             User.objects.filter(pk=int(raw), is_active=True, memberships__team__in=teams_of(request.user))
             .distinct().first()
@@ -1562,7 +1574,7 @@ def me(request):
         if member is None:
             raise Http404
         member_id = member.pk
-    project = project_or_404(request.user, g["project"]) if g.get("project", "").isdigit() else None
+    project = project_or_404(request.user, g["project"]) if g.get("project", "").isdecimal() else None
     group = g.get("group") if g.get("group") in dict(ts.GROUP_OPTIONS) else "due"
     f = {"due": g.get("due", ""), "project": g.get("project", ""), "status": g.get("status", ""), "priority": g.get("priority", "")}
     view = ts.me_view(

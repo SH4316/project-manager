@@ -18,7 +18,7 @@ def me(request):
     raw = g.get("member", "")
     if raw == "0":
         member, member_id = 0, 0
-    elif raw.isdigit() and int(raw) != request.user.pk:
+    elif raw.isdecimal() and int(raw) != request.user.pk:
         member = (
             User.objects.filter(
                 pk=int(raw), is_active=True, memberships__team__in=teams_of(request.user)
@@ -29,7 +29,9 @@ def me(request):
         if member is None:
             raise Http404
         member_id = member.pk
-    project = project_or_404(request.user, g["project"]) if g.get("project", "").isdigit() else None
+    project = (
+        project_or_404(request.user, g["project"]) if g.get("project", "").isdecimal() else None
+    )
     group = g.get("group") if g.get("group") in dict(ts.GROUP_OPTIONS) else "due"
     f = {
         "due": g.get("due", ""),

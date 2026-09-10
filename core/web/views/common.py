@@ -26,8 +26,20 @@ def task_or_404(user, task_id):
     return task
 
 
+def _pk_or_404(value) -> int:
+    """URL·쿼리에서 온 id를 정수로. 숫자가 아니면 404.
+
+    filter(pk="abc")는 Django가 ValueError를 던져 500이 된다. 여기서 한 번 막으면
+    이 헬퍼를 쓰는 모든 뷰가 함께 보호된다.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise Http404 from None
+
+
 def team_or_404(user, team_id):
-    team = Team.objects.filter(pk=team_id).first()
+    team = Team.objects.filter(pk=_pk_or_404(team_id)).first()
     if team is None or not is_member(user, team):
         raise Http404
     return team
@@ -35,7 +47,7 @@ def team_or_404(user, team_id):
 
 def project_or_404(user, project_id):
     p = (
-        Project.objects.filter(pk=project_id)
+        Project.objects.filter(pk=_pk_or_404(project_id))
         .select_related("team")
         .prefetch_related("owners")
         .first()

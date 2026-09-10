@@ -97,6 +97,14 @@ def api(client, write_token):
 
 ---
 
+## 7.1a `core/accounts/tests.py`
+
+| 테스트 | 검증 |
+|---|---|
+| `test_display_name_truncated_from_long_username` | 120자 username으로 `create_user` → `display_name`이 50자. (자르지 않으면 Postgres에서 `DataError`) |
+
+---
+
 ## 7.2 `core/teams/tests.py`
 
 | 테스트 | 검증 |
@@ -126,6 +134,7 @@ def api(client, write_token):
 | `test_update_project_conflict` | `update_project(p, {"purpose": "a"}, expected_version=1)` 성공 후 같은 `expected_version=1`로 다시 → `ConflictError` |
 | `test_member_cannot_archive` | `archive_project(project, actor=member)` → `ServiceError` |
 | `test_project_stats_total_excludes_cancelled` | 태스크 3개를 각각 done·todo·cancelled로 만든 뒤 `project_stats(project)` → `total == 2`, `done == 1`, `open == 1` |
+| `test_project_name_and_purpose_truncated_to_column_length` | `name="N"*150, purpose="P"*300`으로 생성 → 각각 100·200자. `update_project`도 같다. (자르지 않으면 Postgres에서 `DataError`) |
 
 ---
 
@@ -175,6 +184,8 @@ def api(client, write_token):
 | `test_me_view_member_scope` | `me_view(admin, member=0)` → `read_only` True, hint에 `"보기 전용"`, member의 task 포함. `me_view(admin, member=member)` → 제목 `"팀원의 태스크"`. `me_view(admin)` → 제목 `"내 태스크"`, count 0 |
 | `test_search_by_number_title_project` | `search(member, "TASK-1")`, `("메뉴")`, `("학식")` 모두 task 포함. `include_closed=False`면 done task 제외 |
 | `test_link_exactly_one_target` | `add_link(task=None, project=None)` → `ServiceError`. `Link.objects.create(project=p, task=t, ...)` → `IntegrityError` |
+| `test_no_due_reason_truncated_to_column_length` | 250자 `no_due_reason`으로 생성·수정 → 둘 다 200자. (자르지 않으면 Postgres에서 `DataError` → 500) |
+| `test_today_view_is_scoped_to_team_membership` | 담당 태스크가 오늘 목록에 보이는 상태에서 `Membership`을 지우면 `items == []`, `focus is None`, `counts`의 `my_open`·`due_today`·`done_7d` 모두 0 (A01) |
 
 ---
 
@@ -213,6 +224,10 @@ def api(client, write_token):
 | `test_weekly_endpoint` | `GET /api/reports/weekly?team={id}` → 200, `period_start`는 지난주 월요일 isoformat. `week_start=화요일` → 400 |
 | `test_team_status_endpoint` | `GET /api/teams/{id}/status` → 200, `counts` 키 존재 |
 | `test_invite_admin_only` | member 토큰으로 `POST /api/teams/{id}/invites` → 400. admin 토큰 → 201, `url` 이 `/join/`을 포함 |
+| `test_bearer_write_passes_csrf` | `Client(enforce_csrf_checks=True)` + Bearer 토큰으로 `POST /api/tasks/{id}/transition` → 200. (세션 인증이 쿠키 없는 요청까지 CSRF로 막지 않는지) |
+| `test_session_write_still_needs_csrf` | 같은 클라이언트로 로그인만 하고 CSRF 토큰 없이 같은 요청 → 403 |
+| `test_malformed_date_filter_returns_422_not_500` | `GET /api/tasks?due_from=abc` → 422. 올바른 날짜는 200. (`due_from`이 `str`이면 ORM에서 `ValidationError` → 500) |
+| `test_null_due_date_sorts_last_on_both_backends` | 기한 있는 것과 없는 것을 만들고 `GET /api/tasks` → 기한 미정이 뒤에 온다. SQLite·Postgres 동일 |
 
 ---
 
@@ -239,6 +254,10 @@ def api(client, write_token):
 | `test_export_json_has_no_password` | superuser `/ops/export.json` → 200, 본문에 `"password"` 없음 |
 | `test_healthz` | `GET /healthz` → 200 `{"ok": true}` |
 | `test_token_shown_once` | `POST /settings/tokens {name, scope}` → 302 → `GET` 본문에 `pm_` 포함 → 다시 `GET` 하면 `pm_` 없음 |
+| `test_schedule_card_is_scoped_to_team_membership` | `/today?schedule=1&cal=month`에 태스크 제목이 보이는 상태에서 `Membership`을 지우면 사라진다 |
+| `test_non_numeric_ids_are_404_not_500` | `GET /projects/new?team=abc` → 404. `POST /projects/new {team: "abc"}` → 404. (`filter(pk="abc")`는 `ValueError` → 500) |
+| `test_weird_digit_query_params_do_not_crash` | `/search?q=²`, `/me?member=²`, `/me?project=²` 모두 200. (`isdigit()`은 `²`에 True지만 `int()`는 실패한다) |
+| `test_duplicate_discord_id_shows_field_error` | 남이 쓰는 `discord_user_id`를 저장하면 200 + 필드 오류 "이미 쓰는". 값은 바뀌지 않는다 (`IntegrityError` → 500 방지) |
 
 ---
 
@@ -250,7 +269,8 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-전부 통과. skip 0. 통과 후 Postgres에서도 한 번 돌린다 (GUIDE-04의 compose로 db만 띄우고):
+전부 통과. skip 0. **Postgres에서도 반드시 돌린다** (GUIDE-04의 compose로 db만 띄우고).
+varchar 길이 초과와 NULL 정렬은 SQLite에서 드러나지 않으므로 이 실행이 없으면 검증이 끝나지 않는다:
 
 ```bash
 DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q

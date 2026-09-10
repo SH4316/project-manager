@@ -212,3 +212,26 @@ def test_schedule_card_is_scoped_to_team_membership(logged, task, project, membe
     Membership.objects.filter(team=project.team, user=member).delete()
     body = logged.get("/today?schedule=1&cal=month").content.decode()
     assert task.title not in body
+
+
+def test_non_numeric_ids_are_404_not_500(logged, project):
+    """쿼리·경로의 id가 숫자가 아니면 404다. filter(pk="abc")는 ValueError -> 500이 된다."""
+    assert logged.get("/projects/new?team=abc").status_code == 404
+    assert logged.post("/projects/new", {"team": "abc", "name": "x"}, headers=HX).status_code == 404
+
+
+def test_weird_digit_query_params_do_not_crash(logged, task):
+    """isdigit()은 '²'에 True지만 int()는 실패한다. isdecimal()로 막아야 한다."""
+    assert logged.get("/search?q=²").status_code == 200
+    assert logged.get("/me?member=²").status_code == 200
+    assert logged.get("/me?project=²").status_code == 200
+
+
+def test_duplicate_discord_id_shows_field_error(client, admin, member):
+    """unique=True인 discord_user_id 중복은 IntegrityError(500)가 아니라 폼 오류여야 한다."""
+    client.login(username="admin1", password="pw12345678")
+    r = client.post("/settings/profile", {"display_name": "관리자", "discord_user_id": "111"})
+    assert r.status_code == 200
+    assert "이미 쓰는" in r.content.decode()
+    admin.refresh_from_db()
+    assert admin.discord_user_id is None

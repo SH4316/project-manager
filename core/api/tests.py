@@ -258,3 +258,24 @@ def test_session_write_still_needs_csrf(client, member, task):
         content_type="application/json",
     )
     assert r.status_code == 403
+
+
+def test_malformed_date_filter_returns_422_not_500(api, task):
+    """due_from/due_to는 date로 선언돼 있어야 한다. str이면 ORM에서 ValidationError -> 500."""
+    r = api.get("/api/tasks?due_from=abc")
+    assert r.status_code == 422
+    assert api.get(f"/api/tasks?due_from={today_kst().isoformat()}").status_code == 200
+
+
+def test_null_due_date_sorts_last_on_both_backends(api, project, member):
+    """order_by에 nulls_last를 명시해야 SQLite와 Postgres 순서가 같다."""
+    create_task(
+        project=project,
+        title="dated",
+        actor=member,
+        source="web",
+        due_date=today_kst() + timedelta(days=1),
+    )
+    create_task(project=project, title="undated", actor=member, source="web", no_due_reason="미정")
+    titles = [t["title"] for t in api.get("/api/tasks?limit=10").json()["items"]]
+    assert titles.index("undated") > titles.index("dated")
