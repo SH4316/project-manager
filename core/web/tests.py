@@ -235,3 +235,47 @@ def test_duplicate_discord_id_shows_field_error(client, admin, member):
     assert "이미 쓰는" in r.content.decode()
     admin.refresh_from_db()
     assert admin.discord_user_id is None
+
+
+def test_long_idem_key_does_not_crash(logged, project):
+    """IdempotencyKey.key는 varchar(100). 폼이 막지 않으면 Postgres에서 DataError -> 500."""
+    r = logged.post(
+        "/today/quick",
+        {
+            "title": "긴 idem",
+            "project": project.pk,
+            "priority": 5,
+            "due_date": (today_kst() + timedelta(days=1)).isoformat(),
+            "idem": "z" * 300,
+        },
+        headers=HX,
+    )
+    assert r.status_code in (200, 204)
+
+
+def test_far_future_schedule_day_does_not_crash(logged, task):
+    """week_days()가 date.max 근처에서 OverflowError를 내지 않아야 한다."""
+    for day in ("9999-12-01", "9999-12-31", "0001-01-01"):
+        assert logged.get(f"/today?schedule=1&cal=month&day={day}").status_code == 200
+
+
+def test_admin_task_and_project_are_read_only(client, member, task, project):
+    """GUIDE-00 §3: Task·Project는 services 밖에서 바꾸지 않는다. admin은 조회 전용이다.
+
+    조회(목록·상세)는 200으로 남고, 추가·삭제는 403, 변경 POST는 403이며 값이 바뀌지 않는다.
+    """
+    User.objects.filter(pk=member.pk).update(is_staff=True, is_superuser=True)
+    client.login(username="member1", password="pw12345678")
+
+    assert client.get("/admin/tasks/task/").status_code == 200
+    assert client.get(f"/admin/tasks/task/{task.pk}/change/").status_code == 200
+    assert client.get(f"/admin/projects/project/{project.pk}/change/").status_code == 200
+
+    assert client.get("/admin/tasks/task/add/").status_code == 403
+    assert client.get(f"/admin/tasks/task/{task.pk}/delete/").status_code == 403
+
+    r = client.post(f"/admin/tasks/task/{task.pk}/change/", {"status": "done", "title": "해킹"})
+    assert r.status_code == 403
+    task.refresh_from_db()
+    assert task.status == "todo"
+    assert task.title == "메뉴 누락 개선"

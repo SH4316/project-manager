@@ -233,7 +233,13 @@ def render_row(request, task, error=None):
 def week_days(day: date) -> list[date | None]:
     """월간 달력 셀. 그 달 1일 앞의 빈칸(None) + 날짜. 월요일 시작."""
     first = day.replace(day=1)
-    nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+    if first.month == 12:
+        # date.max(9999-12-31)에서 다음 달을 계산하면 OverflowError가 난다.
+        nxt = (
+            date(first.year, 12, 31) if first.year == date.max.year else date(first.year + 1, 1, 1)
+        )
+    else:
+        nxt = date(first.year, first.month + 1, 1)
     cells: list[date | None] = [None] * first.weekday()
     d = first
     while d < nxt:

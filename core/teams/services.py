@@ -29,7 +29,7 @@ def create_team(name: str, purpose: str, actor) -> Team:
     name = name.strip()
     if not name:
         raise ServiceError({"name": "팀 이름을 입력하세요."})
-    team = Team.objects.create(name=name, purpose=purpose.strip(), created_by=actor)
+    team = Team.objects.create(name=name[:100], purpose=purpose.strip()[:200], created_by=actor)
     Membership.objects.create(team=team, user=actor, role="admin")
     return team
 

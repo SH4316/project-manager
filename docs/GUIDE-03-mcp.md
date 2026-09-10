@@ -14,7 +14,7 @@ GUIDE-00을 먼저 읽는다. 이 파트도 **core 코드를 import하지 않는
 
 ```bash
 uv init --no-workspace --name sandol-mcp --python 3.12
-uv add "mcp>=1.10" "httpx>=0.27" "uvicorn>=0.30"
+uv add "mcp>=1.10,<2" "httpx>=0.27" "uvicorn>=0.30"   # mcp 2.x는 FastMCP를 MCPServer로 개명했다
 uv add --dev "pytest>=8" "pytest-asyncio>=0.23" "ruff>=0.6"
 ```
 
@@ -23,6 +23,8 @@ uv add --dev "pytest>=8" "pytest-asyncio>=0.23" "ruff>=0.6"
 ```toml
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 패키지를 설치하지 않는 구성이라 tests/에서 import하려면 필요하다.
+pythonpath = ["."]
 asyncio_mode = "auto"
 
 [tool.ruff]
@@ -498,7 +500,7 @@ def with_token():
 | `test_transition_blocked_needs_reason` | `transition_task(1, "blocked", version=1)` → `CoreError` 메시지에 "막힘 사유". `reason="서류"` → `status=="blocked"`, `stop_reason=="서류"` |
 | `test_update_conflict_message` | `update_task(1, version=99, priority=8)` → `CoreError` 메시지에 "먼저 수정했습니다"와 `version=1` |
 | `test_update_clear_due` | `update_task(1, version=1, clear_due_date=True, no_due_reason="미정")` → 보낸 본문에 `"due_date": null` |
-| `test_append_note_keeps_existing` | `append_note(1, "첫 메모")` → 보낸 PATCH 본문 `notes=="첫 메모"`, `version==1`. 다시 `append_note(1, "둘째")` → `notes=="첫 메모\n둘째"`, 이번 본문의 `version==2`. 빈 문자열 → `CoreError` |
+| `test_append_note_appends_with_version` | `append_note(1, "첫 메모")` → 보낸 PATCH 본문 `notes=="첫 메모"`, `version==1`. 다시 `append_note(1, "둘째")` → `notes=="첫 메모\n둘째"`, 이번 본문의 `version==2`. 빈 문자열 → `CoreError` |
 | `test_create_task_idempotency_header` | `create_task(1, "새 일", due_date="2026-09-20", request_id="r1")` → 요청 헤더 `idempotency-key: r1`, 본문 `priority==5` |
 | `test_search_fetch_shape` | `search("메뉴")["results"][0]`에 `id, title, url`. `fetch("1")`에 `id, title, text, url, metadata`, `text`에 "진행 메모" |
 | `test_tool_names_registered` | `mcp` 인스턴스에 등록된 도구 이름 집합 == `{list_teams, list_projects, get_project, list_tasks, get_task, create_task, update_task, transition_task, append_note, get_team_status, get_weekly_report_data, list_members, search, fetch}` (14개, `await mcp.list_tools()`로 확인) |

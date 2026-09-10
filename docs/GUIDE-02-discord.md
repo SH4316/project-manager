@@ -23,6 +23,8 @@ uv add --dev "pytest>=8" "ruff>=0.6"
 ```toml
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 패키지를 설치하지 않는 구성이라 tests/에서 import하려면 필요하다.
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
@@ -414,7 +416,14 @@ def run_deadlines(core: CoreClient, hook: Webhook, store: Store, team_id: int, t
             if not store.claim(t["id"], kind, t["due_date"]):
                 result["skipped"] += 1
                 continue
-            fresh = core.task(t["id"])  # 발송 직전 재확인 (A09, A10)
+            try:
+                fresh = core.task(t["id"])  # 발송 직전 재확인 (A09, A10)
+            except Exception as e:  # noqa: BLE001
+                # 자리를 잡아 둔 채 예외가 나가면 그 알림은 영구히 안 나간다. 놓아주고 다음 tick에 재시도.
+                store.release(t["id"], kind, t["due_date"])
+                result["skipped"] += 1
+                log.warning("재확인 실패, 다음 실행에서 재시도: %s %s: %s", kind, t["id"], e)
+                continue
             if fresh is None or classify(fresh, today) != kind or fresh["due_date"] != t["due_date"]:
                 store.release(t["id"], kind, t["due_date"])
                 result["skipped"] += 1
@@ -425,10 +434,16 @@ def run_deadlines(core: CoreClient, hook: Webhook, store: Store, team_id: int, t
     if per_kind["overdue"]:
         if store.claim_daily("overdue", today_s):
             fresh_list = []
-            for t in per_kind["overdue"]:
-                fresh = core.task(t["id"])
-                if fresh and classify(fresh, today) == "overdue":
-                    fresh_list.append(fresh)
+            try:
+                for t in per_kind["overdue"]:
+                    fresh = core.task(t["id"])
+                    if fresh and classify(fresh, today) == "overdue":
+                        fresh_list.append(fresh)
+            except Exception as e:  # noqa: BLE001
+                store.release_daily("overdue", today_s)  # 다음 tick에 재시도
+                result["skipped"] += 1
+                log.warning("기한 초과 재확인 실패, 다음 실행에서 재시도: %s", e)
+                return result
             if fresh_list:
                 fresh_list.sort(key=lambda x: (x["due_date"], x["id"]))
                 _send(hook, store, deadline_message("overdue", fresh_list, today_s), 0, "overdue", today_s, result)
@@ -473,7 +488,7 @@ def _send(hook, store, text, task_id, kind, due_date, result):
 ### `discord_service/summarize.py`
 
 ```python
-from .messages import STATUS, mention
+from .messages import mention
 
 
 def fixed_summary(data: dict) -> str:
@@ -754,10 +769,13 @@ class FakeCore:
 class FakeHook:
     def __init__(self, statuses=None):
         self.sent = []
+        self.payloads = []          # test_no_everyone_mentions가 allowed_mentions를 본다
         self.statuses = list(statuses or [])
 
     def handler(self, request: httpx.Request) -> httpx.Response:
-        self.sent.append(json.loads(request.content)["content"])
+        payload = json.loads(request.content)
+        self.payloads.append(payload)
+        self.sent.append(payload["content"])
         code = self.statuses.pop(0) if self.statuses else 204
         return httpx.Response(code, headers={"Retry-After": "0"} if code == 429 else {})
 
@@ -812,7 +830,7 @@ def make_core(fake: FakeCore) -> CoreClient:
 
 | 테스트 | 검증 |
 |---|---|
-| `test_chunk_splits_long_text` | 3000자(줄 100개) → 조각 2개 이상, 각 ≤1900, 이어 붙이면 원문 |
+| `test_chunk_splits_long_text` | 3000자 **초과**(줄 100개 × 35자 = 3500자) → 조각 2개 이상, 각 ≤1900, 이어 붙이면 원문 |
 | `test_no_everyone_mentions` | 전송 payload의 `allowed_mentions == {"parse": ["users"]}` |
 
 `tests/test_store.py`

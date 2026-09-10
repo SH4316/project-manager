@@ -615,3 +615,18 @@ def test_today_view_is_scoped_to_team_membership(task, member, project):
     assert v["counts"]["due_today"] == 0
     assert v["counts"]["done_7d"] == 0
     assert list(ts.visible_tasks(member)) == []
+
+
+def test_today_view_manual_item_also_scoped(task, member, project):
+    """직접 담은 항목(TodayItem)도 팀 범위를 따른다. auto 분기만 막으면 새어 나간다."""
+    from teams.models import Membership
+
+    today_set_auto_pull(member, 0)  # auto 분기를 끄고 manual 분기만 남긴다
+    today_add(member, task)
+    assert [t.pk for t in today_view(member)["items"]] == [task.pk]
+
+    Membership.objects.filter(team=project.team, user=member).delete()
+    v = today_view(member)
+    assert v["items"] == []
+    assert v["focus"] is None
+    assert today_membership(member)["manual"] == set()

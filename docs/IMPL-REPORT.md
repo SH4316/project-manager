@@ -8,14 +8,15 @@
 
 | 파트 | 테스트 (SQLite) | 테스트 (Postgres 16) | ruff check | ruff format |
 |---|---|---|---|---|
-| `core/` | **115 passed**, skip 0 | **115 passed**, skip 0 | 0 | 통과 |
+| `core/` | **120 passed**, skip 0 | **120 passed**, skip 0 | 0 | 통과 |
 | `discord_service/` | **20 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 | `mcp_server/` | **16 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 
 `/api/docs`에 [GUIDE-01-3](GUIDE-01-core-3-api.md) 5.7 표의 엔드포인트 20개가 모두 보인다.
 MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_note`·이력 경로 `mcp`·폐기 토큰 오류)를 확인했다.
 Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경로까지 실행했다(Docker 검증 절).
-그 뒤 독립 렌즈 6개로 심층 감사를 돌려 **확정 16건 중 15건을 고쳤다**(심층 감사 절).
+그 뒤 독립 렌즈 6개로 심층 감사를 돌리고(확정 16건), 그 수정들을 다시 적대 검증해
+**총 22건을 고쳤다**(심층 감사 절). 지시서 코드 블록 46곳도 함께 고쳤다.
 
 ---
 
@@ -75,12 +76,13 @@ Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경�
 ### Step 7. 테스트 (`step 7: tests`)
 
 - 만든 파일: `core/conftest.py`, `{teams,projects,tasks,reports,api,web}/tests.py`
-- 검증: `uv run pytest -q` → **115 passed**, skip 0. `ruff check`·`ruff format --check` 통과.
-  (지시서 목록 103개 + CSRF 회귀 2개 + 심층 감사 회귀 10개. 전부 지시서 §7 표에도 추가했다)
+- 검증: `uv run pytest -q` → **120 passed**, skip 0. `ruff check`·`ruff format --check` 통과.
+  (지시서 목록 103개 + CSRF 회귀 2개 + 심층 감사 회귀 15개. 전부 지시서 §7 표에도 추가했다.
+  지시서 표의 행 수와 `pytest --collect-only` 수집 수가 모두 **120**으로 일치한다)
 - 지시서와 다르게 한 것: 지시서 7.6 목록에 없는 테스트 2개를 추가했다
   (`test_bearer_write_passes_csrf`, `test_session_write_still_needs_csrf`).
   아래 2번 수정이 회귀하지 않게 막는 테스트다.
-- 실패하거나 못 한 것: 없음. SQLite와 **Postgres 16 모두 115개 통과**(Docker 검증 절).
+- 실패하거나 못 한 것: 없음. SQLite와 **Postgres 16 모두 120개 통과**(Docker 검증 절).
 
 ### discord_service (`discord_service: notifications and weekly report`)
 
@@ -218,8 +220,8 @@ docker compose up -d db     # postgres:16-alpine, healthcheck healthy
 cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q
 ```
 
-**115 passed, skip 0.** SQLite 결과와 동일하다. GUIDE-01-5 §7.9의 "SQLite·Postgres 모두 통과" 충족.
-(처음 실행은 105개였고, 심층 감사 수정과 함께 115개가 됐다.)
+**120 passed, skip 0.** SQLite 결과와 동일하다. GUIDE-01-5 §7.9의 "SQLite·Postgres 모두 통과" 충족.
+(처음 실행은 105개였고, 심층 감사·검증 수정과 함께 120개가 됐다.)
 
 ### 이미지 3개 빌드
 
@@ -345,10 +347,11 @@ Cloudflare Tunnel 뒤에 놓였을 때를 흉내 내 `.env`를 `DEBUG=0`,
 
 **결과: 확정 16건, 반박 11건.**
 
-### 고쳤다 (전부, 15건)
+### 고쳤다 (1차, 15건)
 
-확정 16건 중 **15건을 고쳤고 1건은 근거를 들어 남겼다.** 처음에는 HIGH 4건만 고쳤고,
+확정 16건 중 15건을 고쳤다(1건은 admin — 아래 별도 절). 처음에는 HIGH 4건만 고쳤고,
 사용자 확인 뒤 나머지도 전부 고쳤다. 각각 회귀 테스트를 붙였고 지시서에도 반영했다.
+이 묶음을 다시 적대 검증한 결과 **7건이 더 나왔고 그것도 전부 고쳤다**(아래 '수정을 다시 검증했다').
 
 **A. `varchar` 초과 → Postgres에서 `DataError` → 500** (SQLite는 조용히 저장한다)
 
@@ -403,35 +406,66 @@ Cloudflare Tunnel 뒤에 놓였을 때를 흉내 내 `.env`를 `DEBUG=0`,
 운영(Postgres)에서는 이미 옳았고 개발용 SQLite에서만 어긋났다.
 `order_by(F("due_date").asc(nulls_last=True), "id")`로 명시해 양쪽을 맞췄다.
 
-### 안 고친 1건 (근거 있음)
+### admin: 처음엔 안 고쳤다가, 반박을 받고 고쳤다
 
-`core/tasks/admin.py` — `completed_at`이 `readonly_fields`에 있어 Django admin에서 상태를 `done`으로
-바꾸면 `task_done_requires_completed_at` DB CHECK에 걸려 500이 난다(입력 내용도 사라진다).
+`core/tasks/admin.py`에서 상태를 `done`으로 바꾸면 DB CHECK에 걸려 500이 나는 건을
+처음에는 "지시서가 허용한다"며 남겼다. 완결성 비평이 이 근거를 조목조목 반박했고, 그 반박이 맞다.
 
-남긴 이유:
+내 근거와 반박:
 
-1. **지시서가 명시적으로 허용한다.** GUIDE-01-1 §2.6이 admin 검증 절차에서
-   "admin 화면에서 500이 떠도 이 단계에서는 정상이다. 제약이 동작한다는 확인이 목적"이라고 적고 있다.
-2. **고치면 GUIDE-00 §3을 위반한다.** admin에서 `status → done`을 안전하게 만들려면 `completed_at`을
-   채우는 생명주기 규칙을 admin에 써야 하는데, "업무 규칙을 `services.py` 밖에 쓰지 않는다"는 규칙에 걸린다.
+| 내가 든 근거 | 반박 |
+|---|---|
+| GUIDE-01-1 §2.6이 "admin에서 500이 떠도 정상"이라고 적었다 | 그 문장은 **잘못된 입력 3가지**(`doing`+기한 없음, `blocked`+사유 없음, `priority=11`)에 한정되고 **"이 단계에서는"**으로 범위가 묶여 있다. 목적도 "제약이 동작한다는 확인"이다. `done`은 **정상 선택지**이고, `completed_at`이 `readonly_fields`라 폼에 없으므로 **operator가 무슨 값을 넣어도 저장이 불가능하다**. 성질이 다르다 |
+| 고치면 생명주기 규칙을 admin에 쓰게 되어 GUIDE-00 §3 위반이다 | GUIDE-00 §3은 이미 **"`Task`·`Project`를 `services.py` 밖에서 `save()`·`update()`로 수정하지 않는다"**고 적고 있다. **admin 등록 자체가 그 규칙 위반**이고 500은 증상일 뿐이다 |
 
-즉 admin은 Task 생명주기의 쓰기 경로가 아니다. 정상 경로(웹·API·MCP)는 모두 `services.transition()`을
-지나므로 이 상태에 도달하지 않는다.
+게다가 더 큰 문제가 있었다. **성공하는 admin 수정**(`status=review`, 담당자 변경, 중요도 변경)은
+`ChangeLog`도 `version`도 남기지 않는다. `reports.weekly`는 완료 수를 `ChangeLog`의
+`field="status", new_value="done"` 행에서 세므로, admin 수정은 **주간 보고를 조용히 틀리게 하고
+낙관적 잠금을 무력화한다.** 500은 오히려 잘못된 쓰기를 막아 주던 쪽이었다.
+
+그래서 GUIDE-00 §3이 실제로 요구하는 대로 고쳤다. `ChangeLogAdmin`이 이미 쓰던
+`has_*_permission` 패턴을 `ReadOnlyAdmin`으로 뽑아 `TaskAdmin`·`ProjectAdmin`에 적용했다.
+
+- 목록·상세는 **200**으로 남는다(Django가 조회 전용 페이지를 그린다)
+- `add/`·`delete/`는 **403**
+- `change/`에 POST하면 **403**이고 값이 바뀌지 않는다 (테스트로 확인)
+
+GUIDE-01-1 §2.6의 제약 검증 절차도 shell 기준으로 다시 썼다(실제로 내가 그렇게 검증했다).
+
+**되돌리려면**: `core/tasks/admin.py`의 `ReadOnlyAdmin` 상속을 `admin.ModelAdmin`으로 바꾸면 된다.
+다만 그러면 위의 ChangeLog·version 문제가 함께 돌아온다.
 
 ### 확인
 
 | 항목 | 결과 |
 |---|---|
-| core 테스트 (SQLite) | **115 passed**, skip 0 |
-| core 테스트 (Postgres 16) | **115 passed**, skip 0 |
+| core 테스트 (SQLite) | **120 passed**, skip 0 |
+| core 테스트 (Postgres 16) | **120 passed**, skip 0 |
 | discord_service | **20 passed** |
 | mcp_server | **16 passed** |
 | `ruff check` · `ruff format --check` | 세 파트 모두 통과 |
 | 라이브 컨테이너 API + Postgres | 250자 `no_due_reason`으로 `POST /api/tasks` → **201, 저장값 200자** (수정 전 500) |
 
-신규 회귀 테스트 10개를 지시서 §7.1a·7.3·7.4·7.6·7.7 표에도 추가했고,
+신규 회귀 테스트 15개를 지시서 §7.1a·7.3·7.4·7.6·7.7 표에도 추가했고,
 §7.8의 Postgres 실행을 "권장"에서 **"반드시"**로 격상했다(varchar 초과·NULL 정렬은 SQLite에서 안 드러난다).
 
+
+### 수정을 다시 검증했다 (에이전트 9개)
+
+"고쳤다"를 믿지 않기 위해, 수정 묶음마다 회의론자를 붙여 **재현이 실제로 사라졌는지 직접 실행**하게 했다.
+추가로 (a) 지시서 126개 코드 블록 전체를 실제 파일과 대조, (b) 완결성 비평(무엇이 아직 빠졌나)을 돌렸다.
+
+결과: **효과 없음 1건, 지시서 불일치 4건, 회귀 0건**. 그리고 새 findings 7건이 나와 전부 고쳤다.
+
+| 검증이 찾은 것 | 왜 중요한가 | 고친 것 |
+|---|---|---|
+| **`today_view` 수정이 절반만 됐다** | `mine`(자동 담기)만 팀 범위로 바꾸고, 바로 세 줄 위의 `manual`(직접 담은 `TodayItem`)은 그대로였다. `items = manual + auto`라 **직접 담은 태스크는 여전히 새어 나갔다.** 내 회귀 테스트는 fixture가 `TodayItem`을 만들지 않아 auto 분기만 밟아 통과했다 — 거짓 안심 | `today_items()` 헬퍼를 만들어 `today_membership`·`today_view` 두 경로가 같은 범위를 쓴다. 테스트를 `auto_pull=0`으로 두고 manual 분기를 밟게 다시 썼다 |
+| **내 절단 수정이 새 500을 만들었다** | `create_project`가 중복 검사는 **자르기 전** 이름으로, INSERT는 **자른** 이름으로 했다. 앞 100자가 같은 두 이름이 둘 다 검사를 통과해 `UniqueViolation` → 500. `DataError` 500을 `IntegrityError` 500으로 바꾼 셈. `update_project`는 순서가 맞아서 대비가 드러났다 | 자른 뒤 검사한다 |
+| `IdempotencyKey.key`(varchar 100)를 웹 경로가 자르지 않는다 | API는 `idem_key()`가 `[:100]`인데 웹 폼의 `idem` hidden 필드는 `max_length`가 없다. `POST /today/quick`에 300자 → Postgres `DataError` → 500 | 폼에 `max_length=100`, 서비스에서도 `[:100]`(조회·저장 같은 값으로) |
+| `week_days()`가 `date.max` 근처에서 `OverflowError` | `/today?schedule=1&cal=month&day=9999-12-01` → 500. 수정한 파라미터 검증과 같은 클래스인데 유일하게 남아 있었다 | 12월을 특수 처리해 `replace(day=28)+4일` 트릭 제거 |
+| `projects.py`의 `{int(x) for x in form["owners"].value()}` | bound form의 `value()`는 **raw 문자열**을 준다. 모달에 조작된 `owners` 값이 오면 `int()`가 터져 500 | `_owner_ids()`로 감싸 못 읽는 값은 무시 |
+| `create_team`·`ApiToken.issue`·`projects._log`의 절단 누락 | 지금은 폼이 막아 도달 불가지만, 같은 클래스이고 형제 코드는 자른다. API가 하나 늘면 되살아난다 | 방어적으로 `[:100]`/`[:200]`/`[:50]`/`[:200]` |
+| **admin "안 고침" 근거가 틀렸다** | 아래 참고 | admin을 조회 전용으로 |
 
 ### 반박된 11건
 
@@ -447,10 +481,14 @@ Cloudflare Tunnel 뒤에 놓였을 때를 흉내 내 `.env`를 `DEBUG=0`,
 - `archive_project`/`restore_project`의 stale version(2표), `DATABASE_URL` 비밀번호 이스케이프(2표),
   일정 카드가 프로젝트 이름을 노출(2표 — 템플릿은 제목만 그린다), NULL 정렬 중복 보고(2표)
 
-### 지시서 반영 (17곳)
+### 지시서 반영 (46곳)
 
 고친 것은 모두 지시서가 그대로 적어 준 코드·값에서 왔다. 이 문서로 다시 구현했을 때 같은 버그가
-되살아나지 않도록 **지시서의 해당 코드 블록도 함께 고쳤다.**
+되살아나지 않도록 **지시서의 해당 코드 블록도 함께 고쳤다** (1차 17곳 + 검증 이후 29곳 = 46곳).
+구현 초기의 6개 이탈(CSRF·라우트 순서·`ProjectForm`·중복 id·`mcp<2`·`pythonpath`)도 이번에 지시서에 넣었다.
+지시서 §7 테스트 표의 행 수와 `pytest --collect-only` 수집 수가 모두 **120**으로 일치한다.
+
+핵심 대조 지점 28곳을 지시서·코드 양쪽에서 자동 확인했다 — **불일치 0건**.
 
 | 지시서 | 고친 내용 |
 |---|---|

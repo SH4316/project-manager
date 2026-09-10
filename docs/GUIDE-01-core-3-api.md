@@ -24,11 +24,25 @@ core/api/
 
 ```python
 from ninja.errors import HttpError
-from ninja.security import HttpBearer
+from ninja.security import HttpBearer, SessionAuth
 
 from accounts.models import ApiToken
 
 WRITE_EXEMPT_PREFIX = "/api/integrations/"
+
+
+class BrowserSessionAuth(SessionAuth):
+    """세션 쿠키가 실제로 있을 때만 동작한다.
+
+    django-ninja의 SessionAuth는 쿠키를 읽기 전에 CSRF를 검사하고 실패하면 403을 던진다.
+    인증 목록의 첫 번째라서, 쿠키가 없는 Bearer 요청(MCP·Discord)까지 403이 되어 버린다.
+    쿠키가 없으면 곧바로 넘겨 TokenAuth가 처리하게 한다. 쿠키가 있으면 CSRF 검사는 그대로다.
+    """
+
+    def __call__(self, request):
+        if self.param_name not in request.COOKIES:
+            return None
+        return super().__call__(request)
 
 
 class TokenAuth(HttpBearer):
@@ -410,19 +424,18 @@ def invite_out(inv) -> dict:
 ```python
 from django.contrib.auth.decorators import login_required
 from ninja import NinjaAPI
-from ninja.security import django_auth
 from ninja.throttling import AuthRateThrottle
 
 from common.errors import ConflictError, ServiceError
 
-from .auth import TokenAuth
+from .auth import BrowserSessionAuth, TokenAuth
 from .routers import integrations, me, projects, reports, tasks, teams, today
 from .serialize import project_out, task_out
 
 api = NinjaAPI(
     title="Sandol PM API",
     version="1",
-    auth=[django_auth, TokenAuth()],
+    auth=[BrowserSessionAuth(), TokenAuth()],
     throttle=[AuthRateThrottle("60/m")],
     docs_decorator=login_required,
     urls_namespace="api",
@@ -825,7 +838,9 @@ def settings_ep(request, payload: TodaySettingsIn):
     return _out(request.auth)
 ```
 
-`DELETE /today/excluded`를 `DELETE /today/{task_id}`보다 **먼저** 등록한다. `task_id`는 `int` 변환기라 "excluded"에 매칭되지 않지만, 순서를 지켜 두면 헷갈리지 않는다.
+고정 경로(`/excluded`, `/order`, `/settings`)를 `/{task_id}`보다 **먼저** 등록한다.
+django-ninja는 `{task_id}`에 Django `int` 변환기를 붙이지 않으므로 `/api/today/order`가
+`DELETE /{task_id}`에 먼저 잡혀 **405**가 난다. 순서가 곧 우선순위다.
 
 ### `core/api/routers/reports.py`
 

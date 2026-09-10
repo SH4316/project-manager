@@ -83,7 +83,8 @@ class TaskInlineForm(forms.Form):
     priority = forms.TypedChoiceField(choices=PRIORITY_CHOICES, coerce=int, initial=5)
     due_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     no_due_reason = forms.CharField(max_length=200, required=False)
-    idem = forms.CharField(widget=forms.HiddenInput, required=False)
+    # IdempotencyKey.key는 varchar(100)이다. 클라이언트가 보내는 값이므로 폼에서 막는다.
+    idem = forms.CharField(widget=forms.HiddenInput, required=False, max_length=100)
 
     def __init__(self, *args, team, **kwargs):
         super().__init__(*args, **kwargs)
@@ -100,7 +101,8 @@ class QuickTaskForm(forms.Form):
     priority = forms.TypedChoiceField(choices=PRIORITY_CHOICES, coerce=int, initial=5)
     due_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     no_due_reason = forms.CharField(max_length=200, required=False)
-    idem = forms.CharField(widget=forms.HiddenInput, required=False)
+    # IdempotencyKey.key는 varchar(100)이다. 클라이언트가 보내는 값이므로 폼에서 막는다.
+    idem = forms.CharField(widget=forms.HiddenInput, required=False, max_length=100)
 
     def __init__(self, *args, user, **kwargs):
         super().__init__(*args, **kwargs)

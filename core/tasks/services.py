@@ -147,6 +147,7 @@ def create_task(
 ) -> Task:
     _require_member(actor, project)
     if idempotency_key:
+        idempotency_key = idempotency_key[:100]
         hit = IdempotencyKey.objects.filter(
             user=actor, key=idempotency_key, target_type="task"
         ).first()
@@ -178,7 +179,7 @@ def create_task(
     _log(task, "created", "", task.number, actor, source, token)
     if idempotency_key:
         IdempotencyKey.objects.create(
-            user=actor, key=idempotency_key, target_type="task", target_id=task.pk
+            user=actor, key=idempotency_key[:100], target_type="task", target_id=task.pk
         )
     return task
 
@@ -407,10 +408,19 @@ def _pull_end(user, day: date) -> date | None:
     return day + timedelta(days=n) if n > 0 else None
 
 
+def today_items(user, day: date):
+    """그 날짜의 오늘 목록 행. 팀 범위를 벗어난 태스크는 제외한다.
+
+    TodayItem은 태스크를 담은 시점의 기록이라, 그 뒤 팀에서 빠지면 남아 있을 수 있다.
+    담기·읽기 두 경로가 같은 범위를 쓰도록 여기 한 곳에서 거른다.
+    """
+    return TodayItem.objects.filter(user=user, date=day, task__project__team__in=teams_of(user))
+
+
 def today_membership(user, day: date | None = None) -> dict:
     """행 렌더링용. 키: user_id, manual(set), excluded(set), pull_end."""
     day = day or today_kst()
-    rows = TodayItem.objects.filter(user=user, date=day).values_list("task_id", "excluded")
+    rows = today_items(user, day).values_list("task_id", "excluded")
     return {
         "user_id": user.pk,
         "manual": {tid for tid, ex in rows if not ex},
@@ -502,7 +512,8 @@ def today_view(user, day: date | None = None) -> dict:
     m = today_membership(user, day)
     manual = [
         i.task
-        for i in TodayItem.objects.filter(user=user, date=day, excluded=False)
+        for i in today_items(user, day)
+        .filter(excluded=False)
         .select_related("task__project", "task__assignee")
         .order_by("position", "id")
     ]

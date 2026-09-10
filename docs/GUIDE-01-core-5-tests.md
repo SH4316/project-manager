@@ -135,6 +135,7 @@ def api(client, write_token):
 | `test_member_cannot_archive` | `archive_project(project, actor=member)` → `ServiceError` |
 | `test_project_stats_total_excludes_cancelled` | 태스크 3개를 각각 done·todo·cancelled로 만든 뒤 `project_stats(project)` → `total == 2`, `done == 1`, `open == 1` |
 | `test_project_name_and_purpose_truncated_to_column_length` | `name="N"*150, purpose="P"*300`으로 생성 → 각각 100·200자. `update_project`도 같다. (자르지 않으면 Postgres에서 `DataError`) |
+| `test_duplicate_check_uses_truncated_name` | `name="B"*100`으로 만든 뒤 `name="B"*150` → `ServiceError` key `name`. (검사와 저장이 다른 값을 쓰면 unique 제약에 걸려 500) |
 
 ---
 
@@ -186,6 +187,7 @@ def api(client, write_token):
 | `test_link_exactly_one_target` | `add_link(task=None, project=None)` → `ServiceError`. `Link.objects.create(project=p, task=t, ...)` → `IntegrityError` |
 | `test_no_due_reason_truncated_to_column_length` | 250자 `no_due_reason`으로 생성·수정 → 둘 다 200자. (자르지 않으면 Postgres에서 `DataError` → 500) |
 | `test_today_view_is_scoped_to_team_membership` | 담당 태스크가 오늘 목록에 보이는 상태에서 `Membership`을 지우면 `items == []`, `focus is None`, `counts`의 `my_open`·`due_today`·`done_7d` 모두 0 (A01) |
+| `test_today_view_manual_item_also_scoped` | `today_set_auto_pull(member, 0)` 후 `today_add` → 보임. `Membership` 삭제 → `items == []`, `focus is None`, `today_membership()["manual"] == set()`. (auto 분기만 막으면 직접 담은 항목이 새어 나간다) |
 
 ---
 
@@ -258,6 +260,9 @@ def api(client, write_token):
 | `test_non_numeric_ids_are_404_not_500` | `GET /projects/new?team=abc` → 404. `POST /projects/new {team: "abc"}` → 404. (`filter(pk="abc")`는 `ValueError` → 500) |
 | `test_weird_digit_query_params_do_not_crash` | `/search?q=²`, `/me?member=²`, `/me?project=²` 모두 200. (`isdigit()`은 `²`에 True지만 `int()`는 실패한다) |
 | `test_duplicate_discord_id_shows_field_error` | 남이 쓰는 `discord_user_id`를 저장하면 200 + 필드 오류 "이미 쓰는". 값은 바뀌지 않는다 (`IntegrityError` → 500 방지) |
+| `test_long_idem_key_does_not_crash` | `POST /today/quick`에 `idem="z"*300` → 200 또는 204. (`IdempotencyKey.key`는 varchar(100)) |
+| `test_far_future_schedule_day_does_not_crash` | `/today?schedule=1&cal=month&day=`에 `9999-12-01`·`9999-12-31`·`0001-01-01` → 모두 200. (`week_days()`의 `OverflowError`) |
+| `test_admin_task_and_project_are_read_only` | staff로 admin 목록·상세는 200, `add/`·`delete/`는 403, `change/`에 POST는 403이고 값이 안 바뀐다 (GUIDE-00 §3) |
 
 ---
 

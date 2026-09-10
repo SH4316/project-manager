@@ -106,3 +106,11 @@ def test_project_name_and_purpose_truncated_to_column_length(team, admin):
     )
     assert len(p.name) == 100
     assert len(p.purpose) == 200
+
+
+def test_duplicate_check_uses_truncated_name(team, admin):
+    """중복 검사와 저장이 같은 값을 써야 한다. 앞 100자가 같은 두 이름이 unique 제약을 때리면 500이 된다."""
+    create_project(team=team, name="B" * 100, actor=admin)
+    with pytest.raises(ServiceError) as e:
+        create_project(team=team, name="B" * 150, actor=admin)
+    assert "name" in e.value.errors

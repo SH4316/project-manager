@@ -29,6 +29,18 @@ from .common import (
 )
 
 
+def _owner_ids(form) -> set[int]:
+    """체크된 관리자 pk 집합. bound form의 value()는 raw 문자열이라 int()가 터질 수 있다."""
+    ids = set()
+    for x in form["owners"].value() or []:
+        pk = getattr(x, "pk", x)
+        try:
+            ids.add(int(pk))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
 def _dialog(request, form, team, project=None):
     """프로젝트 생성·수정 모달 부분 템플릿."""
     return render(
@@ -39,7 +51,7 @@ def _dialog(request, form, team, project=None):
             "team": team,
             "project": project,
             "members": team.members.filter(is_active=True).order_by("display_name"),
-            "checked_owner_ids": {int(x) for x in (form["owners"].value() or [])},
+            "checked_owner_ids": _owner_ids(form),
             "status_options": [
                 (code, label, Project.STATUS_DESC[code]) for code, label in Project.STATUSES
             ],

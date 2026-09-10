@@ -42,7 +42,7 @@ def create_team(name: str, purpose: str, actor) -> Team:
     name = name.strip()
     if not name:
         raise ServiceError({"name": "팀 이름을 입력하세요."})
-    team = Team.objects.create(name=name, purpose=purpose.strip(), created_by=actor)
+    team = Team.objects.create(name=name[:100], purpose=purpose.strip()[:200], created_by=actor)
     Membership.objects.create(team=team, user=actor, role="admin")
     return team
 
@@ -122,7 +122,7 @@ def _log(project, field, old, new, actor, source, token=None, note=""):
         field=field,
         old_value=_s(old),
         new_value=_s(new),
-        note=note,
+        note=note[:200],
         actor=actor,
         source=source,
         token=token,
@@ -164,11 +164,13 @@ def create_project(
         raise ServiceError({"team": "이 팀의 멤버가 아닙니다."})
     owners = list(owners)
     _validate(team, name, owners, status)
-    if Project.objects.filter(team=team, name=name.strip()).exists():
+    # 저장할 값과 같은 값으로 검사해야 한다. 자르기 전 값으로 검사하면
+    # 앞 100자가 같은 두 이름이 둘 다 통과해 INSERT에서 unique 제약에 걸린다.
+    name = name.strip()[:100]
+    if Project.objects.filter(team=team, name=name).exists():
         raise ServiceError({"name": "같은 이름의 프로젝트가 이미 있습니다."})
     project = Project.objects.create(
-        team=team, name=name.strip()[:100], purpose=purpose.strip()[:200],
-        status=status, created_by=actor,
+        team=team, name=name, purpose=purpose.strip()[:200], status=status, created_by=actor
     )
     project.owners.set(owners)
     _log(project, "created", "", project.name, actor, source, token)
@@ -393,6 +395,7 @@ def create_task(
 ) -> Task:
     _require_member(actor, project)
     if idempotency_key:
+        idempotency_key = idempotency_key[:100]  # 컬럼은 varchar(100)
         hit = IdempotencyKey.objects.filter(
             user=actor, key=idempotency_key, target_type="task"
         ).first()
@@ -624,10 +627,19 @@ def _pull_end(user, day: date) -> date | None:
     return day + timedelta(days=n) if n > 0 else None
 
 
+def today_items(user, day: date):
+    """그 날짜의 오늘 목록 행. 팀 범위를 벗어난 태스크는 제외한다.
+
+    TodayItem은 담은 시점의 기록이라, 그 뒤 팀에서 빠지면 남아 있을 수 있다.
+    담기·읽기 두 경로가 같은 범위를 쓰도록 여기 한 곳에서 거른다.
+    """
+    return TodayItem.objects.filter(user=user, date=day, task__project__team__in=teams_of(user))
+
+
 def today_membership(user, day: date | None = None) -> dict:
     """행 렌더링용. 키: user_id, manual(set), excluded(set), pull_end."""
     day = day or today_kst()
-    rows = TodayItem.objects.filter(user=user, date=day).values_list("task_id", "excluded")
+    rows = today_items(user, day).values_list("task_id", "excluded")
     return {
         "user_id": user.pk,
         "manual": {tid for tid, ex in rows if not ex},
@@ -719,7 +731,8 @@ def today_view(user, day: date | None = None) -> dict:
     m = today_membership(user, day)
     manual = [
         i.task
-        for i in TodayItem.objects.filter(user=user, date=day, excluded=False)
+        for i in today_items(user, day)
+        .filter(excluded=False)
         .select_related("task__project", "task__assignee")
         .order_by("position", "id")
     ]

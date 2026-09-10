@@ -58,7 +58,7 @@ class ApiToken(models.Model):
         raw = "pm_" + secrets.token_urlsafe(32)
         token = cls.objects.create(
             user=user,
-            name=name,
+            name=name[:50],
             prefix=raw[:12],
             key_hash=cls._hash(raw),
             scope=scope,

@@ -544,7 +544,8 @@ class InviteForm(forms.Form):
 class ProjectForm(forms.Form):
     """프로젝트 모달. 관리자는 체크 칩, 상태는 카드형 라디오로 템플릿이 직접 그린다."""
 
-    name = forms.CharField(label="이름", max_length=100)
+    # 빈 이름 검사는 services.create_project/update_project가 한다(업무 규칙은 services에만).
+    name = forms.CharField(label="이름", max_length=100, required=False)
     purpose = forms.CharField(label="목적", max_length=200, required=False, widget=forms.Textarea(attrs={"rows": 2}))
     owners = forms.ModelMultipleChoiceField(label="관리자", queryset=User.objects.none(), required=False)
     status = forms.ChoiceField(label="상태", choices=Project.STATUSES, initial="preparing")
@@ -583,7 +584,8 @@ class TaskInlineForm(forms.Form):
     priority = forms.TypedChoiceField(choices=PRIORITY_CHOICES, coerce=int, initial=5)
     due_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     no_due_reason = forms.CharField(max_length=200, required=False)
-    idem = forms.CharField(widget=forms.HiddenInput, required=False)
+    # IdempotencyKey.key는 varchar(100)이다. 클라이언트가 보내는 값이므로 폼에서 막는다.
+    idem = forms.CharField(widget=forms.HiddenInput, required=False, max_length=100)
 
     def __init__(self, *args, team, **kwargs):
         super().__init__(*args, **kwargs)
@@ -849,7 +851,11 @@ def render_row(request, task, error=None):
 def week_days(day: date) -> list[date | None]:
     """월간 달력 셀. 그 달 1일 앞의 빈칸(None) + 날짜. 월요일 시작."""
     first = day.replace(day=1)
-    nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+    if first.month == 12:
+        # date.max(9999-12-31)에서 다음 달을 계산하면 OverflowError가 난다.
+        nxt = date(first.year, 12, 31) if first.year == date.max.year else date(first.year + 1, 1, 1)
+    else:
+        nxt = date(first.year, first.month + 1, 1)
     cells: list[date | None] = [None] * first.weekday()
     d = first
     while d < nxt:
@@ -1674,7 +1680,7 @@ def team_detail(request, team_id):
 
 ### `views/settings.py`
 
-- `profile`: `ProfileForm` → `user.display_name`, `user.discord_user_id` 저장. Discord ID는 숫자만 허용(비어 있으면 None).
+- `profile`: `ProfileForm` → `user.display_name`, `user.discord_user_id` 저장. Discord ID는 숫자만 허용(`isdecimal()`, 비어 있으면 None). `discord_user_id`는 `unique=True`이므로 **저장 전에 다른 사용자가 쓰는지 확인해 필드 오류로 돌려준다** (그냥 저장하면 `IntegrityError`로 500).
 - `tokens`: GET은 내 토큰 목록(폐기 포함, 폐기는 흐리게). POST `TokenForm` → `ApiToken.issue`. 발급 직후 원문을 세션에 넣고 redirect 후 한 번만 보여 준다: `request.session["new_token"] = raw` → GET에서 `pop`. 화면에 MCP 연결 안내 문구(GUIDE-03 Step 5 표의 네 가지 예시)를 표시한다.
 - `token_revoke(token_id)` POST: 본인 토큰만. `token.revoke()`.
 
@@ -2281,7 +2287,8 @@ def export_json(request):
       <button type="button" class="btn primary" data-action="toggle" data-target="#task-form" data-alt="닫기">{% if form_open %}닫기{% else %}태스크 만들기{% endif %}</button>
     </div>
   </div>
-  <div id="task-form"{% if not form_open %} hidden{% endif %}>{% include "projects/_task_form.html" %}</div>
+  {# _task_form.html의 form이 이미 id=task-form과 hidden을 가진다. 감싸면 id가 중복돼 토글이 겉만 열린다. #}
+  {% include "projects/_task_form.html" %}
   <div class="tiles five">
     <div class="tile"><b>{{ stats.done }}/{{ stats.total }}</b><span>완료</span></div>
     <div class="tile"><b>{{ stats.open }}</b><span>미완료</span></div>

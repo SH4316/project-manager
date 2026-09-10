@@ -373,7 +373,7 @@ class ApiToken(models.Model):
         raw = "pm_" + secrets.token_urlsafe(32)
         token = cls.objects.create(
             user=user,
-            name=name,
+            name=name[:50],
             prefix=raw[:12],
             key_hash=cls._hash(raw),
             scope=scope,
@@ -865,12 +865,16 @@ from django.contrib import admin
 from .models import Project
 
 
+from tasks.admin import ReadOnlyAdmin
+
+
 @admin.register(Project)
-class ProjectAdmin(admin.ModelAdmin):
+class ProjectAdmin(ReadOnlyAdmin):
+    """조회 전용. 이유는 tasks.admin.ReadOnlyAdmin 참고."""
+
     list_display = ("name", "team", "status", "is_archived")
     list_filter = ("team", "status", "is_archived")
     filter_horizontal = ("owners",)
-    readonly_fields = ("version", "archived_at")
 ```
 
 `core/tasks/admin.py`:
@@ -881,12 +885,30 @@ from django.contrib import admin
 from .models import ChangeLog, Link, Task
 
 
+class ReadOnlyAdmin(admin.ModelAdmin):
+    """조회 전용 admin.
+
+    GUIDE-00 §3: `Task`·`Project`는 `services.py` 밖에서 `save()`·`update()`로 바꾸지 않는다.
+    admin 변경 폼은 그 규칙을 어긴다. 통과하는 수정은 ChangeLog도 version도 남기지 않아
+    주간 보고(`reports.weekly`가 ChangeLog에서 완료 수를 센다)와 낙관적 잠금을 조용히 망가뜨리고,
+    `status=done`처럼 DB 제약이 막는 조합은 500이 된다. 그래서 쓰기를 닫는다.
+    """
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Task)
-class TaskAdmin(admin.ModelAdmin):
+class TaskAdmin(ReadOnlyAdmin):
     list_display = ("id", "title", "project", "assignee", "status", "priority", "due_date")
     list_filter = ("status", "project__team")
     search_fields = ("title",)
-    readonly_fields = ("version", "completed_at", "stopped_at")
 
 
 @admin.register(ChangeLog)
@@ -927,7 +949,11 @@ uv run python manage.py createsuperuser --username admin --email admin@example.c
 ```
 
 - 마이그레이션이 `accounts`, `teams`, `projects`, `tasks`, `api` 다섯 앱에 생기고 오류 없이 적용된다.
-- admin에 로그인해 팀 하나, 프로젝트 하나를 만들어 본다. 태스크를 `status=doing`, `due_date` 비움으로 저장하려 하면 DB 제약 오류(IntegrityError)가 나야 한다. `status=blocked`, `stop_reason` 비움도 마찬가지다. `priority=11`도 거부된다. (admin 화면에서 500이 떠도 이 단계에서는 정상이다. 제약이 동작한다는 확인이 목적.)
+- admin은 `Task`·`Project`에 대해 **조회 전용**이다(GUIDE-00 §3). 제약 확인은 shell에서 한다:
+  `Task.objects.create(...)`를 `status="doing"`+`due_date=None`, `status="blocked"`+`stop_reason=""`,
+  `priority=11`, `status="done"`+`completed_at=None`으로 각각 시도하면 모두 `IntegrityError`가 나야 한다
+  (`with transaction.atomic():` 안에서 감싼다).
+- admin에 로그인해 팀 하나, 프로젝트 하나가 목록에 보이는지 확인한다(추가·변경 버튼은 없다).
 
 커밋: `step 2: models and admin`
 

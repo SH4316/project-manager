@@ -20,7 +20,7 @@ def _log(project, field, old, new, actor, source, token=None, note=""):
         field=field,
         old_value=_s(old),
         new_value=_s(new),
-        note=note,
+        note=note[:200],
         actor=actor,
         source=source,
         token=token,
@@ -62,11 +62,14 @@ def create_project(
         raise ServiceError({"team": "이 팀의 멤버가 아닙니다."})
     owners = list(owners)
     _validate(team, name, owners, status)
-    if Project.objects.filter(team=team, name=name.strip()).exists():
+    # 저장할 값과 같은 값으로 검사해야 한다. 자르기 전 값으로 검사하면
+    # 앞 100자가 같은 두 이름이 둘 다 통과해 INSERT에서 unique 제약에 걸린다.
+    name = name.strip()[:100]
+    if Project.objects.filter(team=team, name=name).exists():
         raise ServiceError({"name": "같은 이름의 프로젝트가 이미 있습니다."})
     project = Project.objects.create(
         team=team,
-        name=name.strip()[:100],
+        name=name,
         purpose=purpose.strip()[:200],
         status=status,
         created_by=actor,
