@@ -18,7 +18,7 @@ services:
 
   web:
     build: ./core
-    env_file: .env
+    env_file: .env               # 봇 토큰·CORE_TOKEN은 여기 없다(.env.discord에만 있다)
     environment:
       DATABASE_URL: postgres://pm:${POSTGRES_PASSWORD:-pm}@db:5432/pm
     depends_on:
@@ -26,9 +26,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  discord:
+  discord:                       # 발송(60초 틱): 마감 DM·주간 보고
     build: ./discord_service
-    env_file: .env
+    env_file: .env.discord
     environment:
       CORE_URL: http://web:8000
       DB_PATH: /data/discord.sqlite
@@ -36,6 +36,17 @@ services:
       - discord_data:/data
     depends_on:
       - web
+    restart: unless-stopped
+
+  discord-bot:                   # 수신(게이트웨이): DM 평문 명령. 같은 이미지, 리스너만 돈다
+    build: ./discord_service
+    env_file: .env.discord
+    environment:
+      CORE_URL: http://web:8000
+    command: ["python", "-m", "discord_service", "bot"]
+    depends_on:
+      - web
+    # 볼륨 없음: 리스너는 SQLite를 열지 않는다(발송 프로세스가 단일 writer로 남는다).
     restart: unless-stopped
 
   mcp:

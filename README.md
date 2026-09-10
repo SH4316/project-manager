@@ -6,7 +6,7 @@
 | 파트 | 역할 | 스택 |
 |---|---|---|
 | [`core/`](core) | 웹 화면·데이터·HTTP API. 업무 규칙은 전부 여기 `services.py`에 있다 | Django 5.2, Django Ninja, PostgreSQL, HTMX |
-| [`discord_service/`](discord_service) | 마감 알림(D-3·D-1·당일·초과)과 주간 보고를 Discord Webhook으로 발송 | httpx, SQLite |
+| [`discord_service/`](discord_service) | 마감 알림(D-3·D-1·당일·초과)을 담당자 **개인 DM**으로 보내고, 봇에게 온 DM 명령(`오늘`·`완료`·`연장`)을 처리한다. 주간 보고는 팀 채널에 | httpx, discord.py, SQLite |
 | [`mcp_server/`](mcp_server) | Claude·ChatGPT 등 AI 클라이언트가 태스크를 읽고 고치는 MCP 서버 | mcp, httpx, uvicorn |
 
 ## 문서
@@ -45,13 +45,14 @@ cd mcp_server      && uv run pytest -q && uv run ruff check .
 Postgres로도 한 번 돌린다(아래 Docker 실행으로 `db`만 띄운 상태에서):
 
 ```bash
-cd core && DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q
+cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q
 ```
 
 ## Docker 로컬 실행
 
 ```bash
 cp .env.example .env
+cp .env.discord.example .env.discord   # 비어 있어도 된다. 없으면 compose가 파일 전체를 못 읽는다
 # .env를 로컬용으로: DEBUG=1, ALLOWED_HOSTS=localhost,127.0.0.1,
 #                  CSRF_TRUSTED_ORIGINS=http://localhost:8000, SITE_URL=http://localhost:8000
 docker compose up -d --build db web mcp
@@ -65,15 +66,27 @@ docker compose exec web python -c "import urllib.request;print(urllib.request.ur
 
 1. Proxmox에 Debian 12 LXC(`nesting=1`, `keyctl=1`)를 만들고 Docker를 설치한다.
 2. 저장소를 `/opt/project-manager`에 복사한다(`.venv/`, `db.sqlite3` 제외).
-3. `.env`를 실제 값으로 채우고 `compose.yml`의 `db` 포트 두 줄을 지운다.
-4. Cloudflare Zero Trust에서 터널을 만들고 공개 호스트 두 개를 연결한다: `pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`.
+3. `.env`와 `.env.discord`를 실제 값으로 채우고 `compose.yml`의 `db` 포트 두 줄을 지운다.
+4. Cloudflare Zero Trust에서 터널을 만들고 공개 호스트 **두 개**를 연결한다: `pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`. Discord 봇은 밖으로 나가는 연결만 쓰므로 공개 경로가 필요 없다.
 5. `docker compose up -d --build db web mcp cloudflared` 후 superuser 생성.
-6. 팀 생성 → 초대 링크 배포 → `팀 → 알림 채널`에 Discord Webhook 주소 등록·[테스트 발송] →
-   Discord 연동 계정을 팀 **관리자**로 넣고 읽기 토큰 발급 → `docker compose up -d discord`.
+6. 팀 생성 → 초대 링크 배포.
+7. Discord Developer Portal에서 봇을 만들어(`[Reset Token]`) 팀 서버에 설치하고, 토큰과 채널 id를 `.env.discord`에 넣는다. 특권 인텐트는 켜지 않는다. 팀원 전원이 서버에 참여하고 '서버 멤버의 DM 허용'을 켠다.
+8. `discord-bot` 계정을 팀 **팀원**으로 넣고(관리자 승격 불필요) `bot` 범위 토큰을 셸로 발급해 `CORE_TOKEN`에 넣는다:
+
+   ```bash
+   docker compose exec web python manage.py shell -c "from accounts.models import ApiToken,User; print(ApiToken.issue(User.objects.get(username='discord-bot'),'Discord 봇','bot')[1])"
+   ```
+
+9. `docker compose up -d discord discord-bot` → `python -m discord_service test`로 채널 확인, `docker compose logs -f discord-bot`으로 리스너 확인.
+10. 각자 웹 `/settings/profile`의 **[Discord 연결]**로 코드를 받아 봇에게 DM `연결 <코드>`. 연결하기 전에는 개인 DM 알림이 가지 않는다.
 
 자세한 절차는 [docs/GUIDE-04-deploy.md](docs/GUIDE-04-deploy.md)에 있다.
 
-## 환경 변수 (`.env.example`)
+## 환경 변수
+
+파일이 둘이다. `web`은 `.env`만, `discord`·`discord-bot`은 `.env.discord`만 읽는다 — Discord 봇 토큰과 `CORE_TOKEN`이 사용자 요청을 처리하는 프로세스의 환경에 들어가지 않게 나눠 두었다. 둘 다 git에 올리지 않는다.
+
+`.env.example` → `.env`
 
 | 이름 | 파트 | 설명 |
 |---|---|---|
@@ -83,17 +96,23 @@ docker compose exec web python -c "import urllib.request;print(urllib.request.ur
 | `CSRF_TRUSTED_ORIGINS` | core | 쉼표로 구분한 오리진(스킴 포함) |
 | `SITE_URL` | core | 링크·초대 URL을 만들 때 쓰는 기준 주소 |
 | `POSTGRES_PASSWORD` | db·core | Postgres 비밀번호 |
-| `CORE_TOKEN` | discord | core 연동 계정의 **읽기** API 토큰 |
-| `TEAM_ID` | discord | 알림 대상 팀 id |
-| `DISCORD_WEBHOOK_URL` | discord | 예비 Webhook URL. 발송 대상은 웹 화면 `팀 → 알림 채널`에서 관리한다 |
-| `TZ` | discord | 기본 `Asia/Seoul` |
-| `SEND_HOUR` | discord | 마감 알림 시각(시). 기본 9 |
-| `WEEKLY_WEEKDAY` / `WEEKLY_HOUR` | discord | 주간 보고 요일(0=월)·시각. 기본 0, 9 |
-| `LLM_PROVIDER` | discord | 비우면 고정 형식 보고서 |
-| `SITE_NAME` | discord | 테스트 메시지에 쓰는 이름 |
 | `CLOUDFLARE_TUNNEL_TOKEN` | cloudflared | 터널 토큰 |
 
-`mcp_server`는 `CORE_URL`과 `PORT`만 쓴다(compose가 넣어 준다).
+`.env.discord.example` → `.env.discord`
+
+| 이름 | 설명 |
+|---|---|
+| `CORE_TOKEN` | `discord-bot` 계정의 **`bot` 범위** API 토큰. 웹에서는 발급할 수 없다(서버 셸 한 줄로만) |
+| `TEAM_ID` | 알림 대상 팀 id |
+| `DISCORD_BOT_TOKEN` | Developer Portal → Bot → `[Reset Token]`. 이 파일 밖으로 내보내지 않는다 |
+| `DISCORD_CHANNEL_ID` | 주간 보고와 'DM을 보낼 수 없다' 통보가 갈 채널 id |
+| `TZ` | 기본 `Asia/Seoul` |
+| `SEND_HOUR` | 마감 알림 시각(시). 기본 9 |
+| `WEEKLY_WEEKDAY` / `WEEKLY_HOUR` | 주간 보고 요일(0=월)·시각. 기본 0, 9 |
+| `LLM_PROVIDER` | 비우면 고정 형식 보고서 |
+| `SITE_NAME` | 확인 메시지에 쓰는 이름 |
+
+`CORE_URL`·`DB_PATH`는 compose가 넣어 준다. `mcp_server`는 `CORE_URL`과 `PORT`만 쓴다.
 
 ## 목업 보는 법
 

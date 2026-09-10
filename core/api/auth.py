@@ -26,10 +26,30 @@ class TokenAuth(HttpBearer):
         if t is None:
             return None
         if (
-            t.scope == "read"
+            # write가 아닌 모든 범위(read·bot)를 막는다. bot 범위는 아래 BotTokenAuth가
+            # 지키는 /api/integrations/discord/ 안에서만 쓴다.
+            t.scope != "write"
             and request.method not in ("GET", "HEAD", "OPTIONS")
             and not request.path.startswith(WRITE_EXEMPT_PREFIX)
         ):
             raise HttpError(403, "읽기 전용 토큰입니다.")
         request.api_token = t
         return t.user
+
+
+class BotTokenAuth(TokenAuth):
+    """Discord 봇 명령 경로 전용 인증.
+
+    `/api/integrations/`는 WRITE_EXEMPT_PREFIX라서 읽기 토큰으로도 POST가 통하고,
+    API 기본 인증에는 세션 쿠키(BrowserSessionAuth)가 들어 있다. 라우터의 auth를
+    이것 하나로 바꿔 두면 세션·읽기·쓰기 토큰이 이 경로에 아예 들어오지 못한다.
+    엔드포인트마다 가드를 손으로 붙이지 않아도 되게 구조로 막는다.
+    """
+
+    def authenticate(self, request, token):
+        user = super().authenticate(request, token)
+        if user is None:
+            return None
+        if request.api_token.scope != "bot":
+            raise HttpError(403, "Discord 봇 토큰이 필요합니다.")
+        return user

@@ -46,6 +46,12 @@ def fixed_summary(data: dict) -> str:
     if proj:
         body.append("**프로젝트별**\n" + "\n".join(proj))
     body.append(f"검토 대기 {c['review']}건 · 기한 미정 {c['no_due']}건")
+    # /ops는 staff만 보지만 이 보고는 당사자가 본다. 연결을 안 한 사람이 스스로 알게 한다.
+    unlinked = [m["display_name"] for m in data.get("members", []) if not m.get("discord_user_id")]
+    if unlinked:
+        body.append(
+            "⚠️ Discord 미연결: " + ", ".join(unlinked) + " — 개인 DM 마감 알림을 못 받습니다."
+        )
     return "\n".join(b for b in body if b is not None)
 
 

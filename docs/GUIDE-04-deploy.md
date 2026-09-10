@@ -1,6 +1,6 @@
 # 구현 지시서 04: 배포 (Proxmox + Docker Compose + Cloudflare Tunnel)
 
-GUIDE-00을 먼저 읽는다. 이 문서는 저장소 루트의 `compose.yml`, `.env.example`, `README.md`, core의 Dockerfile을 만들고 Proxmox에 올리는 절차다. Discord·MCP의 Dockerfile은 각 GUIDE에서 이미 만들었다.
+GUIDE-00을 먼저 읽는다. 이 문서는 저장소 루트의 `compose.yml`, `.env.example`, `.env.discord.example`, `README.md`, core의 Dockerfile을 만들고 Proxmox에 올리는 절차다. Discord·MCP의 Dockerfile은 각 GUIDE에서 이미 만들었다.
 
 서버는 어떤 포트도 외부에 열지 않는다. Cloudflare Tunnel(`cloudflared` 컨테이너)이 바깥에서 들어오는 HTTPS를 내부 컨테이너로 넘긴다. TLS는 Cloudflare가 끝낸다.
 
@@ -71,7 +71,7 @@ services:
 
   web:
     build: ./core
-    env_file: .env
+    env_file: .env               # 봇 토큰·CORE_TOKEN은 여기 없다(.env.discord에만 있다)
     environment:
       DATABASE_URL: postgres://pm:${POSTGRES_PASSWORD:-pm}@db:5432/pm
     depends_on:
@@ -79,9 +79,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  discord:
+  discord:                       # 발송(60초 틱): 마감 DM·주간 보고
     build: ./discord_service
-    env_file: .env
+    env_file: .env.discord
     environment:
       CORE_URL: http://web:8000
       DB_PATH: /data/discord.sqlite
@@ -89,6 +89,17 @@ services:
       - discord_data:/data
     depends_on:
       - web
+    restart: unless-stopped
+
+  discord-bot:                   # 수신(게이트웨이): DM 평문 명령. 같은 이미지, 리스너만 돈다
+    build: ./discord_service
+    env_file: .env.discord
+    environment:
+      CORE_URL: http://web:8000
+    command: ["python", "-m", "discord_service", "bot"]
+    depends_on:
+      - web
+    # 볼륨 없음: 리스너는 SQLite를 열지 않는다(발송 프로세스가 단일 writer로 남는다).
     restart: unless-stopped
 
   mcp:
@@ -115,11 +126,19 @@ volumes:
   discord_data:
 ```
 
-`discord` 서비스는 `CORE_TOKEN`이 준비되기 전에는 시작 직후 종료된다(환경 변수 검사). 그동안은 `docker compose up -d db web mcp cloudflared`처럼 골라서 띄운다.
+`discord`·`discord-bot`은 `CORE_TOKEN`·`DISCORD_BOT_TOKEN`·`DISCORD_CHANNEL_ID`가 준비되기 전에는 시작 직후 종료된다(`Config.from_env`의 환경 변수 검사). 그동안은 `docker compose up -d db web mcp cloudflared`처럼 골라서 띄운다.
+
+**단, 두 환경 파일은 골라서 띄울 때도 다 있어야 한다.** compose는 명령 대상이 아닌 서비스의 `env_file`까지 모델을 읽을 때 확인하고, 없으면 `env file … not found`로 전체가 멈춘다. 그래서 첫 준비는 항상 두 줄이다: `cp .env.example .env && cp .env.discord.example .env.discord`(내용은 나중에 채워도 된다).
+
+환경 파일이 둘인 이유는 **비밀의 반경**이다. `web`이 `.env.discord`를 읽으면 Discord 봇 토큰과 `CORE_TOKEN`이 gunicorn 프로세스 환경에 들어가고, 그 프로세스는 사용자 요청을 처리한다. 나눠 두면 core는 그 두 값을 볼 일이 없다(GUIDE-00 §3). compose의 `${}` 보간에 쓰이는 `POSTGRES_PASSWORD`·`CLOUDFLARE_TUNNEL_TOKEN`은 `.env`에 남는다 — 보간은 compose 자신이 루트 `.env`만 읽는다.
+
+컨테이너가 둘인 이유는 **SQLite writer가 하나여야** 하기 때문이다. 같은 이미지에서 `discord`는 틱(발송)을, `discord-bot`은 게이트웨이 리스너(수신)를 돈다. 리스너는 `Store`를 만들지 않으므로 볼륨이 없다. `discord`를 replicas 2로 올리면 중복 방지가 깨진다.
 
 ---
 
-## Step 3. `.env.example` (저장소 루트)
+## Step 3. `.env.example`과 `.env.discord.example` (저장소 루트)
+
+`.env.example`:
 
 ```
 # --- core (web) ---
@@ -131,23 +150,40 @@ CSRF_TRUSTED_ORIGINS=https://pm.example.com
 SITE_URL=https://pm.example.com
 POSTGRES_PASSWORD=change-me
 
-# --- discord_service ---
-CORE_TOKEN=pm_xxx            # core에서 연동 계정으로 발급한 읽기 토큰. 그 계정은 팀 관리자여야 한다
+# --- cloudflared ---
+CLOUDFLARE_TUNNEL_TOKEN=eyJ...
+
+# discord_service의 설정은 이 파일에 없다. `.env.discord.example` → `.env.discord`를 쓴다.
+# Discord 봇 토큰과 CORE_TOKEN이 web 프로세스의 환경에까지 들어가지 않게 나눠 둔 것이다.
+```
+
+`.env.discord.example`:
+
+```
+# discord·discord-bot 컨테이너 전용. `.env.discord`로 복사해 채운다(git에 올리지 않는다).
+# 이 파일의 두 비밀(DISCORD_BOT_TOKEN, CORE_TOKEN)은 core DB·화면·로그·/ops 어디에도 없다.
+
+CORE_URL=http://web:8000
+# discord-bot 계정의 `bot` 범위 토큰. 그 계정은 팀 **멤버**면 된다(관리자 승격 불필요).
+# 발급은 서버 셸 한 줄로만 한다 — 웹 화면에서는 bot 범위를 만들 수 없다(Step 7).
+CORE_TOKEN=pm_xxx
 TEAM_ID=1
-# 발송 대상은 웹 화면 `팀 → 알림 채널`에 등록한다. 아래는 core를 못 읽을 때 쓰는 예비값이라 비워도 된다.
-DISCORD_WEBHOOK_URL=
+
+# Developer Portal → Bot → [Reset Token]. 이때 한 번만 보인다. 이 파일 밖으로 내보내지 않는다.
+DISCORD_BOT_TOKEN=
+# 주간 보고와 'DM을 보낼 수 없다' 통보가 갈 채널 id(개발자 모드 → 채널 우클릭 → ID 복사).
+# 비밀이 아니지만 없으면 컨테이너가 기동하지 않는다(Config.need).
+DISCORD_CHANNEL_ID=
+
 TZ=Asia/Seoul
 SEND_HOUR=9
 WEEKLY_WEEKDAY=0
 WEEKLY_HOUR=9
 LLM_PROVIDER=
 SITE_NAME=산돌이 업무
-
-# --- cloudflared ---
-CLOUDFLARE_TUNNEL_TOKEN=eyJ...
 ```
 
-`.env`는 git에 넣지 않는다(`.gitignore`에 이미 있음).
+`.env`도 `.env.discord`도 git에 넣지 않는다(`.gitignore`에 둘 다 있음).
 
 ---
 
@@ -157,6 +193,7 @@ CLOUDFLARE_TUNNEL_TOKEN=eyJ...
 
 ```bash
 cp .env.example .env
+cp .env.discord.example .env.discord   # 비어 있어도 된다. 없으면 compose가 파일 전체를 못 읽는다.
 # .env에서 ALLOWED_HOSTS=localhost,127.0.0.1  CSRF_TRUSTED_ORIGINS=http://localhost:8000  SITE_URL=http://localhost:8000  DEBUG=1 로 바꾼다.
 docker compose up -d --build db web mcp
 docker compose exec web python manage.py createsuperuser
@@ -167,7 +204,7 @@ docker compose logs -f web
 
 - `docker compose exec web python manage.py check` 오류 없음.
 - 호스트에서 `curl -s http://$(docker compose port web 8000)/healthz` 대신, `web`은 포트를 노출하지 않으므로 `docker compose exec web python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/healthz').read())"` → `{"ok": true}`.
-- core 테스트를 Postgres로: `cd core && DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q` 통과.
+- core 테스트를 Postgres로: `cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q` 통과.
 
 ---
 
@@ -203,6 +240,8 @@ Cloudflare 대시보드 → Zero Trust → Networks → Tunnels:
 
 `web`, `mcp`는 compose 네트워크의 서비스 이름이다. cloudflared 컨테이너가 같은 네트워크에 있으므로 그대로 닿는다.
 
+**공개 호스트네임은 Discord 봇을 붙여도 두 개 그대로다.** 게이트웨이 봇은 Discord로 **나가는** 연결(WebSocket + REST)만 쓰고, Cloudflare Tunnel은 들어오는 트래픽만 다룬다 — 터널이 해 줄 일이 없다. 그래서 이 배포에는 다음이 **존재하지 않는다**: 세 번째 공개 경로(`dc.<도메인>`), 그 경로의 TLS, Ed25519 서명 검증(`DISCORD_PUBLIC_KEY`·pynacl), CSRF 면제 raw-body 뷰, 그리고 "Discord가 인터랙션 URL을 조용히 지웠다"는 실패 모드. HTTP 인터랙션 엔드포인트를 쓰면 그 넷이 전부 딸려 오는데, 마감 DM에는 **여전히 봇 토큰이 필요하다**(인터랙션 토큰은 그 대화 15분용) — 부품만 늘어난다.
+
 3. (선택) Security → WAF → Rate limiting rules: `(http.request.uri.path in {"/login" "/signup"})` 를 IP당 1분 20회로 제한.
 4. (선택) Zero Trust → Access → Applications 로 `pm.<도메인>/admin/*` 에 이메일 인증을 걸 수 있다. 지금은 하지 않는다.
 
@@ -213,6 +252,7 @@ Cloudflare 대시보드 → Zero Trust → Networks → Tunnels:
 ```bash
 cd /opt/project-manager
 cp .env.example .env && nano .env      # 실제 값 입력. SECRET_KEY는 `python3 -c "import secrets;print(secrets.token_urlsafe(50))"`
+cp .env.discord.example .env.discord   # 봇 토큰·CORE_TOKEN은 아래 3~4번에서 채운다
 # compose.yml의 db ports 두 줄 삭제
 docker compose up -d --build db web mcp cloudflared
 docker compose exec web python manage.py createsuperuser
@@ -225,17 +265,33 @@ docker compose logs --tail=50 web cloudflared
 
 1. superuser로 `/signup`이 아닌 `/login`으로 들어가 `/teams/new`에서 팀 생성(예: 산돌이 서비스). 만든 사람이 관리자가 된다.
 2. `/teams/<id>/members`(팀원 관리)에서 초대 링크 발급 → 팀원에게 전달. 팀원은 `/signup` 후 링크로 참여.
-3. `/teams/<id>/webhooks`(알림 채널)에서 Discord 채널 Webhook 주소를 등록하고 **[테스트 발송]**으로 확인한다. 여기 등록한 채널이 곧 알림 발송 대상이다.
-4. Discord 연동 계정: `/signup`으로 `discord-bot` 계정 생성 → 초대 링크로 팀 참여 → `팀원 관리`에서 그 계정을 **관리자**로 올린다(Webhook 주소를 읽어야 한다) → 그 계정으로 `/settings/tokens`에서 **읽기** 토큰 발급 → `.env`의 `CORE_TOKEN`에 넣고 `TEAM_ID` 확인 → `docker compose up -d discord`.
-5. `docker compose exec discord python -m discord_service test` → 등록한 채널 전부에 테스트 메시지.
-6. 각자 `/settings/tokens`에서 개인 토큰 발급 후 GUIDE-03 Step 5 표대로 AI 클라이언트 연결. MCP URL은 `https://mcp.<도메인>`.
+3. Discord 앱 준비(운영자 1회, 브라우저): Developer Portal → 앱 생성 → **Bot** 페이지 → `[Reset Token]` → 토큰을 `.env.discord`의 `DISCORD_BOT_TOKEN`에. **이때 한 번만 보인다.** 켤 특권 인텐트는 **없다**(`DIRECT_MESSAGES`는 비특권이고, 봇에게 온 DM의 본문은 MESSAGE_CONTENT 없이 전달된다). APPLICATION ID·PUBLIC KEY는 필요 없다(인터랙션 엔드포인트를 쓰지 않는다). Installation → **Guild Install만**, scope `bot` + `applications.commands`, permissions `VIEW_CHANNEL | SEND_MESSAGES = 3072` → 설치 링크로 팀 서버에 추가. 팀원 전원이 그 서버에 참여하고 **서버 우클릭 → 개인정보 보호 설정 → '서버 멤버의 DM 허용'을 켠다**(꺼져 있으면 `50007`로 영구 거부다 — 봇은 친구 추가가 안 되므로 '친구만'은 하드 블록). 개발자 모드를 켜고 주간 보고 채널의 ID를 복사해 `DISCORD_CHANNEL_ID`에.
+4. Discord 연동 계정: `/signup`으로 `discord-bot` 계정 생성 → 초대 링크로 팀 참여. **팀원(member)이면 된다** — 관리자로 올리지 않는다. 마감 스캔이 그 계정의 팀 범위 GET을 쓰므로 멤버십 자체는 필요하다. 토큰은 웹에서 만들 수 없다(`bot` 범위 자기 발급 = 권한 상승). 서버 셸 한 줄로 발급한다:
+
+   ```bash
+   docker compose exec web python manage.py shell -c "from accounts.models import ApiToken,User; print(ApiToken.issue(User.objects.get(username='discord-bot'),'Discord 봇','bot')[1])"
+   ```
+
+   출력값을 `.env.discord`의 `CORE_TOKEN`에 넣고 `TEAM_ID`를 확인한 뒤 `docker compose up -d discord discord-bot`.
+5. 채널 확인: `docker compose exec discord python -m discord_service test` → 지정 채널에 확인 메시지. 실패하면 permissions(3072)나 채널 id를 본다. 리스너 확인: `docker compose logs -f discord-bot`에 `discord 봇 접속`이 찍힌 뒤 봇에게 DM으로 `도움`을 보내면 명령 목록이 답장으로 온다.
+6. 각자 Discord 연결: 웹 `/settings/profile` → **[Discord 연결]** → 8자 코드 → Discord에서 봇에게 DM으로 `연결 A3F19C2D`(10분 안에). `/teams/<id>/members`에서 전원이 '연결'로 바뀌는지 확인한다. **마이그레이션이 기존 `discord_user_id`를 전부 비우므로(증명되지 않은 손입력 값), 전원이 연결을 마치기 전까지 개인 DM 알림은 0건이다 — 배포 전에 팀에 공지한다.**
+7. 리허설: `docker compose exec discord python -m discord_service deadlines --date <오늘>` → 담당자 DM 도착 + `python -m discord_service status`의 `sent` 행 확인.
+8. 각자 `/settings/tokens`에서 개인 토큰 발급 후 GUIDE-03 Step 5 표대로 AI 클라이언트 연결. MCP URL은 `https://mcp.<도메인>`.
+
+배포 시각 제약은 **없다**. 마감 잡은 `store.claim_daily("deadline", 오늘)`이 하루 1회로 막고 그 행은 `discord_data` 볼륨에 남는다 — 그날 이미 돌았으면 새 코드가 건너뛰고, 안 돌았으면 새 키로 한 번 돈다. 옛 중복 방지 키는 아무도 읽지 않는 죽은 행이 된다.
+
+`teams 0003`(웹훅 모델 삭제)은 **되돌릴 수 없다.** 등록해 둔 주소가 필요하면 배포 전에 `/ops` 내보내기로 백업한다.
+
+봇 토큰이 유출되면: 포털 `[Reset Token]` → `.env.discord` 수정 → `docker compose up -d discord discord-bot`. 겹치는 유효 창이 없어 그사이 알림이 끊긴다.
 
 ---
 
 ## Step 8. 상태 확인과 갱신
 
-- UptimeRobot(무료)에 `https://pm.<도메인>/healthz` HTTP 모니터를 5분 간격으로 등록. 알림은 이메일 또는 Discord Webhook.
-- `/ops`(superuser)에서 `discord` 통합의 마지막 실행과 결과를 본다.
+- UptimeRobot(무료)에 `https://pm.<도메인>/healthz` HTTP 모니터를 5분 간격으로 등록. 알림은 이메일로 받는다.
+- `/ops`(superuser)에서 `discord` 통합의 마지막 실행과 결과를 본다. `detail`에 `sent`·`skipped`·`failed`·`unknown`·`unlinked`가 들어 있다. **`unlinked`는 실패가 아니다**(`ok`는 `failed == 0`로 판정한다) — 한 명이 연결을 안 했다고 `/ops`가 영구 빨강이 되면 그 신호를 아무도 안 보게 된다. `failed`가 있으면 `detail`의 Discord 오류 코드를 본다(`50007`·`50278`·`10013`이면 그 사람의 DM 설정이다. 팀 채널에도 하루 한 번 안내가 간다).
+- 리스너는 `/ops`에 보고하지 않는다(`IntegrationStatus.name`이 단일 키라 틱의 `discord` 행을 덮어쓴다). 상태는 `docker compose logs discord-bot`으로 보고, 재접속은 discord.py + `restart: unless-stopped`가 맡는다.
+- 발송 기록 상세: `docker compose exec discord python -m discord_service status`(최근 `runs`·`sent`·`weekly`).
 - 코드 갱신: 파일 복사 후 `docker compose up -d --build`. 마이그레이션은 entrypoint가 자동 실행.
 - 백업은 후속 과제다. 그때까지 Proxmox의 Datacenter → Backup에서 이 컨테이너를 매일 다른 스토리지로 vzdump 하도록 예약해 둔다.
 - 월 1회: 각 파트에서 `uv lock --upgrade` 후 테스트 → 재빌드.
@@ -250,19 +306,22 @@ docker compose logs --tail=50 web cloudflared
 2. 문서 링크: `PLAN.md`, `docs/IMPL-PLAN.md`, `docs/SPEC.md`, `docs/GUIDE-*.md`.
 3. 로컬 개발 빠른 시작: `cd core && uv sync && uv run python manage.py migrate && uv run python manage.py runserver`, 테스트 명령.
 4. Docker 로컬 실행(Step 4)과 서버 배포(Step 5~7) 요약, 자세한 건 이 문서로 링크.
-5. 환경 변수 표(`.env.example` 항목 설명).
+5. 환경 변수 표(`.env.example`과 `.env.discord.example` 항목 설명. 두 파일로 나눈 이유 한 줄 포함).
 6. 목업 보는 법: 루트에서 `python -m http.server 8765` 후 `산돌이 업무 목업 v2.dc.html` 열기.
 
 ---
 
 ## 완료 체크
 
-- [x] `docker compose build` 세 이미지 모두 성공 (web 376MB · mcp 308MB · discord 269MB)
-- [x] 로컬에서 `db web mcp` 기동 후 `/healthz` OK, Postgres 16으로 core 테스트 122개 통과
+- [x] `docker compose build` 세 이미지 모두 성공 (web 376MB · mcp 308MB · discord 269MB. `discord`와 `discord-bot`은 같은 이미지다)
+- [x] 로컬에서 `db web mcp` 기동 후 `/healthz` OK, Postgres 16으로 core 테스트 통과
 - [ ] Proxmox LXC 기동·`https://pm.<도메인>/healthz`  ← 사용자 인프라 필요
 - [x] 팀 생성 → 초대 링크 발급 → 새 계정 가입 → 참여까지 실행 중 서버에서 확인 (참여 후 프로젝트 레일에 팀 프로젝트가 보이고 '초대 링크가 필요합니다' 안내가 사라진다)
-- [x] 팀원 관리 화면에서 역할 변경·제거·초대, 알림 채널 화면에서 Webhook 등록·[테스트 발송]·끄기·삭제까지 브라우저에서 확인 (테스트 발송은 실제 Discord가 403으로 답한 것까지 화면에 표시)
-- [ ] 실제 Discord 채널 테스트 메시지 수신  ← 사용자 인프라 필요 — 컨테이너 기동·설정 파싱·발송 경로는 확인. 진짜 Webhook 주소를 `팀 → 알림 채널`에 등록하면 된다
+- [x] 팀원 관리 화면에서 역할 변경·제거·초대까지 브라우저에서 확인
+- [x] 프로필의 **[Discord 연결]**로 코드가 한 번만 노출되고, `/teams/<id>/webhooks`가 404이며, 웹에서 `bot` 범위 토큰을 만들 수 없다
+- [x] `.env`와 `.env.discord`가 나뉘어 있고 `web` 컨테이너 환경에 `DISCORD_BOT_TOKEN`이 없다 (`docker compose exec web env | grep -c DISCORD_BOT_TOKEN` → 0)
+- [ ] 실제 봇 토큰으로 담당자 개인 DM 수신 + DM `오늘`·`완료 12` 왕복  ← 사용자 인프라 필요 — 컨테이너 기동·설정 파싱·발송/수신 경로는 가짜 전송으로 확인. 포털에서 봇을 만들어 `.env.discord`를 채우면 된다
+- [ ] `bot` 범위 `CORE_TOKEN` 발급(Step 7의 셸 한 줄)  ← 사용자 인프라 필요
 - [ ] 공개 URL로 커넥터 등록  ← 사용자 인프라 필요 — mcp 컨테이너에서 `list_tasks` 동작 확인
 - [ ] UptimeRobot 모니터 등록  ← 사용자 인프라 필요
 - [ ] Proxmox vzdump 예약 등록  ← 사용자 인프라 필요

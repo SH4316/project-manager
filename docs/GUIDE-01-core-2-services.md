@@ -4,6 +4,8 @@
 
 개정 2026-09-10: 상태 7개·멈춤 사유, 중요도 1~10, `update_text`(version 없는 자동 저장), `extend_due`, 댓글 삭제, 오늘 목록 자동 담기·제외, `me_view`, 프로젝트 관리자 여러 명.
 
+개정 2026-09-10 (Discord 봇): `teams/services.py`의 웹훅 함수 8개 삭제, 신규 `accounts/services.py`(계정 연결).
+
 ---
 
 ## Step 3. services
@@ -95,93 +97,110 @@ def remove_member(membership, actor):
 
 def _admin_count(team) -> int:
     return Membership.objects.filter(team=team, role="admin").count()
-
-
-# ---------- Discord 알림 채널 ----------
-
-WEBHOOK_HELP = "Discord 채널 → 설정 → 연동 → 웹후크에서 만든 주소를 붙여넣으세요."
-
-
-def webhooks_of(team):
-    return DiscordWebhook.objects.filter(team=team).select_related("created_by")
-
-
-def active_webhook_urls(team) -> list[str]:
-    """discord 서비스가 읽어 가는 발송 대상. 순서는 이름순으로 고정한다."""
-    return list(webhooks_of(team).filter(is_active=True).values_list("url", flat=True))
-
-
-def add_webhook(team, name: str, url: str, actor) -> DiscordWebhook:
-    require_admin(actor, team)
-    name, url = name.strip()[:50], url.strip()
-    if not name:
-        raise ServiceError({"name": "채널 이름을 입력하세요."})
-    if not WEBHOOK_RE.match(url):
-        raise ServiceError({"url": "Discord Webhook 주소 형식이 아닙니다."})
-    if DiscordWebhook.objects.filter(team=team, url=url).exists():
-        raise ServiceError({"url": "이미 등록한 Webhook입니다."})
-    return DiscordWebhook.objects.create(team=team, name=name, url=url, created_by=actor)
-
-
-def set_webhook_active(webhook, active: bool, actor):
-    require_admin(actor, webhook.team)
-    if webhook.is_active != active:
-        webhook.is_active = active
-        webhook.save(update_fields=["is_active"])
-
-
-def delete_webhook(webhook, actor):
-    require_admin(actor, webhook.team)
-    webhook.delete()
-
-
-def send_test_message(webhook, actor, send=None) -> tuple[bool, str]:
-    """확인용 메시지 1건을 보내고 결과를 기록한다. (성공?, 사유) 를 돌려준다.
-
-    실패 사유에 URL이 섞이지 않도록 예외 원문은 쓰지 않는다(GUIDE-00 §3).
-    """
-    require_admin(actor, webhook.team)
-    if webhook.last_test_at and (timezone.now() - webhook.last_test_at).total_seconds() < 30:
-        raise ServiceError({"url": "잠시 후 다시 시도하세요."})
-    send = send or post_discord
-    try:
-        send(webhook.url, f"✅ {webhook.team.name} 알림 연결 확인")
-        ok, detail = True, ""
-    except urllib.error.HTTPError as e:
-        ok, detail = (
-            False,
-            f"Discord 응답 {e.code}" + (" (삭제된 Webhook)" if e.code == 404 else ""),
-        )
-    except Exception:  # noqa: BLE001  네트워크·DNS·타임아웃
-        ok, detail = False, "Discord에 연결하지 못했습니다."
-    DiscordWebhook.objects.filter(pk=webhook.pk).update(
-        last_test_at=timezone.now(), last_test_ok=ok, last_test_detail=detail
-    )
-    return ok, detail
-
-
-def post_discord(url: str, text: str) -> None:
-    """core가 Discord로 직접 보내는 유일한 곳(등록 확인용 1건).
-
-    정기 알림은 discord 서비스의 일이다. 주소는 add_webhook의 WEBHOOK_RE로 이미 검증되어
-    discord.com 밖으로는 나가지 않는다.
-    """
-    body = json.dumps({"content": text, "allowed_mentions": {"parse": []}}).encode()
-    req = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json"}, method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=5) as r:
-        r.read()
 ```
 
-- 웹훅 관리는 전부 `require_admin`을 거친다. 화면(`views/teams.py`)은 팀 관리자가 아니면
-  404로 감추고, 실제 차단은 여기서 한다.
-- `add_webhook`은 `WEBHOOK_RE`로 주소를 검사한다. 이 검사가 곧 SSRF 방지다
-  (검사를 통과한 주소만 `post_discord`가 연다).
-- `send_test_message`의 실패 사유에는 예외 원문을 쓰지 않는다. 예외 문구에 주소가 섞여
-  화면·로그로 새는 것을 막는다(GUIDE-00 §3).
-- 정기 알림은 discord 서비스가 보낸다. core가 Discord로 직접 보내는 곳은
-  `post_discord`(등록 확인용 1건) 하나뿐이다.
+`teams/services.py`에는 Discord 관련 함수가 없다. 발송도, 채널 관리도 core의 일이 아니다 — **core는 Discord로 나가는 요청을 한 곳도 하지 않는다.** 팀 채널은 `discord_service`의 `DISCORD_CHANNEL_ID` 환경 변수 하나이고, 개인 알림 대상은 `User.discord_user_id`다. 그래서 URL 형식 검사(SSRF 방지), 마스킹, 관리자 게이트, 확인 발송 스로틀이 전부 없어졌다. 확인 발송은 발송이 이미 사는 곳에서 한다: `python -m discord_service test`.
+
+### 3.1a `core/accounts/services.py` (신규)
+
+Discord 계정 연결. 이 파일이 하는 일은 **두 신원을 맞바꾸는 것** 하나다.
+
+```python
+"""Discord 계정 연결.
+
+두 신원을 맞바꿔야 연결된다: **코드**는 로그인한 웹 세션에서만 나오고(= PM 쪽 신원),
+**snowflake**는 게이트웨이가 채운 `author.id`에서만 나온다(= Discord 쪽 신원).
+어느 한쪽만으로는 소유가 증명되지 않는다. 사용자가 직접 입력하는 경로는 두지 않는다.
+"""
+
+import secrets
+from datetime import timedelta
+
+from django.db import transaction
+from django.utils import timezone
+
+from common.errors import ServiceError
+
+from .models import User
+
+CODE_TTL = timedelta(minutes=10)
+
+
+def issue_link_code(user) -> str:
+    """1회용 연결 코드. 다시 발급하면 이전 코드는 그 순간 무효다."""
+    code = secrets.token_hex(4).upper()
+    User.objects.filter(pk=user.pk).update(
+        discord_link_code=code, discord_link_expires_at=timezone.now() + CODE_TTL
+    )
+    return code
+
+
+@transaction.atomic
+def link_discord(code: str, discord_user_id: str) -> User:
+    code = (code or "").strip().upper()
+    did = (discord_user_id or "").strip()
+    if not did.isdecimal():
+        raise ServiceError({"discord_user_id": "Discord 사용자 ID 형식이 아닙니다."})
+    now = timezone.now()
+    user = User.objects.filter(
+        discord_link_code=code, discord_link_expires_at__gt=now, is_active=True
+    ).first()
+    if user is None:
+        raise ServiceError({"code": "코드가 틀렸거나 만료됐습니다. 웹에서 다시 발급하세요."})
+
+    # 이 snowflake를 들고 있던 옛 행에서 가져온다. 코드와 snowflake가 둘 다 증명된 이 순간,
+    # 남의 행에 남아 있는 값이 틀린 것이다. 선점당해 영구히 잠기는 경로를 없앤다.
+    User.objects.filter(discord_user_id=did).exclude(pk=user.pk).update(
+        discord_user_id=None, discord_linked_at=None
+    )
+    # 코드 1회용: 조건부 UPDATE의 rowcount로 보장한다. 비울 때는 반드시 None
+    # (""로 비우면 두 번째 사용자가 unique 제약에 걸린다).
+    updated = User.objects.filter(pk=user.pk, discord_link_code=code).update(
+        discord_user_id=did,
+        discord_linked_at=now,
+        discord_link_code=None,
+        discord_link_expires_at=None,
+    )
+    if updated != 1:
+        raise ServiceError({"code": "이미 사용된 코드입니다."})
+    user.refresh_from_db()
+    return user
+
+
+def unlink_discord(user) -> None:
+    User.objects.filter(pk=user.pk).update(
+        discord_user_id=None, discord_linked_at=None, discord_link_code=None,
+        discord_link_expires_at=None,
+    )
+
+
+def unlink_discord_by_id(discord_user_id: str) -> bool:
+    """봇의 `연결해제`. 알림 수신 거부 수단을 겸한다."""
+    n = User.objects.filter(discord_user_id=(discord_user_id or "").strip()).update(
+        discord_user_id=None, discord_linked_at=None
+    )
+    return n == 1
+
+
+def user_by_discord_id(discord_user_id: str):
+    """봇 명령의 행위자. 연결이 증명된 활성 사용자만 돌려준다."""
+    did = (discord_user_id or "").strip()
+    if not did:
+        return None
+    return User.objects.filter(
+        discord_user_id=did, discord_linked_at__isnull=False, is_active=True
+    ).first()
+```
+
+읽는 순서대로의 근거:
+
+- `issue_link_code`는 `filter(pk=...).update(...)`를 쓴다. `user.save()`가 아니라 UPDATE라서 `User.save()`의 정규화(빈 `discord_user_id` → `None`)를 타지 않는다. 재발급이 이전 코드를 덮으므로 미결 코드는 사람당 최대 하나다.
+- `link_discord`는 **`@transaction.atomic`**이다. 안에서 순서대로: 형식 검사 → 코드로 사람 찾기(만료·비활성 제외) → **snowflake 회수** → 조건부 UPDATE.
+- **회수(steal)**: 그 snowflake를 들고 있던 다른 행을 먼저 비운다. 코드는 인증된 웹 세션에서만, `did`는 Discord가 채운 값에서만 나온다 — 둘 다 증명된 이 순간 남의 옛 행이 틀린 것이다. 이 한 줄이 "누가 내 id를 먼저 적어 놔서 영구히 잠긴다"를 없앤다. 그래서 admin을 readonly로 둘 수 있다(01-1 §2.5).
+- **1회용**은 `rowcount`로 보장한다. `filter(pk, discord_link_code=code).update(...)`가 1행을 못 고치면 그 사이 다른 요청이 먼저 썼다는 뜻이므로 `ServiceError`다. 비울 때 `None`을 **명시**한다 — `""`는 `unique=True` 컬럼에서 두 번째 사용자와 충돌한다.
+- `user_by_discord_id`는 `discord_linked_at__isnull=False`와 `is_active=True`까지 본다. 검증되지 않은 값이나 비활성 계정은 봇 명령의 행위자가 될 수 없다.
+- `ChangeLog`는 쓰지 않는다. 이력은 `Task`·`Project` 전용이고, 연결 기록은 `discord_linked_at` 하나다.
+- 이 파일은 Discord로 **아무 요청도 하지 않는다**. `link_discord`를 부르는 것은 봇이고(`POST /api/integrations/discord/link`), 봇에게 `author.id`를 준 것은 게이트웨이다.
 
 ### 3.2 `core/projects/services.py`
 

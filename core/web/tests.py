@@ -184,11 +184,12 @@ def test_ops_requires_staff(client, member):
 
 
 def test_export_json_has_no_secrets(client, member, admin, team, task):
-    """백업에 비밀번호·초대 token·Webhook 주소가 들어가지 않는다."""
-    from teams.services import add_webhook, create_invite
+    """백업에 비밀번호·초대 token·Discord 연결 코드가 들어가지 않는다."""
+    from accounts.services import issue_link_code
+    from teams.services import create_invite
 
     invite = create_invite(team, admin)
-    add_webhook(team, "업무 알림", WH, admin)
+    code = issue_link_code(admin)
     User.objects.filter(pk=member.pk).update(is_staff=True, is_superuser=True)
     client.login(username="member1", password="pw12345678")
     r = client.get("/ops/export.json")
@@ -196,8 +197,10 @@ def test_export_json_has_no_secrets(client, member, admin, team, task):
     body = r.content.decode()
     assert "password" not in body
     assert invite.token not in body
-    assert WH not in body
-    assert "업무 알림" in body  # 행 자체는 남는다
+    # 연결 코드는 살아 있는 10분 동안 자격증명이다. 연결 시각은 기록이므로 남는다.
+    assert code not in body
+    assert "discord_link_code" not in body
+    assert "discord_linked_at" in body
 
 
 def test_healthz(client):
@@ -238,14 +241,39 @@ def test_weird_digit_query_params_do_not_crash(logged, task):
     assert logged.get("/me?project=²").status_code == 200
 
 
-def test_duplicate_discord_id_shows_field_error(client, admin, member):
-    """unique=True인 discord_user_id 중복은 IntegrityError(500)가 아니라 폼 오류여야 한다."""
+def test_profile_has_no_discord_id_input(client, admin, member):
+    """자유 입력칸을 남겨 두면 코드 교환 전체가 무의미해진다(위조 경로)."""
     client.login(username="admin1", password="pw12345678")
-    r = client.post("/settings/profile", {"display_name": "관리자", "discord_user_id": "111"})
-    assert r.status_code == 200
-    assert "이미 쓰는" in r.content.decode()
+    assert 'name="discord_user_id"' not in client.get("/settings/profile").content.decode()
+
+    r = client.post("/settings/profile", {"display_name": "관리자", "discord_user_id": "222"})
+    assert r.status_code == 302
+    admin.refresh_from_db()
+    assert admin.display_name == "관리자"
+    assert admin.discord_user_id is None
+
+
+def test_discord_link_code_is_shown_once_then_unlink_clears(client, admin):
+    """코드는 발급 직후 한 번만 보인다(토큰 화면의 new_token과 같은 방식)."""
+    from accounts.services import link_discord
+
+    client.login(username="admin1", password="pw12345678")
+    assert client.post("/settings/profile/discord").status_code == 302
+    admin.refresh_from_db()
+    code = admin.discord_link_code
+    assert code and len(code) == 8
+
+    body = client.get("/settings/profile").content.decode()
+    assert f"연결 {code}" in body
+    assert code not in client.get("/settings/profile").content.decode()
+
+    link_discord(code, "222")
+    assert "연결됨" in client.get("/settings/profile").content.decode()
+
+    assert client.post("/settings/profile/discord/unlink").status_code == 302
     admin.refresh_from_db()
     assert admin.discord_user_id is None
+    assert admin.discord_linked_at is None
 
 
 def test_long_idem_key_does_not_crash(logged, project):
@@ -292,18 +320,21 @@ def test_admin_task_and_project_are_read_only(client, member, task, project):
     assert task.title == "메뉴 누락 개선"
 
 
-def test_secret_filter_redacts_tokens_and_webhooks(caplog):
-    """GUIDE-00: 로그에 토큰·Webhook URL 원문이 남지 않는다 (common.logging.SecretFilter)."""
+def test_secret_filter_redacts_tokens(caplog):
+    """GUIDE-00: 로그에 API 토큰·Discord 봇 토큰 원문이 남지 않는다 (common.logging)."""
     import logging
 
     from common.logging import SecretFilter
 
+    bot = "MTk4NjIyNDgzNDcxOTI1MjQ4.Cl2FMQ.ZnCjm1XVW7vRze4b7Cq4se7kKWs"
     f = SecretFilter()
     cases = [
         ("token=pm_abcdefghijklmnopqrstuvwxyz012345", "pm_"),
         ("Authorization: Bearer pm_abcdefghijklmnopqrstuvwxyz012345", "Bearer"),
         ("GET /u/pm_abcdefghijklmnopqrstuvwxyz012345/mcp", "/u/pm_"),
-        ("POST https://discord.com/api/webhooks/123/abcXYZ", "discord.com/api/webhooks"),
+        # 봇 REST 호출은 `Bot <token>`으로 실린다. bearer 패턴이 못 잡는 형식이다.
+        (f"POST /channels/1/messages Authorization: Bot {bot}", bot),
+        (f"env DISCORD_BOT_TOKEN={bot}", bot),
     ]
     for msg, secret in cases:
         rec = logging.LogRecord("t", logging.INFO, "p", 1, msg, None, None)
@@ -319,9 +350,7 @@ def test_secret_filter_redacts_tokens_and_webhooks(caplog):
     assert "pm_" not in rec.getMessage()
 
 
-# ---------- 팀원 관리 · 알림 채널 (팀 관리자 전용) ----------
-
-WH = "https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOp-_9876"
+# ---------- 팀원 관리 (팀 관리자 전용) ----------
 
 
 @pytest.fixture
@@ -330,103 +359,33 @@ def as_admin(client, team):
     return client
 
 
-def _webhook(team, admin):
-    from teams.services import add_webhook
-
-    return add_webhook(team, "업무 알림", WH, admin)
-
-
-def test_admin_pages_are_hidden_from_members(logged, team, admin):
+def test_admin_pages_are_hidden_from_members(logged, team):
     """팀원에게는 관리 화면이 아예 없는 것처럼 보인다(403이 아니라 404)."""
-    wh = _webhook(team, admin)
-    for path in (f"/teams/{team.pk}/members", f"/teams/{team.pk}/webhooks"):
-        assert logged.get(path).status_code == 404
-    for path in (
-        f"/teams/{team.pk}/webhooks/new",
-        f"/teams/webhooks/{wh.pk}/toggle",
-        f"/teams/webhooks/{wh.pk}/test",
-        f"/teams/webhooks/{wh.pk}/delete",
-    ):
-        assert logged.post(path, {"name": "x", "url": WH}).status_code == 404
-    wh.refresh_from_db()
-    assert wh.is_active is True
+    assert logged.get(f"/teams/{team.pk}/members").status_code == 404
+
+
+def test_webhook_routes_are_gone(as_admin, team):
+    """알림 채널 화면은 대체가 아니라 삭제다. 관리자에게도 경로가 없다."""
+    for path in (f"/teams/{team.pk}/webhooks", f"/teams/{team.pk}/webhooks/new"):
+        assert as_admin.get(path).status_code == 404
+        assert as_admin.post(path, {"name": "x", "url": "https://x"}).status_code == 404
 
 
 def test_members_page_shows_workload_and_discord_link(as_admin, team, task, member):
     body = as_admin.get(f"/teams/{team.pk}/members").content.decode()
     assert "팀원 관리" in body
     assert member.display_name in body
-    assert "연결" in body  # member 픽스처는 discord_user_id가 있다
+    assert "연결" in body  # member 픽스처는 연결이 끝난 상태다
     assert "관리자 1명" in body
-    assert "알림 채널" in body
 
 
-def test_webhook_page_never_shows_the_full_url(as_admin, team, admin):
-    _webhook(team, admin)
-    body = as_admin.get(f"/teams/{team.pk}/webhooks").content.decode()
-    assert WH not in body
-    assert "9876" in body
-    assert "사용 중" in body
+def test_token_form_cannot_mint_a_bot_scope_token(logged, member):
+    """bot 범위 자기 발급은 권한 상승이다. 발급은 서버 셸로만 한다."""
+    from accounts.models import ApiToken
 
+    body = logged.get("/settings/tokens").content.decode()
+    assert '<option value="bot"' not in body
 
-def test_webhook_create_rejects_other_hosts(as_admin, team):
-    from teams.models import DiscordWebhook
-
-    r = as_admin.post(
-        f"/teams/{team.pk}/webhooks/new",
-        {"name": "업무", "url": "https://evil.example/api/webhooks/1/x"},
-    )
-    assert r.status_code == 200
-    assert "형식이 아닙니다" in r.content.decode()
-    assert DiscordWebhook.objects.count() == 0
-
-    r = as_admin.post(f"/teams/{team.pk}/webhooks/new", {"name": "업무", "url": WH}, follow=True)
-    assert r.status_code == 200
-    assert DiscordWebhook.objects.get().url == WH
-    assert WH not in r.content.decode()
-
-
-def test_webhook_toggle_and_delete(as_admin, team, admin):
-    from teams.models import DiscordWebhook
-
-    wh = _webhook(team, admin)
-    as_admin.post(f"/teams/webhooks/{wh.pk}/toggle")
-    wh.refresh_from_db()
-    assert wh.is_active is False
-    as_admin.post(f"/teams/webhooks/{wh.pk}/toggle")
-    wh.refresh_from_db()
-    assert wh.is_active is True
-    as_admin.post(f"/teams/webhooks/{wh.pk}/delete")
-    assert DiscordWebhook.objects.count() == 0
-
-
-def test_webhook_test_send_reports_the_result(as_admin, team, admin, monkeypatch):
-    from teams import services as tsv
-
-    calls = []
-    monkeypatch.setattr(tsv, "post_discord", lambda url, text: calls.append(url))
-    wh = _webhook(team, admin)
-    body = as_admin.post(f"/teams/webhooks/{wh.pk}/test", follow=True).content.decode()
-    assert calls == [WH]
-    assert "확인 메시지를 보냈습니다" in body
-    wh.refresh_from_db()
-    assert wh.last_test_ok is True
-
-    def boom(url, text):
-        raise OSError("dns")
-
-    monkeypatch.setattr(tsv, "post_discord", boom)
-    body = as_admin.post(f"/teams/webhooks/{wh.pk}/test", follow=True).content.decode()
-    assert "발송 실패" in body
-    assert WH not in body
-
-
-def test_webhook_of_another_team_is_404(client, team, admin, outsider):
-    """다른 팀의 webhook id를 넣어도 404. 팀 확인을 그 객체의 팀으로 한다."""
-    from teams.services import create_team
-
-    wh = _webhook(team, admin)
-    create_team("남의 팀", "", outsider)
-    client.login(username="outsider", password="pw12345678")
-    assert client.post(f"/teams/webhooks/{wh.pk}/delete").status_code == 404
-    assert client.post(f"/teams/webhooks/{wh.pk}/test").status_code == 404
+    r = logged.post("/settings/tokens", {"name": "봇", "scope": "bot"})
+    assert r.status_code == 200  # 폼이 무효라 발급 없이 화면만 다시 그린다
+    assert not ApiToken.objects.exists()

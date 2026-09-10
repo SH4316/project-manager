@@ -1,6 +1,6 @@
 from datetime import date
 
-from conftest import FakeCore, FakeHook, make_core, make_hook, task, weekly_data
+from conftest import CHANNEL, FakeCore, make_bot, make_core, member, task, weekly_data
 
 from discord_service.summarize import fixed_summary, summarize
 from discord_service.weekly import last_monday, run_weekly
@@ -27,17 +27,34 @@ def test_summarize_falls_back_when_provider_fails():
     assert source == "fixed"
 
 
-def test_run_weekly_once_per_period(store, fake_hook, hook):
+def test_run_weekly_goes_to_the_team_channel(store, fake_bot, bot):
+    """주간 보고는 팀 채널에 게시한다(멘션이 목적이라 users만 허용)."""
+    data = weekly_data(
+        completed=[task(1, "2026-09-02")],
+        members=[member(), member(4, "", "미연결")],
+    )
+    core = make_core(FakeCore([], weekly=data))
+    assert run_weekly(core, bot, store, 1, WS, "")["status"] == "sent"
+    assert [m["channel"] for m in fake_bot.messages] == [CHANNEL]
+    assert fake_bot.messages[0]["allowed_mentions"] == {"parse": ["users"]}
+    # /ops는 staff만 보지만 이 보고는 당사자가 본다.
+    assert "⚠️ Discord 미연결: 미연결" in fake_bot.messages[0]["content"]
+
+
+def test_run_weekly_once_per_period(store, fake_bot, bot):
     core = make_core(FakeCore([], weekly=weekly_data(completed=[task(1, "2026-09-02")])))
-    assert run_weekly(core, hook, store, 1, WS, "")["status"] == "sent"
-    assert run_weekly(core, hook, store, 1, WS, "")["status"] == "skipped"
-    assert run_weekly(core, hook, store, 1, WS, "", force=True)["status"] == "sent"
+    assert run_weekly(core, bot, store, 1, WS, "")["status"] == "sent"
+    assert run_weekly(core, bot, store, 1, WS, "")["status"] == "skipped"
+    assert run_weekly(core, bot, store, 1, WS, "", force=True)["status"] == "sent"
+    assert len(fake_bot.messages) == 2
 
 
 def test_run_weekly_marks_failed_but_saves(store):
-    fake = FakeHook(statuses=[500, 500, 500])
+    from conftest import FakeBot
+
+    fake = FakeBot(errors={"*": [500, 500, 500]})
     core = make_core(FakeCore([], weekly=weekly_data(completed=[task(1, "2026-09-02")])))
-    r = run_weekly(core, make_hook(fake), store, 1, WS, "")
+    r = run_weekly(core, make_bot(fake, store), store, 1, WS, "")
     assert r["status"] == "failed"
     assert store.recent()["weekly"][0]["sent_status"] == "failed"
 

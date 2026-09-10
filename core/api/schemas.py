@@ -238,6 +238,25 @@ class StatusIn(Schema):
     detail: dict = {}
 
 
+# ---------- Discord 봇 ----------
+# discord_user_id는 게이트웨이가 채운 author.id다. 클라이언트가 고르는 값이 아니다.
+
+
+class DiscordLinkIn(Schema):
+    code: str
+    discord_user_id: str
+
+
+class DiscordActorIn(Schema):
+    discord_user_id: str
+
+
+class DiscordExtendIn(Schema):
+    discord_user_id: str
+    due_date: date
+    reason: str = ""
+
+
 class ErrorOut(Schema):
     detail: dict | str
 

@@ -180,7 +180,8 @@ class Link(models.Model):
 
 class ChangeLog(models.Model):
     TARGETS = [("task", "task"), ("project", "project")]
-    SOURCES = [("web", "웹"), ("api", "API"), ("mcp", "AI")]
+    # source는 max_length=4다. "discord"는 안 들어가므로 코드는 "dc", 표시는 "Discord".
+    SOURCES = [("web", "웹"), ("api", "API"), ("mcp", "AI"), ("dc", "Discord")]
 
     target_type = models.CharField(max_length=10, choices=TARGETS)
     target_id = models.PositiveBigIntegerField()

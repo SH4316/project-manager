@@ -125,6 +125,7 @@
 
 ### 4.7 GUIDE-02 (Discord)
 - `messages.STATUS` 7개, `notify.OPEN` 5개, `open_tasks`의 status 문자열, 막힘 플래그를 `status=="blocked"`로. `summarize`에서 `commented` 줄 삭제. conftest `task()` 헬퍼에서 `is_blocked` → `status`. 테스트 `test_blocked_task_included`는 `status="blocked"`로.
+- (이후 개정) 웹훅 발송 전체가 봇으로 대체되었다. §8 마지막 항목을 본다.
 
 ### 4.8 GUIDE-03 (MCP)
 - 도구 14개(§3 표). `set_blocked` 삭제, `add_comment` → `append_note`. `transition_task` 설명에 blocked 사유 필수. `create_task/update_task` priority int, `notes`·`stop_reason` 추가. 테스트 `test_tool_names_registered` 집합 갱신, `test_append_note_appends_with_version` 추가.
@@ -193,11 +194,12 @@
 ## 8. 진행 상태
 
 - **0단계 지시서 개정: 완료 (2026-09-10).** GUIDE-00·01-1·01-2·01-3·01-5·02·03·04 개정, 01-4 전면 재작성.
-- **1단계 core: 완료.** Step 0~7. `pytest` SQLite·Postgres 16 각 140개 통과(skip 0), `ruff` 0,
-  `/api/docs` 엔드포인트 21개, §6.10 수동 확인 20항목, 목업 다섯 화면 대조.
+- **1단계 core: 완료.** Step 0~7. `pytest` SQLite·Postgres 16 통과(skip 0), `ruff` 0,
+  `/api/docs` 엔드포인트, §6.14 수동 확인, 목업 다섯 화면 대조.
+  (수치는 아래 '웹훅 → 봇 전환' 이후 기준으로 갱신: 테스트 145개, 엔드포인트 25개, 수동 21항목.)
 - **2단계 discord_service: 완료(실제 채널 제외).** 29 passed. 컨테이너에서 실제 core에 붙여
   `deadlines`(중복 방지 포함)·`weekly`·`test`·`once`를 로컬 Webhook 싱크로 검증, 메시지 본문까지 확인.
-  진짜 `DISCORD_WEBHOOK_URL`만 남았다.
+  진짜 `DISCORD_WEBHOOK_URL`만 남았다. **→ 아래 '웹훅 → 봇 전환'으로 대체되었다.**
 - **3단계 mcp_server: 완료(공개 커넥터 제외).** 16 passed. 도구 14개, 헤더·URL 두 인증 방식,
   `append_note`가 웹 패널에 이어 붙는 것, 이력 경로 `mcp`, 폐기 토큰 오류까지 확인.
   Claude Code는 `claude mcp list` → ✔ Connected, Codex CLI는 설정 형식 수용을 확인했다.
@@ -209,6 +211,27 @@
 - **추가 작업: 권한 검사 + 관리 화면 2개 (완료).** 렌즈 5개·회의론자 3명씩(에이전트 110개)으로
   권한 모델을 검사해 확정 2건을 고치고, 팀 관리자용 **알림 채널** 화면과 **팀원 관리** 화면을
   만들었다. Discord 발송 대상이 환경 변수에서 웹 화면으로 옮겨졌다(discord 서비스는 core API로 읽는다).
+  **이 중 알림 채널 화면은 다음 항목에서 삭제되었다.**
+
+- **추가 작업: Discord 웹훅 → 봇 전환 (완료, 2026-09-10).** 알림이 "팀 채널에 웹훅으로 게시"에서
+  "**담당자 개인 DM + DM 평문 명령**"으로 바뀌었다. 바뀐 것과 그 이유:
+
+  | 항목 | 전 | 후 | 왜 |
+  |---|---|---|---|
+  | 발송 | 팀 채널 웹훅 1건/태스크 | 담당자 DM, (종류, 담당자)로 묶어 사람당 하루 최대 4건 | 아침 DM 폭탄과 Developer Policy의 '원치 않는 반복 DM' |
+  | 수신 | 없음 | `discord-bot` 컨테이너(discord.py 게이트웨이), DM 평문 5종 | 마감 DM에 그 자리에서 답장해 처리 |
+  | 계정 연결 | 프로필에 Discord ID 수동 입력 | 웹 1회용 코드(10분) ↔ 게이트웨이 `author.id` 교환 | 손입력 값은 소유 증명이 없다. 봇이 그 값으로 사람을 찾는 순간 자격증명이 된다 |
+  | 저장 | `teams.DiscordWebhook` 모델 + 관리 화면 | `DISCORD_CHANNEL_ID` 환경 변수 하나 | 비밀도 아닌 값 하나에 모델·화면·마스킹·전용 API가 붙어 있었다 |
+  | 권한 | 봇 계정이 팀 **관리자**(웹훅 주소를 읽어야 했다) | 팀 **팀원** + `bot` 범위 토큰 | 봇은 이제 사람을 대신해 3개 동작만 한다 |
+  | 비밀 | 웹훅 URL이 Postgres에 원문으로 | 봇 토큰·`CORE_TOKEN`이 `.env.discord`에만 | core는 Discord로 나가는 요청이 0건이 되었다 |
+  | core 의존성 | — | **변동 없음** | 인터랙션 엔드포인트를 만들지 않아 서명 검증(pynacl)·세 번째 공개 호스트네임이 필요 없다. 이 설계의 가장 큰 이득 |
+
+  마이그레이션 3개(`accounts 0002`·`tasks 0002`·`teams 0003`). `accounts 0002`는 기존
+  `discord_user_id`를 **전부 비운다**(증명되지 않은 값을 자격증명으로 승격시키지 않는다) →
+  전원이 DM `연결`을 하기 전까지 개인 DM 알림은 0건이다. `teams 0003`은 되돌릴 수 없다.
+  테스트: core 145개(웹훅 13개 삭제, 연결·봇·프로필 19개 추가), discord_service는 리스너·명령
+  테스트가 추가되었다. 개정한 문서: GUIDE-00·01-1·01-2·01-3·01-4·01-5·02·04, SPEC §8·§11.4,
+  PLAN, README, `compose.yml`, `.env.example`, 신규 `.env.discord.example`.
 
 구현 중 발견해 고친 것(지시서 코드 자체의 결함 포함) 22건과 지시서 반영 46곳은
 [IMPL-REPORT.md](IMPL-REPORT.md)에 있다. 이 문서는 이제 결정 근거로만 참고한다.

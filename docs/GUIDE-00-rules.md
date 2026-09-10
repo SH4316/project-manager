@@ -48,8 +48,12 @@
 | 파트 | 실행 의존성 | 개발 의존성 |
 |---|---|---|
 | `core/` | django, django-ninja, psycopg[binary], dj-database-url, gunicorn, whitenoise | pytest, pytest-django, ruff |
-| `discord_service/` | httpx | pytest, ruff |
+| `discord_service/` | httpx, discord.py | pytest, ruff |
 | `mcp_server/` | mcp, httpx, uvicorn | pytest, ruff |
+
+`discord.py`는 게이트웨이(WebSocket) 수신 전용이다 — 하트비트·RESUME·close code 처리를 직접 쓰지 않기 위해 산다(`discord_service/listener.py`). 발송은 계속 `httpx`로 한다.
+
+**`core/`의 의존성은 이 개정에서 하나도 늘지 않는다.** Discord 봇을 붙이면서 core는 서명 검증(pynacl/cryptography)도, 새 공개 엔드포인트도 갖지 않았다 — HTTP 인터랙션 대신 게이트웨이 DM을 쓰기 때문이고, 이것이 이 설계의 가장 큰 이득이다. core는 Discord로 나가는 요청도 하지 않는다.
 
 프론트엔드: HTMX를 **파일로 내려받아** `core/web/static/vendor/`에 둔다. CSS 프레임워크 없음. 디자인 토큰과 컴포넌트 스타일은 `core/web/static/app.css` 한 파일에 직접 쓴다(GUIDE-01-4). CDN 링크 금지. **예외 한 줄:** Pretendard 폰트 CSS(`https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css`)는 `<link>`로 쓴다. npm, Tailwind, React, 빌드 도구 금지.
 
@@ -65,8 +69,10 @@
 - `ChangeLog`를 `services.py` 밖에서 만들지 않는다. 어디서도 수정·삭제하지 않는다.
 - 뷰와 API 라우터에 업무 규칙(검증, 상태 전이, 이력)을 쓰지 않는다. 항상 services 함수를 부른다.
 - core가 `discord_service`나 `mcp_server`를 import하지 않는다. 반대도 마찬가지다. 세 파트는 HTTP로만 통신한다.
-- 로그에 토큰·비밀키·Webhook URL을 남기지 않는다.
-- Discord Webhook 주소는 core DB에 원문으로 두되(발송에 필요하다), 화면·오류 메시지·`/ops` 내보내기에는 `DiscordWebhook.masked`만 쓴다. 원문을 주는 곳은 팀 관리자만 볼 수 있는 `GET /api/integrations/discord/webhooks` 하나뿐이다.
+- 로그에 토큰·비밀키·Discord 봇 토큰을 남기지 않는다.
+- `DISCORD_BOT_TOKEN`과 `CORE_TOKEN`은 `.env.discord`에만 둔다. core DB·화면·오류 메시지·로그·`/ops` 내보내기·`ChangeLog` 어디에도 넣지 않는다. core는 Discord로 나가는 요청을 하지 않는다(발송은 `discord_service` 전담).
+- **Discord 사용자 ID를 사용자가 직접 입력하게 하지 않는다.** 연결은 웹에서 발급한 1회용 코드와 게이트웨이가 채운 `author.id`의 교환으로만 이뤄진다(어느 한쪽만으로는 소유가 증명되지 않는다).
+- **`bot` 범위 토큰은 웹에서 발급하지 않는다**(자기 발급은 권한 상승이다). `TokenForm`의 범위 선택에 `bot`을 넣지 않고, 발급은 서버 셸 한 줄로만 한다(GUIDE-04 Step 7).
 - 테스트를 지우거나 `skip`으로 통과시키지 않는다.
 - 새 파일을 만들 때 지시서의 디렉터리 구조 밖에 두지 않는다.
 
@@ -103,8 +109,10 @@
 | 프로젝트 상태 | `preparing` / `on_hold` / `waiting` / `active` / `paused` / `done` / `stopped` / `eol` | 🧪 준비 중 / 🕓 보류 중 / 🗂️ 대기 중 / 🚧 진행 중 / ⏸️ 일시 중단 / ✅ 완료 / 🛑 정지 / ⚰️ 지원 종료 (설명 문구는 모델의 `STATUS_DESC`) |
 | 팀 역할 | `admin` / `member` | 관리자 / 팀원 |
 | 링크 종류 | `doc` / `pr` / `repo` / `other` | 문서 / PR / 저장소 / 기타 |
-| 토큰 범위 | `read` / `write` | 읽기 / 읽기·쓰기 |
-| 변경 경로 | `web` / `api` / `mcp` | 웹 / API / AI |
+| 토큰 범위 | `read` / `write` / `bot` | 읽기 / 읽기·쓰기 / Discord 봇 |
+| 변경 경로 | `web` / `api` / `mcp` / `dc` | 웹 / API / AI / Discord |
+
+`ChangeLog.source`가 `discord`가 아니라 `dc`인 이유: 컬럼이 `max_length=4`다(7자는 Postgres `DataError`). 화면은 `get_source_display()`로 "Discord"를 그리고, API 응답만 코드 `"dc"`를 그대로 준다.
 
 태스크 번호 표기: `TASK-{id}` (예: `TASK-12`). 별도 번호 컬럼 없음.
 
@@ -132,12 +140,25 @@ project-manager/
   README.md               목업 핸드오프(디자인 원본). GUIDE-04 Step 9에서 실행 안내 절을 앞에 덧붙인다
   산돌이 업무 목업 v2.dc.html, TaskRow2.dc.html, support.js   디자인 참고 파일. 구현 대상 아님
   compose.yml             GUIDE-04
-  .env.example            GUIDE-04
+  .env.example            GUIDE-04. web·db·cloudflared 용
+  .env.discord.example    GUIDE-04. discord·discord-bot 용. 봇 토큰과 CORE_TOKEN이 여기만 있다
   .gitignore
   core/                   GUIDE-01
   discord_service/        GUIDE-02
   mcp_server/             GUIDE-03
 ```
+
+이 개정(웹훅 → 봇)에서 새로 생긴 파일:
+
+| 파일 | 하는 일 | 지시서 |
+|---|---|---|
+| `core/accounts/services.py` | Discord 연결(코드 발급·교환·해제·행위자 조회) | GUIDE-01-2 |
+| `core/api/routers/discord.py` | 봇 명령 5개 엔드포인트(`BotTokenAuth`) | GUIDE-01-3 |
+| `discord_service/discord_service/listener.py` | 게이트웨이 DM 수신(discord.py) | GUIDE-02 |
+| `discord_service/discord_service/commands.py` | DM 평문 명령 해석과 답장 문구 | GUIDE-02 |
+| `.env.discord.example` | 봇 컨테이너 전용 환경 변수 견본 | GUIDE-04 |
+
+같이 사라진 것: `teams.DiscordWebhook` 모델과 `core/web/templates/teams/webhooks.html`(알림 채널 화면), `teams/services.py`의 웹훅 함수 8개, `GET /api/integrations/discord/webhooks`.
 
 `.gitignore` 내용 (Step 0에서 만든다):
 
@@ -148,6 +169,7 @@ __pycache__/
 *.sqlite3
 *.sqlite
 .env
+.env.discord
 staticfiles/
 .pytest_cache/
 .ruff_cache/

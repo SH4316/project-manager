@@ -3,7 +3,7 @@ import logging
 from datetime import date, timedelta
 
 from .core_client import CoreClient
-from .discord import Sender, UnknownResult
+from .discord import Bot, UnknownResult
 from .store import Store
 from .summarize import summarize
 
@@ -17,7 +17,7 @@ def last_monday(today: date) -> date:
 
 def run_weekly(
     core: CoreClient,
-    hook: Sender,
+    bot: Bot,
     store: Store,
     team_id: int,
     week_start: date,
@@ -30,7 +30,7 @@ def run_weekly(
     data = core.weekly(team_id, ws)
     summary, source = summarize(data, provider)
     try:
-        hook.send(summary)
+        bot.send_channel(summary)
         status = "sent"
     except UnknownResult:
         status = "unknown"

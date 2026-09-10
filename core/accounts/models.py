@@ -10,9 +10,17 @@ class User(AbstractUser):
     AUTO_PULL_CHOICES = [(0, "끄기"), (1, "1일"), (3, "3일"), (5, "5일"), (7, "7일"), (14, "14일")]
 
     display_name = models.CharField("표시 이름", max_length=50, blank=True)
+    # Discord snowflake. 사용자가 직접 입력하지 않는다 — 봇이 게이트웨이에서 읽은 author.id와
+    # 웹에서 발급한 1회용 코드를 맞바꿔야 채워진다(GUIDE-00 §3). 봇이 이 값으로 사람을
+    # 찾으므로 검증 없이 채워지면 곧 로그인 자격증명이 된다.
     discord_user_id = models.CharField(
         "Discord 사용자 ID", max_length=32, null=True, blank=True, unique=True
     )
+    discord_link_code = models.CharField(
+        "Discord 연결 코드", max_length=8, null=True, blank=True, unique=True
+    )
+    discord_link_expires_at = models.DateTimeField(null=True, blank=True)
+    discord_linked_at = models.DateTimeField("Discord 연결 시각", null=True, blank=True)
     auto_pull_days = models.PositiveSmallIntegerField(
         "마감 기준 자동 담기(일)", choices=AUTO_PULL_CHOICES, default=5
     )
@@ -30,7 +38,7 @@ class User(AbstractUser):
 
 
 class ApiToken(models.Model):
-    SCOPES = [("read", "읽기"), ("write", "읽기·쓰기")]
+    SCOPES = [("read", "읽기"), ("write", "읽기·쓰기"), ("bot", "Discord 봇")]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="tokens")
     name = models.CharField(max_length=50)

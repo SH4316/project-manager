@@ -2,10 +2,15 @@ from datetime import timedelta
 
 import pytest
 
-from accounts.models import ApiToken
+from accounts.models import ApiToken, User
+from accounts.services import issue_link_code
 from api.models import IntegrationStatus
 from common.dates import last_week_start, today_kst, week_bounds
+from projects.services import create_project
+from tasks.models import ChangeLog
 from tasks.services import create_task
+from teams.models import Membership
+from teams.services import create_team
 
 pytestmark = pytest.mark.django_db
 
@@ -281,28 +286,155 @@ def test_null_due_date_sorts_last_on_both_backends(api, project, member):
     assert titles.index("undated") > titles.index("dated")
 
 
-WH = "https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOp-_9876"
-WH2 = "https://discord.com/api/webhooks/999999999999999999/ZzZzZzZzZzZzZzZzZzZz"
+# ---------- Discord 봇 명령 (POST /api/integrations/discord/...) ----------
+
+DC = "/api/integrations/discord"
+BODY = {"discord_user_id": "111"}  # member 픽스처가 들고 있는 snowflake
 
 
-def test_discord_webhook_list_is_admin_only(client, team, admin, member, outsider):
-    """Webhook 주소는 비밀이다. 팀 관리자만 읽을 수 있고, 꺼진 채널은 빠진다."""
-    from teams.services import add_webhook, set_webhook_active
+def _post(client, raw, url, body=None):
+    return client.post(url, data=body or {}, content_type="application/json", headers=_h(raw))
 
-    add_webhook(team, "업무", WH, admin)
-    set_webhook_active(add_webhook(team, "잠깐 끔", WH2, admin), False, admin)
-    url = f"/api/integrations/discord/webhooks?team={team.pk}"
 
-    _, raw = ApiToken.issue(member, "m", "read")
-    assert client.get(url, headers=_h(raw)).status_code == 403
-    _, raw = ApiToken.issue(outsider, "o", "read")
-    assert client.get(url, headers=_h(raw)).status_code == 404
-    assert client.get(url).status_code == 401
+@pytest.fixture
+def bot(db):
+    """봇 계정. 이 경로에서 봇의 팀 범위는 쓰이지 않는다 — 행위자는 항상 연결된 사람이다."""
+    return User.objects.create_user("discord-bot", password="pw12345678", display_name="산돌이 봇")
 
-    _, raw = ApiToken.issue(admin, "a", "read")  # 읽기 토큰으로 충분하다
-    r = client.get(url, headers=_h(raw))
+
+@pytest.fixture
+def bot_token(bot):
+    _, raw = ApiToken.issue(bot, "봇", "bot")
+    return raw
+
+
+def test_done_needs_the_bot_scope(client, task, member, read_token, write_token, bot_token):
+    """라우터 인증이 BotTokenAuth 하나라서 세션·읽기·쓰기 토큰은 이 경로에 들어오지 못한다."""
+    url = f"{DC}/tasks/{task.pk}/done"
+
+    # 세션 쿠키에는 Authorization 헤더가 없다. HttpBearer는 자격증명 자체가 없다고 보고
+    # 401을 준다(403이 아니다 — 범위를 볼 기회조차 없다).
+    client.login(username="member1", password="pw12345678")
+    assert client.post(url, data=BODY, content_type="application/json").status_code == 401
+    client.logout()
+
+    # 토큰은 인증되지만 범위가 bot이 아니다 → BotTokenAuth가 403.
+    assert _post(client, read_token, url, BODY).status_code == 403
+    assert _post(client, write_token, url, BODY).status_code == 403
+    task.refresh_from_db()
+    assert task.status == "todo"
+
+    assert _post(client, bot_token, url, BODY).status_code == 200
+
+
+def test_bot_token_cannot_write_outside_integrations(client, bot, bot_token, team, project):
+    """bot 범위는 /api/integrations/ 안에서만 쓴다. 그 밖의 쓰기는 읽기 전용과 똑같이 막힌다."""
+    Membership.objects.create(team=team, user=bot, role="member")
+    r = _post(
+        client,
+        bot_token,
+        "/api/tasks",
+        {"project_id": project.pk, "title": "봇이 만든 일", "no_due_reason": "미정"},
+    )
+    assert r.status_code == 403
+    assert client.get("/api/me", headers=_h(bot_token)).status_code == 200  # 읽기는 된다
+
+
+def test_done_logs_the_human_as_actor_and_the_bot_token(client, task, member, bot, bot_token):
+    """봇은 자기 이름으로 일하지 않는다. 이력은 사람·Discord·봇 토큰 세 값을 같이 남긴다."""
+    r = _post(client, bot_token, f"{DC}/tasks/{task.pk}/done", BODY)
     assert r.status_code == 200
-    assert r.json() == {"urls": [WH]}
+    assert r.json()["was"] == "시작 전"
+    assert r.json()["task"]["status"] == "done"
+
+    log = ChangeLog.objects.get(target_id=task.pk, field="status")
+    assert log.source == "dc"
+    assert log.get_source_display() == "Discord"
+    assert log.actor == member
+    assert log.token is not None and log.token.user == bot
+
+
+def test_unknown_or_unproven_snowflake_is_404(client, task, outsider, bot_token):
+    """연결 시각이 없는 행(마이그레이션이 비운 손입력 값)도 모르는 계정과 같이 막힌다."""
+    User.objects.filter(pk=outsider.pk).update(discord_user_id="999")
+    for did in ("999", "424242"):
+        r = _post(client, bot_token, f"{DC}/tasks/{task.pk}/done", {"discord_user_id": did})
+        assert r.status_code == 404
+        assert "연결" in r.json()["detail"]
+    task.refresh_from_db()
+    assert task.status == "todo"
+    assert not ChangeLog.objects.filter(field="status").exists()
+
+
+def test_scope_follows_the_actor_not_the_bot(client, bot, bot_token, team, task, member):
+    """봇이 볼 수 있는 태스크가 아니라 그 사람이 볼 수 있는 태스크만 움직인다."""
+    Membership.objects.create(team=team, user=bot, role="member")  # 봇은 팀 A
+    Membership.objects.filter(team=team, user=member).delete()  # 사람은 팀 B로 옮긴다
+    team_b = create_team("남의 팀", "", member)
+    project_b = create_project(
+        team=team_b, name="B", actor=member, owners=[member], status="active"
+    )
+    mine = create_task(
+        project=project_b,
+        title="내 일",
+        actor=member,
+        source="web",
+        due_date=today_kst() + timedelta(days=1),
+    )
+
+    items = _post(client, bot_token, f"{DC}/today", BODY).json()["items"]
+    assert [i["id"] for i in items] == [mine.pk]
+
+    # 팀 A 태스크는 봇의 GET에는 보이지만 행위자 범위에서는 없는 것이다.
+    assert client.get(f"/api/tasks/{task.pk}", headers=_h(bot_token)).status_code == 200
+    assert _post(client, bot_token, f"{DC}/tasks/{task.pk}/done", BODY).status_code == 404
+    assert _post(client, bot_token, f"{DC}/tasks/{mine.pk}/done", BODY).status_code == 200
+
+
+def test_the_same_done_twice_leaves_one_history_row(client, task, bot_token):
+    """같은 상태 재요청은 _apply 전에 조기 반환된다 — 중복 `완료`는 무해하고 이력도 한 줄."""
+    url = f"{DC}/tasks/{task.pk}/done"
+    assert _post(client, bot_token, url, BODY).status_code == 200
+    r = _post(client, bot_token, url, BODY)
+    assert r.status_code == 200
+    assert r.json()["was"] == "완료"
+    assert ChangeLog.objects.filter(target_id=task.pk, field="status").count() == 1
+
+
+def test_extend_not_past_the_current_due_date_is_400(client, task, bot_token):
+    """이중 연장이 구조적으로 불가능하다. 같은 날짜 재전송은 서비스 문구를 그대로 전달한다."""
+    url = f"{DC}/tasks/{task.pk}/extend"
+    body = {**BODY, "due_date": task.due_date.isoformat(), "reason": "QA 지연"}
+    r = _post(client, bot_token, url, body)
+    assert r.status_code == 400
+    assert r.json()["detail"]["due_date"] == "현재 목표일보다 뒤의 날짜를 선택하세요."
+    task.refresh_from_db()
+    assert task.version == 1
+
+    new = (task.due_date + timedelta(days=2)).isoformat()
+    r = _post(client, bot_token, url, {**BODY, "due_date": new, "reason": "QA 지연"})
+    assert r.status_code == 200
+    assert r.json()["task"]["due_date"] == new
+
+
+def test_link_and_unlink_need_the_bot_scope(client, admin, read_token, write_token, bot_token):
+    code = issue_link_code(admin)
+    body = {"code": code, "discord_user_id": "222"}
+    for raw in (read_token, write_token):
+        assert _post(client, raw, f"{DC}/link", body).status_code == 403
+        assert _post(client, raw, f"{DC}/unlink", BODY).status_code == 403
+    admin.refresh_from_db()
+    assert admin.discord_user_id is None
+
+    r = _post(client, bot_token, f"{DC}/link", body)
+    assert r.status_code == 200
+    assert r.json() == {"display_name": "관리자"}
+    assert _post(client, bot_token, f"{DC}/unlink", {"discord_user_id": "222"}).json() == {
+        "unlinked": True
+    }
+    assert _post(client, bot_token, f"{DC}/unlink", {"discord_user_id": "222"}).json() == {
+        "unlinked": False
+    }
 
 
 def test_throttle_bucket_is_per_user_not_per_display_name(rf, member, outsider):

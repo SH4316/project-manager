@@ -4,6 +4,8 @@
 
 개정 2026-09-10: 상태 7개·멈춤 사유·중요도 정수·`update_text`·`extend_due`·오늘 자동 담기·`me_view`·프로젝트 관리자 여러 명·댓글 삭제에 맞춰 목록을 바꿨다.
 
+개정 2026-09-10 (Discord 봇): 웹훅 테스트 13개 삭제, 계정 연결 7개·봇 명령 8개·프로필/토큰 4개 추가. 표의 행 수와 `pytest` 수집 수가 같아야 한다.
+
 ---
 
 ## 7.1 `core/conftest.py`
@@ -12,6 +14,7 @@
 from datetime import timedelta
 
 import pytest
+from django.utils import timezone
 
 from accounts.models import ApiToken, User
 from common.dates import today_kst
@@ -28,7 +31,19 @@ def admin(db):
 
 @pytest.fixture
 def member(db):
-    return User.objects.create_user("member1", password="pw12345678", display_name="팀원", discord_user_id="111")
+    """Discord 연결이 끝난 팀원.
+
+    UI로는 snowflake를 심을 수 없지만(코드 교환만) 픽스처는 DB를 시드해도 된다.
+    `discord_linked_at`을 같이 채운다 — 연결 시각이 없는 행은 `user_by_discord_id()`가
+    돌려주지 않으므로, id만 있는 반쪽 행은 어떤 코드 경로도 만들 수 없는 상태다.
+    """
+    return User.objects.create_user(
+        "member1",
+        password="pw12345678",
+        display_name="팀원",
+        discord_user_id="111",
+        discord_linked_at=timezone.now(),
+    )
 
 
 @pytest.fixture
@@ -93,6 +108,8 @@ def api(client, write_token):
     return Api()
 ```
 
+`api/tests.py`의 봇 경로 테스트는 파일 안에서 `bot`(사용자)·`bot_token`(`scope="bot"`) 두 픽스처를 따로 만든다. conftest에 두지 않는다 — 쓰는 파일이 하나다.
+
 `client.post(..., data=dict, content_type="application/json")`은 Django 테스트 클라이언트가 dict를 JSON으로 직렬화한다. `date` 객체는 넣지 말고 `isoformat()` 문자열로 넣는다. 웹 뷰를 HTMX 요청으로 부를 때는 `headers={"HX-Request": "true"}`를 준다.
 
 ---
@@ -102,6 +119,13 @@ def api(client, write_token):
 | 테스트 | 검증 |
 |---|---|
 | `test_display_name_truncated_from_long_username` | 120자 username으로 `create_user` → `display_name`이 50자. (자르지 않으면 Postgres에서 `DataError`) |
+| `test_link_discord_fills_the_pair_and_clears_the_code` | `issue_link_code` → 8자 대문자. `link_discord(code, "222")` → `discord_user_id`·`discord_linked_at` 채워지고 `discord_link_code`·`discord_link_expires_at`이 **`None`**(빈 문자열이면 두 번째 사용자가 unique 제약에 걸린다). `user_by_discord_id("222")`가 그 사람 |
+| `test_expired_code_changes_nothing` | 만료 시각을 과거로 돌린 뒤 `link_discord` → `ServiceError`. 아무 필드도 안 바뀌고 **코드도 그대로 남는다**(실패는 코드를 태우지 않는다) |
+| `test_code_is_single_use` | 같은 코드로 두 번째 `link_discord("333")` → `ServiceError`. 두 번째 snowflake는 어디에도 안 붙는다 |
+| `test_non_numeric_snowflake_rejected` | `""`·공백·`abc`·`<@222>`·`"222 333"`·`2.22` 전부 `ServiceError`, 코드는 그대로. (사람이 타이핑한 값이 들어오는 경로를 막는다) |
+| `test_link_takes_the_snowflake_from_the_previous_holder` | 다른 사용자가 `222`을 들고 있어도 연결이 성공하고 그쪽은 `None`이 된다. 코드와 snowflake가 둘 다 증명된 순간 남의 옛 행이 틀린 것이다 — 선점 잠김 경로가 없어야 admin을 readonly로 둘 수 있다 |
+| `test_unlink_then_link_again` | `unlink_discord` 후 `user_by_discord_id`가 `None`. 같은 snowflake로 다시 연결된다 |
+| `test_user_by_discord_id_needs_a_proven_active_link` | `discord_linked_at`이 없는 반쪽 행(마이그레이션이 비우기 전의 손입력 값)과 `is_active=False` 계정은 둘 다 `None`. 검증되지 않은 값은 명령 경로에 못 들어온다 |
 
 ---
 
@@ -117,13 +141,8 @@ def api(client, write_token):
 | `test_outsider_cannot_see_team_data_via_api` | outsider 토큰으로 `GET /api/teams/{team.id}` → 404, `GET /api/tasks` → `total == 0`, `GET /api/projects` → `[]` (A01) |
 | `test_outsider_cannot_open_project_page` | outsider로 `client.login` 후 `GET /projects/{project.id}` → 404 (A01) |
 | `test_join_page_requires_login_then_joins` | 비로그인 `GET /join/<token>` → 302 `/login?next=...`. 로그인 후 `POST /join/<token>` → 302 `/today`, 멤버십 생성 |
-| `test_member_cannot_manage_webhooks` | 팀원이 `add_webhook`·`set_webhook_active`·`delete_webhook`·`send_test_message` 모두 `ServiceError`. 값은 그대로 |
-| `test_add_webhook_rejects_non_discord_urls` | http, 다른 host, `discord.com.evil.example`, 토큰 없음, 쿼리 덧붙음, 숫자 아닌 채널 id, 빈 문자열 → 전부 `ServiceError`, 저장 0건. 이름이 공백이면 `ServiceError` |
-| `test_add_webhook_trims_and_blocks_duplicates` | 앞뒤 공백을 잘라 저장하고, 같은 주소를 다시 등록하면 `ServiceError` |
-| `test_masked_hides_the_secret_part` | `masked`에 토큰 본문이 없고 뒤 네 자로 끝난다. 토큰이 짧으면(12자 이하) 뒤 네 자도 감춘다 |
-| `test_only_active_webhooks_are_send_targets` | `active_webhook_urls`는 이름순. 끄면 빠지고, 삭제하면 행이 사라진다 |
-| `test_send_test_message_records_success_and_failure` | 성공 시 `(True, "")` + `last_test_ok` 참. `HTTPError(404)`면 사유에 "404"가 있고 **주소는 없다**. 네트워크 오류면 "연결" 문구 |
-| `test_webhooks_go_away_with_the_team_not_with_the_member` | 등록한 팀원을 제거해도 채널은 남아 발송 대상으로 유지된다 |
+
+웹훅 테스트 7개(`test_member_cannot_manage_webhooks`, `test_add_webhook_rejects_non_discord_urls`, `test_add_webhook_trims_and_blocks_duplicates`, `test_masked_hides_the_secret_part`, `test_only_active_webhooks_are_send_targets`, `test_send_test_message_records_success_and_failure`, `test_webhooks_go_away_with_the_team_not_with_the_member`)는 검증 대상과 함께 삭제한다. `teams/services.py`에 Discord 함수가 없고 core는 Discord로 나가지 않으므로 대체 테스트도 없다 — 계정 연결은 §7.1a, 봇 경로는 §7.6이 맡는다.
 
 ---
 
@@ -224,7 +243,6 @@ def api(client, write_token):
 | `test_read_token_cannot_write` | read 토큰으로 `POST /api/tasks/{id}/transition` → 403. `GET /api/tasks/{id}` → 200 |
 | `test_read_token_can_report_integration_status` | read 토큰으로 `POST /api/integrations/discord/status {"ok": true, "detail": {}}` → 204, `IntegrationStatus` 1건 |
 | `test_throttle_bucket_is_per_user_not_per_display_name` | 같은 `display_name`을 가진 두 사용자의 처리량 제한 키가 다르고, 키에 사용자 id가 들어간다 |
-| `test_discord_webhook_list_is_admin_only` | `GET /api/integrations/discord/webhooks?team=`: 팀원 토큰 403, 외부인 토큰 404, 무인증 401. 관리자의 **읽기** 토큰은 200이고 켜진 채널만 준다 |
 | `test_list_tasks_filters_and_paging` | task 3개 생성 → `GET /api/tasks?team=&status=todo&limit=2&offset=0` → `total==3`, `len(items)==2`. `status=bogus` → 400. `status=blocked` → `total==0` |
 | `test_create_task_defaults_and_idempotency` | `POST /api/tasks {"project_id","title","due_date"}` 헤더 `Idempotency-Key: k1` 두 번 → 둘 다 201, 같은 `id`. `assignee.id == member.id`, `priority == 5` |
 | `test_create_task_validation` | `title=""` → 400, `detail`에 `title` 키. `priority=11` → 422 (스키마 검증) |
@@ -244,6 +262,19 @@ def api(client, write_token):
 | `test_session_write_still_needs_csrf` | 같은 클라이언트로 로그인만 하고 CSRF 토큰 없이 같은 요청 → 403 |
 | `test_malformed_date_filter_returns_422_not_500` | `GET /api/tasks?due_from=abc` → 422. 올바른 날짜는 200. (`due_from`이 `str`이면 ORM에서 `ValidationError` → 500) |
 | `test_null_due_date_sorts_last_on_both_backends` | 기한 있는 것과 없는 것을 만들고 `GET /api/tasks` → 기한 미정이 뒤에 온다. SQLite·Postgres 동일 |
+
+Discord 봇 경로(`POST /api/integrations/discord/...`). 상수 `DC = "/api/integrations/discord"`, 본문 `BODY = {"discord_user_id": "111"}`(member 픽스처의 snowflake)를 파일 안에 둔다.
+
+| 테스트 | 검증 |
+|---|---|
+| `test_done_needs_the_bot_scope` | `POST {DC}/tasks/{id}/done`: 로그인 세션(Authorization 헤더 없음) → **401**(HttpBearer는 자격증명 자체가 없다고 본다), `read`·`write` 토큰 → **403**이고 태스크는 그대로, `bot` 토큰 → 200 |
+| `test_bot_token_cannot_write_outside_integrations` | `bot` 토큰으로 `POST /api/tasks` → 403(쓰기 게이트가 `scope != "write"`). 같은 토큰의 `GET /api/me`는 200 |
+| `test_done_logs_the_human_as_actor_and_the_bot_token` | 200, `was == "시작 전"`, 상태 `done`. ChangeLog `source == "dc"`, `get_source_display() == "Discord"`, `actor == member`(봇 아님), `token.user == 봇 계정` |
+| `test_unknown_or_unproven_snowflake_is_404` | 연결 시각 없는 행(`999`)과 모르는 id(`424242`) 모두 404이고 `detail`에 "연결"이 있다. 태스크·ChangeLog 변화 0 |
+| `test_scope_follows_the_actor_not_the_bot` | 봇은 팀 A 멤버, 사람은 팀 B. `/today`는 팀 B 것만 준다. 팀 A 태스크는 봇의 `GET /api/tasks/{id}`로는 200이지만 `done`은 **404**, 팀 B 태스크 `done`은 200 |
+| `test_the_same_done_twice_leaves_one_history_row` | 두 번 모두 200, 두 번째 `was == "완료"`, `status` ChangeLog 1건(같은 상태 재요청은 서비스가 조기 반환) |
+| `test_extend_not_past_the_current_due_date_is_400` | 현재 목표일과 같은 날짜 → 400 `detail.due_date == "현재 목표일보다 뒤의 날짜를 선택하세요."`, `version` 불변. 뒤 날짜 → 200 |
+| `test_link_and_unlink_need_the_bot_scope` | `read`·`write` 토큰으로 `/link`·`/unlink` → 403, 값 불변. `bot` 토큰 `/link` → `{"display_name": "관리자"}`. `/unlink` 두 번 → `{"unlinked": true}` 다음 `{"unlinked": false}`(멱등) |
 
 ---
 
@@ -267,24 +298,22 @@ def api(client, write_token):
 | `test_team_page_renders` | `GET /teams/{id}` → 200, 본문에 "미완료", 프로젝트 이름, "새 프로젝트" |
 | `test_signup_then_no_team_message` | `POST /signup` → 302 `/today`, 이후 `/today` 본문에 "초대 링크" |
 | `test_ops_requires_staff` | member `/ops` → 302(로그인 페이지) 또는 403. superuser → 200 |
-| `test_export_json_has_no_secrets` | superuser `/ops/export.json` → 200. 본문에 `"password"`·초대 token·Webhook 주소가 없고, Webhook 행의 이름은 남는다 |
+| `test_export_json_has_no_secrets` | superuser `/ops/export.json` → 200. 본문에 `"password"`·초대 token·발급한 연결 코드·`"discord_link_code"`가 없고, `"discord_linked_at"`은 있다 |
 | `test_healthz` | `GET /healthz` → 200 `{"ok": true}` |
 | `test_token_shown_once` | `POST /settings/tokens {name, scope}` → 302 → `GET` 본문에 `pm_` 포함 → 다시 `GET` 하면 `pm_` 없음 |
 | `test_schedule_card_is_scoped_to_team_membership` | `/today?schedule=1&cal=month`에 태스크 제목이 보이는 상태에서 `Membership`을 지우면 사라진다 |
 | `test_non_numeric_ids_are_404_not_500` | `GET /projects/new?team=abc` → 404. `POST /projects/new {team: "abc"}` → 404. (`filter(pk="abc")`는 `ValueError` → 500) |
 | `test_weird_digit_query_params_do_not_crash` | `/search?q=²`, `/me?member=²`, `/me?project=²` 모두 200. (`isdigit()`은 `²`에 True지만 `int()`는 실패한다) |
-| `test_duplicate_discord_id_shows_field_error` | 남이 쓰는 `discord_user_id`를 저장하면 200 + 필드 오류 "이미 쓰는". 값은 바뀌지 않는다 (`IntegrityError` → 500 방지) |
+| `test_profile_has_no_discord_id_input` | `/settings/profile` 본문에 `name="discord_user_id"`가 없다. 그 이름으로 POST해도 302 + 값 불변(자유 입력칸을 남기면 코드 교환 전체가 위조 가능해진다) |
+| `test_discord_link_code_is_shown_once_then_unlink_clears` | `POST /settings/profile/discord` → 302, 8자 코드 발급. 다음 GET 본문에 `연결 <코드>`가 있고 **그다음 GET에는 없다**. `link_discord` 후 "연결됨" 표시. `POST /settings/profile/discord/unlink` → `discord_user_id`·`discord_linked_at` 둘 다 `None` |
 | `test_long_idem_key_does_not_crash` | `POST /today/quick`에 `idem="z"*300` → 200 또는 204. (`IdempotencyKey.key`는 varchar(100)) |
 | `test_far_future_schedule_day_does_not_crash` | `/today?schedule=1&cal=month&day=`에 `9999-12-01`·`9999-12-31`·`0001-01-01` → 모두 200. (`week_days()`의 `OverflowError`) |
 | `test_admin_task_and_project_are_read_only` | staff로 admin 목록·상세는 200, `add/`·`delete/`는 403, `change/`에 POST는 403이고 값이 안 바뀐다 (GUIDE-00 §3) |
-| `test_secret_filter_redacts_tokens_and_webhooks` | `SecretFilter`가 `pm_` 토큰·`Bearer …`·`/u/<token>/`·Discord Webhook URL을 `[redacted]`로 바꾼다. `record.args`를 쓰는 형식도 포함 |
-| `test_admin_pages_are_hidden_from_members` | 팀원으로 `/teams/{id}/members`·`/teams/{id}/webhooks` GET, 웹훅 4개 POST 경로 모두 **404**(403이 아니다). 값은 그대로 |
-| `test_members_page_shows_workload_and_discord_link` | "팀원 관리", 팀원 이름, Discord "연결", "관리자 1명", "알림 채널" 링크가 보인다 |
-| `test_webhook_page_never_shows_the_full_url` | 화면에 주소 원문이 없고 뒤 네 자와 "사용 중"만 보인다 |
-| `test_webhook_create_rejects_other_hosts` | 다른 host면 200 + "형식이 아닙니다", 저장 0건. 올바른 주소면 저장되고 응답에 원문이 없다 |
-| `test_webhook_toggle_and_delete` | toggle 두 번에 `is_active`가 False→True, delete로 행 0건 |
-| `test_webhook_test_send_reports_the_result` | `post_discord`를 monkeypatch: 성공 시 "확인 메시지를 보냈습니다" + `last_test_ok` 참, 실패 시 "발송 실패"이고 응답에 주소가 없다 |
-| `test_webhook_of_another_team_is_404` | 다른 팀 사용자가 남의 webhook id로 delete·test → 404 |
+| `test_secret_filter_redacts_tokens` | `SecretFilter`가 `pm_` 토큰·`Bearer …`·`/u/<token>/`·`Authorization: Bot <봇 토큰>`·`DISCORD_BOT_TOKEN=…`을 `[redacted]`로 바꾼다. `record.args`를 쓰는 형식도 포함 |
+| `test_admin_pages_are_hidden_from_members` | 팀원으로 `/teams/{id}/members` GET → **404**(403이 아니다) |
+| `test_webhook_routes_are_gone` | 팀 **관리자**로도 `/teams/{id}/webhooks`·`/webhooks/new`가 GET·POST 모두 404. 알림 채널 화면은 대체가 아니라 삭제다 |
+| `test_members_page_shows_workload_and_discord_link` | "팀원 관리", 팀원 이름, Discord "연결", "관리자 1명"이 보인다('알림 채널' 링크는 없다) |
+| `test_token_form_cannot_mint_a_bot_scope_token` | `/settings/tokens` 본문에 `<option value="bot"`가 없다. `scope=bot`으로 POST → 200(폼 무효, 화면만 다시 그림)이고 `ApiToken`이 하나도 안 생긴다 |
 
 ---
 
@@ -300,8 +329,11 @@ uv run ruff format --check .
 varchar 길이 초과와 NULL 정렬은 SQLite에서 드러나지 않으므로 이 실행이 없으면 검증이 끝나지 않는다:
 
 ```bash
-DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q
+DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q
 ```
+
+> `localhost`가 아니라 **`127.0.0.1`**을 쓴다. compose는 `127.0.0.1:5432`(IPv4)에만 바인딩하는데
+> Windows에서 `localhost`는 `::1`(IPv6)을 먼저 시도해 접속 하나가 2분 넘게 걸릴 수 있다.
 
 커밋: `step 7: tests`
 
@@ -310,12 +342,15 @@ DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q
 ## 7.9 core 완료 체크리스트
 
 - [x] Step 0~7 검증 전부 통과
-- [x] `uv run pytest` SQLite·Postgres 모두 통과 (각 140개, skip 0)
+- [x] `uv run pytest` SQLite 145개 통과 (skip 0 — 웹훅 13개 삭제, 연결·봇·프로필 19개 추가. 표의 행 수와 수집 수가 같은지 확인한다)
+- [ ] Postgres 16 전체 145개  ← 이 개정에서 못 끝냈다. `accounts`·`tasks`만 따로 통과했고 전체는 db 접속이 끊겨 5회 모두 중단됐다(호스트 문제). 자세한 것은 [IMPL-REPORT](IMPL-REPORT.md)
 - [x] `ruff check`, `ruff format --check` 오류 0
-- [x] `/api/docs`에 5.7 표의 엔드포인트가 전부 보인다 (OpenAPI 경로 21개 확인)
-- [x] 01-4 §6.10의 수동 확인 완료 (20항목, 브라우저)
+- [x] `/api/docs`에 5.7 표의 엔드포인트가 전부 보인다 (OpenAPI 경로 25개 확인 — `/discord/webhooks` 삭제, 봇 경로 5개 추가)
+- [x] 01-4 §6.14의 수동 확인 완료 (21항목, 브라우저)
 - [x] 목업과 나란히 놓고 다섯 화면 대조 완료. 상세 패널·인라인 폼 문구는 목업과 일치. 차이 9건은 지시서·README가 다르게 지정한 것이거나 목업에만 있는 것이라 [IMPL-REPORT](IMPL-REPORT.md)의 '목업 대조' 절에 기록했다
-- [x] 로그에 `pm_` 토큰 원문이 찍히지 않는다 (`SecretFilter` 단위 테스트 + 실제 로깅 설정으로 확인)
+- [x] 로그에 `pm_` 토큰·Discord 봇 토큰 원문이 찍히지 않는다 (`SecretFilter` 단위 테스트 + 실제 로깅 설정으로 확인)
+- [x] `bot` 범위 토큰을 웹에서 만들 수 없고, `/api/integrations/discord/`에 세션·읽기·쓰기 토큰이 들어가지 못한다
+- [x] `/ops/export.json`에 `discord_link_code`가 없다
 - [x] 명세 검수 A01~A14·A18, B01~B05 대응 테스트 확인 (IMPL-REPORT '검수 시나리오 매핑' 표)
 - [x] 완료 보고서 작성 ([IMPL-REPORT.md](IMPL-REPORT.md))
 

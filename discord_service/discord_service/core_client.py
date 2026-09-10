@@ -37,16 +37,35 @@ class CoreClient:
         r.raise_for_status()
         return r.json()
 
-    def webhook_urls(self, team_id: int) -> list[str]:
-        """웹 화면(팀 → 알림 채널)에 등록된, 켜져 있는 Webhook 주소. 팀 관리자 토큰이 필요하다."""
-        r = self.http.get("/api/integrations/discord/webhooks", params={"team": team_id})
-        r.raise_for_status()
-        return r.json()["urls"]
-
     def weekly(self, team_id: int, week_start: str) -> dict:
         r = self.http.get("/api/reports/weekly", params={"team": team_id, "week_start": week_start})
         r.raise_for_status()
         return r.json()
+
+    # --- 봇 명령 (행위자는 연결된 사람. core가 discord_user_id로 찾는다) ---
+
+    def _bot(self, path: str, body: dict) -> dict:
+        r = self.http.post(f"/api/integrations/discord{path}", json=body)
+        r.raise_for_status()
+        return r.json()
+
+    def link(self, code: str, did: str) -> dict:
+        return self._bot("/link", {"code": code, "discord_user_id": did})
+
+    def unlink(self, did: str) -> dict:
+        return self._bot("/unlink", {"discord_user_id": did})
+
+    def today(self, did: str) -> dict:
+        return self._bot("/today", {"discord_user_id": did})
+
+    def done(self, did: str, task_id: int) -> dict:
+        return self._bot(f"/tasks/{task_id}/done", {"discord_user_id": did})
+
+    def extend(self, did: str, task_id: int, due_date: str, reason: str) -> dict:
+        return self._bot(
+            f"/tasks/{task_id}/extend",
+            {"discord_user_id": did, "due_date": due_date, "reason": reason},
+        )
 
     def report_status(self, ok: bool, detail: dict):
         try:

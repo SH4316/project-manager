@@ -4,6 +4,8 @@
 
 개정 2026-09-10: 목업(`README.md`, `산돌이 업무 목업 v2.dc.html`, `TaskRow2.dc.html`) 기준으로 전면 재작성. 색·크기·문구는 README 표가 원본이다. 이 문서와 README가 다르면 README를 따르고 완료 보고에 적는다.
 
+개정 2026-09-10 (Discord 봇): 프로필의 Discord ID 입력칸 → `[Discord 연결]` 코드 발급 카드, 알림 채널 화면·웹훅 뷰·라우트 삭제, `/ops` 내보내기 필드 조정.
+
 화면 5개(오늘·내 태스크·팀 현황·프로젝트·검색) + 상세 패널 + 프로젝트 모달이 목업 범위다. 로그인·가입·초대·멤버·프로필·토큰·ops는 목업 밖이며 같은 CSS로 단순하게 만든다.
 
 파일 구성:
@@ -474,11 +476,6 @@ urlpatterns = [
     path("teams/invites/<int:invite_id>/revoke", teams.invite_revoke, name="invite_revoke"),
     path("teams/memberships/<int:membership_id>/role", teams.member_role, name="member_role"),
     path("teams/memberships/<int:membership_id>/remove", teams.member_remove, name="member_remove"),
-    path("teams/<int:team_id>/webhooks", teams.webhooks, name="team_webhooks"),
-    path("teams/<int:team_id>/webhooks/new", teams.webhook_create, name="webhook_create"),
-    path("teams/webhooks/<int:webhook_id>/toggle", teams.webhook_toggle, name="webhook_toggle"),
-    path("teams/webhooks/<int:webhook_id>/test", teams.webhook_test, name="webhook_test"),
-    path("teams/webhooks/<int:webhook_id>/delete", teams.webhook_delete, name="webhook_delete"),
 
     path("projects/new", projects.project_new, name="project_new"),
     path("projects/<int:project_id>", projects.project_detail, name="project_detail"),
@@ -505,6 +502,10 @@ urlpatterns = [
     path("search", search.search, name="search"),
 
     path("settings/profile", settings.profile, name="profile"),
+    path("settings/profile/discord", settings.discord_link, name="discord_link"),
+    path(
+        "settings/profile/discord/unlink", settings.discord_unlink, name="discord_unlink"
+    ),
     path("settings/tokens", settings.tokens, name="tokens"),
     path("settings/tokens/<int:token_id>/revoke", settings.token_revoke, name="token_revoke"),
 
@@ -544,25 +545,6 @@ class TeamForm(forms.Form):
 
 class InviteForm(forms.Form):
     days = forms.IntegerField(label="만료(일)", min_value=1, max_value=90, initial=7)
-
-
-class WebhookForm(forms.Form):
-    """Discord 알림 채널 등록. 주소 형식 검사는 services.add_webhook이 한다."""
-
-    name = forms.CharField(
-        label="채널 이름",
-        max_length=50,
-        required=False,
-        widget=forms.TextInput(attrs={"class": "input", "placeholder": "예: 업무-알림"}),
-    )
-    url = forms.CharField(
-        label="Webhook 주소",
-        max_length=300,
-        required=False,
-        widget=forms.TextInput(
-            attrs={"class": "input", "placeholder": "https://discord.com/api/webhooks/…"}
-        ),
-    )
 
 
 class ProjectForm(forms.Form):
@@ -643,14 +625,17 @@ class LinkForm(forms.Form):
 
 
 class ProfileForm(forms.Form):
+    """Discord 사용자 ID 입력칸은 없다 — 연결은 코드 교환으로만 이뤄진다(GUIDE-00 §3)."""
+
     display_name = forms.CharField(label="표시 이름", max_length=50)
-    discord_user_id = forms.CharField(label="Discord 사용자 ID (숫자)", max_length=32, required=False)
 
 
 class TokenForm(forms.Form):
     name = forms.CharField(label="이름", max_length=50)
     scope = forms.ChoiceField(label="범위", choices=[("read", "읽기"), ("write", "읽기·쓰기")], initial="read")
 ```
+
+`ProfileForm`에 `discord_user_id`가 없고, `TokenForm`의 범위에 `bot`이 없다. 둘 다 **위조·자기 발급 경로를 남기지 않으려고** 빠진 것이다(GUIDE-00 §3). 그 이름으로 POST가 와도 폼에 필드가 없으니 무시된다.
 
 ---
 
@@ -1645,9 +1630,9 @@ from common.errors import ServiceError
 from projects.services import project_stats
 from reports.services import team_status
 from teams import services as tsv
-from teams.models import DiscordWebhook, Invite, Membership
+from teams.models import Invite, Membership
 
-from ..forms import InviteForm, TeamForm, WebhookForm
+from ..forms import InviteForm, TeamForm
 from .common import apply_service_error, can_admin, current_team, team_or_404
 
 
@@ -1727,97 +1712,8 @@ def members(request, team_id):
 `rows`의 `load`는 `team_status(team)["by_assignee"]`를 담당자 id로 찾은 것이다(미완료·기한 초과 건수).
 팀장이 제거·역할 변경을 판단할 때 필요한 숫자라 같은 화면에 둔다. 새 집계 함수를 만들지 않는다.
 
-- 알림 채널 화면(전체 코드):
+알림 채널 화면은 없다. 웹훅 뷰 7개(`webhooks`·`webhook_create`·`webhook_toggle`·`webhook_delete`·`webhook_test`와 헬퍼 `_webhook_or_404`·`_webhook_page`)와 라우트 5개, `teams/webhooks.html`이 함께 사라졌다. 대체 화면이 아니라 **대응 개념이 없다**: 봇 설치는 운영자가 포털에서 1회 하고(GUIDE-04 Step 7), 개인 연결은 각자 프로필에서 코드를 받아 DM으로 한다. 확인 발송은 `python -m discord_service test`다.
 
-```python
-# ---------- Discord 알림 채널 ----------
-
-
-def _webhook_or_404(request, webhook_id):
-    """팀 관리자만 만질 수 있다. 남의 팀 id를 넣어도 화면과 같은 404가 된다."""
-    wh = get_object_or_404(DiscordWebhook.objects.select_related("team"), pk=webhook_id)
-    _admin_only(request, wh.team_id)
-    return wh
-
-
-def _webhook_page(request, team, form):
-    return render(
-        request,
-        "teams/webhooks.html",
-        {
-            "team": team,
-            "webhooks": tsv.webhooks_of(team),
-            "form": form,
-            "help": tsv.WEBHOOK_HELP,
-            "is_admin": True,
-        },
-    )
-
-
-@login_required
-def webhooks(request, team_id):
-    return _webhook_page(request, _admin_only(request, team_id), WebhookForm())
-
-
-@login_required
-@require_POST
-def webhook_create(request, team_id):
-    team = _admin_only(request, team_id)
-    form = WebhookForm(request.POST)
-    if form.is_valid():
-        try:
-            wh = tsv.add_webhook(
-                team, form.cleaned_data["name"], form.cleaned_data["url"], request.user
-            )
-            messages.success(
-                request, f"{wh.name} 채널을 등록했습니다. 테스트 발송으로 확인해 보세요."
-            )
-        except ServiceError as e:
-            apply_service_error(form, e)
-    if form.errors:
-        return _webhook_page(request, team, form)
-    return redirect("team_webhooks", team_id=team.pk)
-
-
-@login_required
-@require_POST
-def webhook_toggle(request, webhook_id):
-    wh = _webhook_or_404(request, webhook_id)
-    try:
-        tsv.set_webhook_active(wh, not wh.is_active, request.user)
-    except ServiceError as e:
-        messages.error(request, " ".join(e.errors.values()))
-    return redirect("team_webhooks", team_id=wh.team_id)
-
-
-@login_required
-@require_POST
-def webhook_delete(request, webhook_id):
-    wh = _webhook_or_404(request, webhook_id)
-    team_id = wh.team_id
-    try:
-        tsv.delete_webhook(wh, request.user)
-        messages.success(request, "채널을 삭제했습니다.")
-    except ServiceError as e:
-        messages.error(request, " ".join(e.errors.values()))
-    return redirect("team_webhooks", team_id=team_id)
-
-
-@login_required
-@require_POST
-def webhook_test(request, webhook_id):
-    wh = _webhook_or_404(request, webhook_id)
-    try:
-        ok, detail = tsv.send_test_message(wh, request.user)
-    except ServiceError as e:
-        messages.error(request, " ".join(e.errors.values()))
-    else:
-        if ok:
-            messages.success(request, f"{wh.name} 채널로 확인 메시지를 보냈습니다.")
-        else:
-            messages.error(request, f"{wh.name} 발송 실패 — {detail}")
-    return redirect("team_webhooks", team_id=wh.team_id)
-```
 - `invite_create(team_id)` POST: `tsv.create_invite`. 성공 시 `messages.success`에 전체 URL(`settings.SITE_URL + invite.path`) 표시 후 `team_members`로.
 - `invite_revoke(invite_id)` POST: `tsv.revoke_invite`.
 - `member_role(membership_id)` POST `role`: `tsv.change_role`.
@@ -1832,7 +1728,9 @@ def webhook_test(request, webhook_id):
 
 ### `views/settings.py`
 
-- `profile`: `ProfileForm` → `user.display_name`, `user.discord_user_id` 저장. Discord ID는 숫자만 허용(`isdecimal()`, 비어 있으면 None). `discord_user_id`는 `unique=True`이므로 **저장 전에 다른 사용자가 쓰는지 확인해 필드 오류로 돌려준다** (그냥 저장하면 `IntegrityError`로 500).
+- `profile`: `ProfileForm` → `user.display_name`만 저장(`save(update_fields=["display_name"])`). Discord는 이 폼이 만지지 않는다. GET 컨텍스트에 `link_code`를 담는다: `request.session.pop("discord_link_code", None)` — 토큰 화면의 `new_token`과 같은 방식으로 **발급 직후 한 번만** 보여 준다.
+- `discord_link` POST(`@require_POST`): `request.session["discord_link_code"] = issue_link_code(request.user)` 후 `profile`로 redirect. 코드를 세션에 담는 이유는 redirect 뒤 한 번만 렌더하기 위해서다(주소창·이력에 남지 않는다).
+- `discord_unlink` POST(`@require_POST`): `unlink_discord(request.user)` + `messages.success("Discord 연결을 끊었습니다. 마감 알림 DM도 멈춥니다.")`. 이것이 Discord에 못 들어가는 상황의 복구 경로이고, 봇의 `연결해제`와 같은 일을 한다.
 - `tokens`: GET은 내 토큰 목록(폐기 포함, 폐기는 흐리게). POST `TokenForm` → `ApiToken.issue`. 발급 직후 원문을 세션에 넣고 redirect 후 한 번만 보여 준다: `request.session["new_token"] = raw` → GET에서 `pop`. 화면에 MCP 연결 안내 문구(GUIDE-03 Step 5 표의 네 가지 예시)를 표시한다.
 - `token_revoke(token_id)` POST: 본인 토큰만. `token.revoke()`.
 
@@ -1849,7 +1747,7 @@ from accounts.models import User
 from api.models import IntegrationStatus
 from projects.models import Project
 from tasks.models import ChangeLog, ChecklistItem, Link, Task, TodayItem
-from teams.models import DiscordWebhook, Invite, Membership, Team
+from teams.models import Invite, Membership, Team
 
 
 def healthz(request):
@@ -1869,7 +1767,15 @@ def export_json(request):
         serializers.serialize(
             "json",
             User.objects.all(),
-            fields=("username", "display_name", "discord_user_id", "is_active", "auto_pull_days"),
+            # discord_link_code는 살아 있는 동안 자격증명이므로 넣지 않는다.
+            fields=(
+                "username",
+                "display_name",
+                "discord_user_id",
+                "discord_linked_at",
+                "is_active",
+                "auto_pull_days",
+            ),
         ),
         serializers.serialize("json", Team.objects.all()),
         serializers.serialize("json", Membership.objects.all()),
@@ -1877,12 +1783,6 @@ def export_json(request):
             "json",
             Invite.objects.all(),
             fields=("team", "expires_at", "revoked_at", "use_count"),
-        ),
-        # 초대 token과 같은 이유로 Webhook url은 빼고 내보낸다. 백업에 비밀을 담지 않는다.
-        serializers.serialize(
-            "json",
-            DiscordWebhook.objects.all(),
-            fields=("team", "name", "is_active", "created_at", "last_test_at", "last_test_ok"),
         ),
         serializers.serialize("json", Project.objects.all()),
         serializers.serialize("json", Task.objects.all()),
@@ -1898,6 +1798,8 @@ def export_json(request):
 ```
 
 `staff_member_required`는 `is_staff`를 본다. superuser를 만들 때 `is_staff=True`이므로 그대로 쓴다.
+
+User 필드 허용 목록이 곧 백업의 경계다. `discord_linked_at`은 넣고(연결 여부는 비밀이 아니다) **`discord_link_code`와 `discord_link_expires_at`은 넣지 않는다** — 유효한 10분 동안 그 코드는 그 계정에 Discord를 붙일 수 있는 자격증명이다. `DiscordWebhook` 블록은 모델과 함께 사라졌다.
 
 ---
 
@@ -2387,7 +2289,7 @@ def export_json(request):
 {% extends "base.html" %}{% block title %}팀 현황{% endblock %}
 {% block main %}
 <div class="card">
-  <div class="card-head"><h1 class="t24">{{ team.name }}</h1>{% if is_admin %}<a class="btn sm" href="{% url 'team_members' team.pk %}">팀원 관리</a><a class="btn sm" href="{% url 'team_webhooks' team.pk %}">알림 채널</a>{% endif %}</div>
+  <div class="card-head"><h1 class="t24">{{ team.name }}</h1>{% if is_admin %}<a class="btn sm" href="{% url 'team_members' team.pk %}">팀원 관리</a>{% endif %}</div>
   <div class="tiles">
     {% for label, value, url in tiles %}<a class="tile" href="{{ url }}"><b>{{ value }}</b><span>{{ label }}</span></a>{% endfor %}
   </div>
@@ -2561,14 +2463,50 @@ def export_json(request):
 | `search.html` | 52px 검색 input(`class="input lg"`, placeholder "예: TASK-121, 메뉴, 챗봇"), 체크 "완료·취소 포함", "보관 포함", 결과 개수 + `ul.tasks`, 빈 결과 문구 "검색 결과가 없습니다." |
 | `teams/list.html` | 팀 목록(각각 `team_detail` 링크), 팀이 없으면 "아직 팀에 속해 있지 않습니다. 초대 링크가 필요합니다.", "팀 만들기" 링크 |
 | `teams/new.html` | `TeamForm` |
-| `teams/members.html` | 제목 "{팀} 팀원 관리", "관리자 N명" 안내, 멤버 표(이름, 역할 select POST, 참여일, Discord 연동 여부, 미완료·초과 건수, 제거 버튼), Discord 미연동 안내 한 줄, 초대 링크 표(제거한 사람이 링크로 다시 들어올 수 있다는 안내 포함)(URL, 만료, 사용 횟수, 폐기 버튼), `InviteForm`, `team_webhooks` 링크 |
-| `teams/webhooks.html` | 제목 "{팀} 알림 채널", 채널 표(이름·등록자·등록일, `masked` 주소, 사용 여부, 마지막 확인 결과, [테스트 발송][끄기/켜기][삭제]), 빈 상태 "등록한 채널이 없습니다. 채널을 하나도 등록하지 않으면 알림이 나가지 않습니다.", 등록 폼(`WebhookForm` + `help`), "등록한 주소는 다시 볼 수 없습니다" 안내. **주소 원문은 어디에도 넣지 않는다** |
+| `teams/members.html` | 제목 "{팀} 팀원 관리", "관리자 N명" 안내, 멤버 표(이름, 역할 select POST, 참여일, Discord 연결 여부, 미완료·초과 건수, 제거 버튼), Discord 미연결 안내 한 줄(연결은 각자 프로필에서 한다), 초대 링크 표(제거한 사람이 링크로 다시 들어올 수 있다는 안내 포함)(URL, 만료, 사용 횟수, 폐기 버튼), `InviteForm` |
 | `tasks/edit.html` | `TaskForm.as_p`(제목·프로젝트·담당자·중요도·기한·기한 미정 사유·설명·완료 조건·다음 행동), "저장"·"취소" |
-| `settings/profile.html` | `ProfileForm` |
+| `settings/profile.html` | `ProfileForm`(표시 이름만) + **Discord 연결 카드**. 전체 코드는 아래 |
 | `settings/tokens.html` | `new_token`이 있으면 `<code>`로 1회 표시 + "지금 복사하세요. 다시 볼 수 없습니다.", 토큰 표(이름, 앞자리, 범위, 만료, 폐기 버튼), `TokenForm`, MCP 연결 안내(GUIDE-03 Step 5 표) |
 | `ops.html` | `IntegrationStatus` 표(이름, 마지막 실행, ok, detail JSON), "JSON 내보내기" 링크 |
 
 상태·중요도는 항상 **텍스트**로 표시한다. 색상만으로 구분하지 않는다.
+
+### `settings/profile.html` (전체)
+
+```html
+{% extends "base.html" %}{% block title %}프로필{% endblock %}
+{% block main %}
+<div class="card">
+  <h1 class="t24">프로필</h1>
+  <form method="post" class="stack">{% csrf_token %}
+    {% for f in form %}<label class="field">{{ f.label }}{{ f }}</label>{% for e in f.errors %}<div class="error">{{ e }}</div>{% endfor %}{% endfor %}
+    <button class="btn primary">저장</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Discord 연결</h2>
+  <p class="muted t13">연결하면 마감 알림(D-3 · D-1 · 당일 · 기한 초과)을 개인 DM으로 받고, 봇에게 DM으로 태스크를 처리할 수 있습니다.</p>
+  {% if link_code %}
+  <p>Discord에서 봇에게 <b>DM</b>으로 아래 한 줄을 <b>10분 안에</b> 보내세요.</p>
+  <code>연결 {{ link_code }}</code>
+  <p class="warning t13">이 코드는 지금 한 번만 보입니다. 놓치면 다시 발급하세요.</p>
+  {% endif %}
+  {% if user.discord_user_id %}
+  <p class="row">연결됨 · {{ user.discord_linked_at|date:"Y-m-d H:i" }}
+    <form method="post" action="{% url 'discord_unlink' %}">{% csrf_token %}<button class="btn sm">연결 해제</button></form>
+  </p>
+  <p class="muted t13">해제하면 DM 알림이 멈춥니다. Discord에서 봇에게 <code>연결해제</code>를 보내도 됩니다.</p>
+  {% else %}
+  <form method="post" action="{% url 'discord_link' %}">{% csrf_token %}<button class="btn primary">Discord 연결</button></form>
+  <p class="muted t13">봇과 같은 서버에 있어야 하고, 서버 우클릭 → 개인정보 보호 설정에서 &lsquo;서버 멤버의 DM 허용&rsquo;이 켜져 있어야 DM이 도착합니다.</p>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+- 코드는 `link_code`가 있을 때만, 즉 **발급 직후 한 번만** 그려진다(뷰에서 세션 `pop`). 새로고침하면 사라진다 — 토큰 화면의 `new_token`과 같은 규칙이다.
+- snowflake 원문(`discord_user_id`)은 화면에 그리지 않는다. 연결 여부와 시각만 보여 준다.
+- 입력칸이 없다는 것이 이 화면의 요점이다. 사용자가 남의 Discord id를 적어 넣을 수 있으면 연결 증명 전체가 무의미해진다(GUIDE-00 §3).
 
 ---
 
@@ -2601,7 +2539,8 @@ uv run python manage.py runserver
 17. `/search`: "TASK-1", 제목 일부, 프로젝트 이름으로 검색된다. "완료·취소 포함" 없이는 완료 태스크가 안 나온다.
 18. `/today?schedule=1`: 일정 카드가 목록 옆에 열리고 시간표/캘린더 전환, 캘린더에서 마감 ●n, 날짜 클릭 시 그날 마감 목록.
 19. 창 폭 1100px: 패널을 열면 본문 대신 패널만 보인다. 700px: 메뉴가 두 줄, 프로젝트 레일이 가로 스크롤, 패널이 전체 화면, 팀 지표가 2열.
-20. `/settings/tokens`에서 토큰 발급 → 원문이 한 번만 보이고 새로고침하면 사라진다. superuser로 `/ops`가 열리고 `/ops/export.json`이 내려받아진다. 로그아웃 상태에서 `/today` → `/login?next=/today`.
+20. `/settings/tokens`에서 토큰 발급 → 원문이 한 번만 보이고 새로고침하면 사라진다. 범위 select에는 "읽기"·"읽기·쓰기" 둘만 있다. superuser로 `/ops`가 열리고 `/ops/export.json`이 내려받아진다(본문에 `discord_link_code`가 없다). 로그아웃 상태에서 `/today` → `/login?next=/today`.
+21. `/settings/profile`: Discord ID 입력칸이 없다. **[Discord 연결]** → 8자 코드가 한 번 보이고 새로고침하면 사라진다. `/admin`에서 그 사용자의 `discord_user_id`는 읽기 전용이다. `/teams/1` 헤더에 '알림 채널' 링크가 없고 `/teams/1/webhooks`는 404다.
 
 커밋: `step 6: web ui`
 

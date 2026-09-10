@@ -4,6 +4,7 @@ __pycache__/
 *.sqlite3
 *.sqlite
 .env
+.env.discord
 staticfiles/
 .pytest_cache/
 .ruff_cache/

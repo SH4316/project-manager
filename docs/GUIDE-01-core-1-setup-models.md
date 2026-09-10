@@ -5,6 +5,8 @@ GUIDE-00을 먼저 읽는다. 이 문서는 Step 0 ~ Step 2를 다룬다.
 
 개정 2026-09-10: 목업 정합([IMPL-PLAN.md](IMPL-PLAN.md) §3). 태스크 상태 7개, 중요도 1~10, 프로젝트 상태 8개·관리자 여러 명, 댓글 삭제 → 진행 메모, 오늘 목록 자동 담기.
 
+개정 2026-09-10 (Discord 봇): `User`에 연결 필드 3개, `ApiToken.SCOPES`에 `bot`, `ChangeLog.SOURCES`에 `dc`, `DiscordWebhook` 모델 삭제, `SecretFilter` 패턴 교체, accounts admin readonly.
+
 ---
 
 ## Step 0. 저장소와 환경
@@ -194,13 +196,16 @@ import re
 _PATTERNS = [
     re.compile(r"pm_[A-Za-z0-9_\-]{20,}"),
     re.compile(r"(?i)bearer\s+\S+"),
+    # Discord 봇 토큰은 `Authorization: Bot <token>`으로 실린다. bearer 패턴이 못 잡는다.
+    re.compile(r"(?i)\bbot\s+[A-Za-z0-9_\-.]{20,}"),
+    re.compile(r"[A-Za-z0-9_\-]{24,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{27,}"),
+    re.compile(r"(?i)DISCORD_BOT_TOKEN=\S+"),
     re.compile(r"/u/[A-Za-z0-9_\-]{20,}/"),
-    re.compile(r"https://discord\.com/api/webhooks/\S+"),
 ]
 
 
 class SecretFilter(logging.Filter):
-    """로그 메시지에서 토큰·Webhook URL을 가린다."""
+    """로그 메시지에서 API 토큰과 Discord 봇 토큰을 가린다."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
@@ -325,9 +330,17 @@ class User(AbstractUser):
     AUTO_PULL_CHOICES = [(0, "끄기"), (1, "1일"), (3, "3일"), (5, "5일"), (7, "7일"), (14, "14일")]
 
     display_name = models.CharField("표시 이름", max_length=50, blank=True)
+    # Discord snowflake. 사용자가 직접 입력하지 않는다 — 봇이 게이트웨이에서 읽은 author.id와
+    # 웹에서 발급한 1회용 코드를 맞바꿔야 채워진다(GUIDE-00 §3). 봇이 이 값으로 사람을
+    # 찾으므로 검증 없이 채워지면 곧 로그인 자격증명이 된다.
     discord_user_id = models.CharField(
         "Discord 사용자 ID", max_length=32, null=True, blank=True, unique=True
     )
+    discord_link_code = models.CharField(
+        "Discord 연결 코드", max_length=8, null=True, blank=True, unique=True
+    )
+    discord_link_expires_at = models.DateTimeField(null=True, blank=True)
+    discord_linked_at = models.DateTimeField("Discord 연결 시각", null=True, blank=True)
     auto_pull_days = models.PositiveSmallIntegerField(
         "마감 기준 자동 담기(일)", choices=AUTO_PULL_CHOICES, default=5
     )
@@ -345,7 +358,7 @@ class User(AbstractUser):
 
 
 class ApiToken(models.Model):
-    SCOPES = [("read", "읽기"), ("write", "읽기·쓰기")]
+    SCOPES = [("read", "읽기"), ("write", "읽기·쓰기"), ("bot", "Discord 봇")]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="tokens")
     name = models.CharField(max_length=50)
@@ -418,6 +431,17 @@ class IdempotencyKey(models.Model):
         ]
 ```
 
+Discord 연결 필드 3개는 새 모델 없이 연결을 증명하기 위한 최소 구성이다.
+
+| 필드 | 채우는 곳 | 비우는 곳 |
+|---|---|---|
+| `discord_link_code` | 웹 `[Discord 연결]` (`issue_link_code`) | 연결 성공 시 **`None`**으로. `""`로 비우면 두 번째 사용자가 `unique` 제약에 걸린다 |
+| `discord_link_expires_at` | 같은 곳. `now + 10분` | 같은 곳 |
+| `discord_user_id` | `link_discord`가 게이트웨이의 `author.id`로만 | `unlink_discord` / 다른 사람이 그 snowflake를 증명하면 회수된다 |
+| `discord_linked_at` | `link_discord` | 해제 시 `None`. **이 값이 없는 행은 봇 명령의 행위자가 될 수 없다** |
+
+`ApiToken.SCOPES`의 `bot`은 Discord 봇 계정 하나만 쓴다. `scope`는 `max_length=5`라 `"bot"`(3자)이 그대로 들어가므로 컬럼 변경은 없다. 이 범위는 `/api/integrations/discord/` 안에서만 쓸 수 있고(§5의 `BotTokenAuth`), 웹 화면에서는 발급할 수 없다(GUIDE-00 §3).
+
 ### 1.7 검증
 
 ```bash
@@ -437,7 +461,6 @@ uv run python manage.py check
 ### 2.1 `core/teams/models.py`
 
 ```python
-import re
 import secrets
 from datetime import timedelta
 
@@ -512,55 +535,11 @@ class Invite(models.Model):
     @property
     def path(self) -> str:
         return f"/join/{self.token}"
-
-
-# Discord가 발급하는 Webhook URL 형태. 이 host로만 보내므로 임의 주소로 요청이 새지 않는다.
-WEBHOOK_RE = re.compile(
-    r"^https://(?:discord|discordapp)\.com/api/webhooks/\d{1,25}/[A-Za-z0-9_-]{1,200}$"
-)
-
-
-class DiscordWebhook(models.Model):
-    """팀의 Discord 알림 채널.
-
-    URL 뒷부분이 그 자체로 비밀이다(아는 사람은 누구나 그 채널에 글을 쓸 수 있다).
-    화면·로그·백업에는 `masked`만 쓴다. 원문은 discord 서비스가 API로만 읽는다.
-    """
-
-    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name="webhooks")
-    name = models.CharField("채널 이름", max_length=50)
-    url = models.CharField("Webhook URL", max_length=300)
-    is_active = models.BooleanField("사용", default=True)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_test_at = models.DateTimeField(null=True, blank=True)
-    last_test_ok = models.BooleanField(null=True, blank=True)
-    last_test_detail = models.CharField(max_length=100, blank=True)
-
-    class Meta:
-        ordering = ["name", "id"]
-        constraints = [
-            models.UniqueConstraint(fields=["team", "url"], name="webhook_team_url"),
-        ]
-
-    def __str__(self):
-        return f"{self.name} @ {self.team}"
-
-    @property
-    def masked(self) -> str:
-        """`…/webhooks/<채널 id>/••••••••뒤4자`. 두 웹훅을 구분할 만큼만 보여준다.
-
-        짧은 토큰이면 뒤 네 자도 보여주지 않는다(그만큼이 전체의 큰 몫이 된다).
-        """
-        head, _, tail = self.url.rpartition("/")
-        return f"{head}/{'•' * 8}{tail[-4:] if len(tail) > 12 else ''}"
 ```
 
-`DiscordWebhook`은 팀의 Discord 알림 채널이다. URL 뒷부분이 그 자체로 비밀이므로
-화면·로그·백업에는 `masked`만 쓴다(GUIDE-00 §3). `WEBHOOK_RE`로 host를 Discord로 못박아
-두어 임의 주소로 요청이 나가지 않는다.
+`teams`에는 Discord 관련 모델이 없다. 팀의 알림 채널은 `DISCORD_CHANNEL_ID` 환경 변수 하나이고(배포당 값 하나, 비밀도 아니다), 개인 알림 대상은 `User.discord_user_id`다. 발송은 `discord_service`가 봇 토큰으로 하므로 core는 Discord로 나가는 요청을 하지 않는다 — 그래서 URL 검증(SSRF 방지)·마스킹·전용 조회 API가 전부 필요 없다. 팀이 둘 이상이 되면 모델이 아니라 `Team.discord_channel_id` 컬럼 하나를 붙인다.
+
+`import re`는 이 파일에서 쓰지 않는다(웹훅 형식 검사와 함께 사라졌다).
 
 ### 2.2 `core/projects/models.py`
 
@@ -812,7 +791,8 @@ class Link(models.Model):
 
 class ChangeLog(models.Model):
     TARGETS = [("task", "task"), ("project", "project")]
-    SOURCES = [("web", "웹"), ("api", "API"), ("mcp", "AI")]
+    # source는 max_length=4다. "discord"는 안 들어가므로 코드는 "dc", 표시는 "Discord".
+    SOURCES = [("web", "웹"), ("api", "API"), ("mcp", "AI"), ("dc", "Discord")]
 
     target_type = models.CharField(max_length=10, choices=TARGETS)
     target_id = models.PositiveBigIntegerField()
@@ -869,9 +849,19 @@ from .models import ApiToken, User
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
+    """discord_user_id는 admin에서도 손으로 넣지 못한다.
+
+    증명 없이 심을 수 있으면 코드 교환 연결이 무의미해진다. 연결은 웹의 [Discord 연결] →
+    DM `연결 <코드>`로만, 해제는 웹의 [연결 해제]로.
+    """
+
     list_display = ("username", "display_name", "discord_user_id", "is_active", "is_superuser")
+    readonly_fields = ("discord_user_id", "discord_linked_at")
     fieldsets = UserAdmin.fieldsets + (
-        ("프로필", {"fields": ("display_name", "discord_user_id", "auto_pull_days")}),
+        (
+            "프로필",
+            {"fields": ("display_name", "auto_pull_days", "discord_user_id", "discord_linked_at")},
+        ),
     )
 
 
@@ -1003,6 +993,25 @@ uv run python manage.py createsuperuser --username admin --email admin@example.c
   `priority=11`, `status="done"`+`completed_at=None`으로 각각 시도하면 모두 `IntegrityError`가 나야 한다
   (`with transaction.atomic():` 안에서 감싼다).
 - admin에 로그인해 팀 하나, 프로젝트 하나가 목록에 보이는지 확인한다(추가·변경 버튼은 없다).
+
+**이미 배포된 DB에 이 개정(웹훅 → 봇)을 얹는 경우**에는 `0001`을 고치지 않고 마이그레이션 세 개를 새로 만든다. 이미 적용된 마이그레이션은 편집하지 않는다.
+
+| 마이그레이션 | 내용 |
+|---|---|
+| `accounts/0002_discord_link.py` | 연결 필드 3개 `AddField` + `ApiToken.scope` `AlterField`(choices에 `bot`) + `RunPython(clear_unverified_links)` |
+| `tasks/0002_alter_changelog_source.py` | `ChangeLog.source` `AlterField`. choices만 바뀌므로 Postgres에 DDL이 없다 |
+| `teams/0003_delete_discordwebhook.py` | `DeleteModel("DiscordWebhook")`. **되돌릴 수 없다** — 등록해 둔 주소가 필요하면 먼저 `/ops` 내보내기로 백업한다 |
+
+`clear_unverified_links`는 기존 `discord_user_id`를 **전부 `None`으로 비운다**:
+
+```python
+def clear_unverified_links(apps, schema_editor):
+    apps.get_model("accounts", "User").objects.exclude(discord_user_id=None).update(
+        discord_user_id=None, discord_linked_at=None
+    )
+```
+
+예전 프로필 화면에서 손으로 입력한 값에는 소유 증명이 없다. 봇이 그 값으로 사람을 찾는 순간 자격증명이 되므로 승격시키지 않는다. `reverse_code`는 `migrations.RunPython.noop`이고, 배포 전에 팀에 공지한다 — **전원이 DM `연결`을 하기 전까지 개인 DM 알림은 0건이다.**
 
 커밋: `step 2: models and admin`
 

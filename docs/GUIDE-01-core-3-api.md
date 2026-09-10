@@ -4,6 +4,8 @@
 
 개정 2026-09-10: 상태 7개, 중요도 정수, 프로젝트 `owners`, `stop_reason`·`notes`, `/block`·`/comments` 삭제, `/extend` 추가, 오늘 목록 제외·복원·설정.
 
+개정 2026-09-10 (Discord 봇): 쓰기 게이트 `scope != "write"`, `BotTokenAuth`, 신규 라우터 `routers/discord.py`(봇 명령 5개), `/discord/webhooks` 삭제.
+
 파일 구성:
 
 ```
@@ -16,6 +18,7 @@ core/api/
   routers/
     __init__.py
     me.py teams.py projects.py tasks.py today.py reports.py integrations.py
+    discord.py    봇 명령 5개 (BotTokenAuth)
 ```
 
 ---
@@ -51,14 +54,38 @@ class TokenAuth(HttpBearer):
         if t is None:
             return None
         if (
-            t.scope == "read"
+            # write가 아닌 모든 범위(read·bot)를 막는다. bot 범위는 아래 BotTokenAuth가
+            # 지키는 /api/integrations/discord/ 안에서만 쓴다.
+            t.scope != "write"
             and request.method not in ("GET", "HEAD", "OPTIONS")
             and not request.path.startswith(WRITE_EXEMPT_PREFIX)
         ):
             raise HttpError(403, "읽기 전용 토큰입니다.")
         request.api_token = t
         return t.user
+
+
+class BotTokenAuth(TokenAuth):
+    """Discord 봇 명령 경로 전용 인증.
+
+    `/api/integrations/`는 WRITE_EXEMPT_PREFIX라서 읽기 토큰으로도 POST가 통하고,
+    API 기본 인증에는 세션 쿠키(BrowserSessionAuth)가 들어 있다. 라우터의 auth를
+    이것 하나로 바꿔 두면 세션·읽기·쓰기 토큰이 이 경로에 아예 들어오지 못한다.
+    엔드포인트마다 가드를 손으로 붙이지 않아도 되게 구조로 막는다.
+    """
+
+    def authenticate(self, request, token):
+        user = super().authenticate(request, token)
+        if user is None:
+            return None
+        if request.api_token.scope != "bot":
+            raise HttpError(403, "Discord 봇 토큰이 필요합니다.")
+        return user
 ```
+
+쓰기 게이트가 `t.scope == "read"`에서 **`t.scope != "write"`**로 바뀐 것에 주의한다. 범위가 셋(`read`·`write`·`bot`)이 되었으므로 화이트리스트로 물어야 한다 — 그러지 않으면 `bot` 토큰이 `POST /api/tasks` 같은 곳까지 통한다.
+
+`/{name}/status`(틱의 상태 보고)는 계속 API 기본 인증을 쓴다. `bot` 범위 토큰도 `WRITE_EXEMPT_PREFIX` 덕에 그 POST는 통한다.
 
 ## 5.2 `core/api/context.py`
 
@@ -104,6 +131,8 @@ def team_or_404(request, team_id: int):
 def clamp_page(limit: int, offset: int) -> tuple[int, int]:
     return max(1, min(limit, 200)), max(0, offset)
 ```
+
+`ctx()`는 **바뀌지 않는다.** `source="dc"`(Discord)는 여기서 나오지 않는다 — Discord 라우터가 자기 `_ctx()`에서 `"dc"`를 직접 박는다(§5.6). `X-Source` 헤더는 클라이언트가 고르는 값이라 경로의 증거가 못 되고, 그 라우터에 들어왔다는 사실 자체가 증거다(`BotTokenAuth`를 통과해야 들어온다). 그래서 `mcp`처럼 헤더로 판정하는 분기를 추가하지 않는다.
 
 ## 5.3 `core/api/schemas.py`
 
@@ -346,6 +375,25 @@ class StatusIn(Schema):
     detail: dict = {}
 
 
+# ---------- Discord 봇 ----------
+# discord_user_id는 게이트웨이가 채운 author.id다. 클라이언트가 고르는 값이 아니다.
+
+
+class DiscordLinkIn(Schema):
+    code: str
+    discord_user_id: str
+
+
+class DiscordActorIn(Schema):
+    discord_user_id: str
+
+
+class DiscordExtendIn(Schema):
+    discord_user_id: str
+    due_date: date
+    reason: str = ""
+
+
 class ErrorOut(Schema):
     detail: dict | str
 
@@ -429,7 +477,7 @@ from ninja.throttling import AuthRateThrottle
 from common.errors import ConflictError, ServiceError
 
 from .auth import BrowserSessionAuth, TokenAuth
-from .routers import integrations, me, projects, reports, tasks, teams, today
+from .routers import discord, integrations, me, projects, reports, tasks, teams, today
 from .serialize import project_out, task_out
 
 class UserRateThrottle(AuthRateThrottle):
@@ -475,10 +523,14 @@ api.add_router("/projects", projects.router)
 api.add_router("/tasks", tasks.router)
 api.add_router("/today", today.router)
 api.add_router("/reports", reports.router)
+# 고정 경로를 먼저. /integrations/{name}/status가 /integrations/discord/...를 삼키지 않게 한다.
+api.add_router("/integrations/discord", discord.router)
 api.add_router("/integrations", integrations.router)
 ```
 
 `core/api/routers/__init__.py`는 빈 파일.
+
+**등록 순서가 규칙이다.** `/integrations/{name}/status`가 먼저 등록되면 `/integrations/discord/link`를 `name="discord"` + 남은 경로로 삼켜 404가 된다. 반대로 discord 라우터에는 `/status` 경로가 없으므로, 틱이 부르는 `POST /api/integrations/discord/status`는 discord 라우터를 지나쳐 뒤의 `report_status`로 정상 도달한다.
 
 ## 5.6 라우터
 
@@ -889,27 +941,11 @@ from django.utils import timezone
 from ninja import Router
 from ninja.errors import HttpError
 
-from teams.services import active_webhook_urls, is_admin
-
-from ..context import team_or_404
 from ..models import IntegrationStatus
 from ..schemas import StatusIn
 
 router = Router(tags=["integrations"])
 ALLOWED = {"discord", "mcp"}
-
-
-@router.get("/discord/webhooks", response=dict)
-def discord_webhooks(request, team: int):
-    """discord 서비스가 발송 대상 주소를 읽어 가는 곳.
-
-    Webhook 주소는 그 자체가 비밀이라 팀 관리자만 볼 수 있다. 연동 계정을 그 팀의
-    관리자로 넣어야 한다(읽기 토큰이면 이 팀의 다른 것은 바꿀 수 없다).
-    """
-    t = team_or_404(request, team)
-    if not is_admin(request.auth, t):
-        raise HttpError(403, "팀 관리자만 볼 수 있습니다.")
-    return {"urls": active_webhook_urls(t)}
 
 
 @router.post("/{name}/status", response={204: None})
@@ -923,10 +959,117 @@ def report_status(request, name: str, payload: StatusIn):
     return 204, None
 ```
 
-`/{name}/status`보다 고정 경로 `/discord/webhooks`를 **먼저** 등록한다(§5.6 규칙).
-Webhook 주소는 비밀이라 이 엔드포인트만 원문을 준다. 팀 관리자만 읽을 수 있으므로
-discord 서비스가 쓰는 연동 계정을 그 팀의 **관리자**로 넣어야 한다. 토큰은 읽기여도 된다
-(읽기 토큰은 `/api/integrations/` 밖의 쓰기를 못 한다).
+라우터에 상태 보고 하나만 남았다. 웹훅 주소를 읽어 가는 엔드포인트는 없다 — 발송 대상이 core DB에 없기 때문이다(팀 채널은 `DISCORD_CHANNEL_ID` 환경 변수, 개인은 `User.discord_user_id`). `ALLOWED`는 바꾸지 않는다.
+
+리스너(`discord-bot` 컨테이너)는 `/ops`에 보고하지 않는다: `IntegrationStatus.name`이 단일 키라 리스너가 보고하면 틱의 `discord` 행을 덮어쓰고, 재접속은 discord.py가 맡으니 보고할 close code도 없다. 리스너 상태는 `docker compose logs discord-bot`으로 본다.
+
+### `core/api/routers/discord.py` (신규)
+
+봇 명령 5개가 들어오는 곳. 라우터 인증이 `BotTokenAuth` **하나**라서 API 기본 인증(`[BrowserSessionAuth(), TokenAuth()]`)을 대체한다 — 세션 쿠키·읽기·쓰기 토큰은 이 경로에 들어올 수 없다. 엔드포인트마다 `if token.scope != "bot"` 가드를 손으로 붙이지 않는다.
+
+```python
+"""Discord 봇 명령이 들어오는 곳.
+
+봇은 자기 이름으로 일하지 않는다. 연결된 Discord 사용자를 **사람**으로 바꿔 그 사람의 팀
+범위 안에서만 움직인다(`get_visible_task(actor, …)`). 변경 이력에는 행위자=그 사람,
+경로=Discord(`dc`), 토큰=봇 토큰이 남는다.
+
+라우터 인증이 `BotTokenAuth` 하나라서 세션 쿠키·읽기·쓰기 토큰은 이 경로에 들어오지 못한다.
+"""
+
+from ninja import Router
+from ninja.errors import HttpError
+
+from accounts.services import link_discord, unlink_discord_by_id, user_by_discord_id
+from tasks.brief import task_brief
+from tasks.services import extend_due, get_visible_task, today_view, transition
+
+from ..auth import BotTokenAuth
+from ..schemas import DiscordActorIn, DiscordExtendIn, DiscordLinkIn
+from ..serialize import task_out
+
+router = Router(tags=["discord"], auth=BotTokenAuth())
+
+UNLINKED = "연결되지 않은 Discord 계정입니다. 웹 설정 → 프로필에서 연결 코드를 받으세요."
+
+
+def _actor(discord_user_id: str):
+    user = user_by_discord_id(discord_user_id)
+    if user is None:
+        raise HttpError(404, UNLINKED)
+    return user
+
+
+def _ctx(request, actor) -> dict:
+    """X-Source 헤더를 믿지 않는다. 이 라우터에 들어온 것 자체가 경로의 증거다."""
+    return {"actor": actor, "source": "dc", "token": getattr(request, "api_token", None)}
+
+
+def _task(actor, task_id: int):
+    task = get_visible_task(actor, task_id)
+    if task is None:
+        raise HttpError(404, "태스크를 찾을 수 없습니다.")
+    return task
+
+
+@router.post("/link", response=dict)
+def link(request, payload: DiscordLinkIn):
+    user = link_discord(payload.code, payload.discord_user_id)
+    return {"display_name": user.display_name}
+
+
+@router.post("/unlink", response=dict)
+def unlink(request, payload: DiscordActorIn):
+    return {"unlinked": unlink_discord_by_id(payload.discord_user_id)}
+
+
+@router.post("/today", response=dict)
+def today(request, payload: DiscordActorIn):
+    """식별자를 쿼리 문자열에 싣지 않으려고 GET이 아니라 POST다."""
+    actor = _actor(payload.discord_user_id)
+    view = today_view(actor)
+    return {
+        "display_name": actor.display_name,
+        "date": view["date"].isoformat(),
+        "items": [task_brief(t) for t in view["items"]],
+        "counts": view["counts"],
+    }
+
+
+@router.post("/tasks/{task_id}/done", response=dict)
+def done(request, task_id: int, payload: DiscordActorIn):
+    actor = _actor(payload.discord_user_id)
+    task = _task(actor, task_id)
+    was = task.get_status_display()
+    # 사용자는 버전을 본 적이 없다. 의도는 "지금 완료로 바꿔라"다. 한 요청 안에서 읽고
+    # 그 값으로 CAS를 건다 — 그 사이(수 ms)에 끼면 409로 알린다(조용히 덮어쓰지 않는다).
+    task = transition(
+        task, "done", expected_version=task.version, reason="", **_ctx(request, actor)
+    )
+    return {"was": was, "task": task_out(task)}
+
+
+@router.post("/tasks/{task_id}/extend", response=dict)
+def extend(request, task_id: int, payload: DiscordExtendIn):
+    actor = _actor(payload.discord_user_id)
+    task = _task(actor, task_id)
+    task = extend_due(
+        task,
+        payload.due_date,
+        payload.reason,
+        expected_version=task.version,
+        **_ctx(request, actor),
+    )
+    return {"task": task_out(task)}
+```
+
+읽는 순서대로의 근거:
+
+- **행위자는 봇이 아니라 사람이다.** `_actor`가 snowflake로 사람을 찾고(`user_by_discord_id` — 연결이 증명된 활성 사용자만), 범위는 `get_visible_task(actor, …)`가 그 사람의 팀으로 좁힌다. 봇 계정이 팀 A에 있어도 팀 B 사용자의 태스크를 그 사람으로서 바꿀 수 있고, 그 사람이 못 보는 태스크는 404다.
+- 연결되지 않은 계정은 **404 + 한국어 안내**다. 봇은 그 문구를 그대로 DM으로 돌려준다(`commands.py`의 404 분기).
+- `expected_version`은 **같은 요청 안에서** 방금 읽은 객체의 값이다. 사용자는 버전을 본 적이 없고 의도는 "지금 바꿔라"이므로 이것은 lost update가 아니다. 읽기와 쓰기 사이(수 ms)에 웹 편집이 끼면 `ConflictError` → 409 → 봇이 "방금 다른 곳에서 바뀌었어요"로 답한다. 재시도 루프는 만들지 않는다.
+- `/today`가 GET이 아니라 POST인 이유: 식별자(snowflake)를 쿼리 문자열에 싣지 않는다.
+- 이 라우터에는 업무 규칙이 없다. 상태 전이·기한 검사·이력은 전부 `tasks/services.py`가 한다(GUIDE-00 §3). `done`을 두 번 보내도 같은 상태 재요청은 서비스가 조기 반환하므로 이력이 한 줄이고, `extend`는 현재 기한보다 앞선 날짜를 서비스가 거부한다(400 + 그 문구가 그대로 DM으로 간다).
 
 ---
 
@@ -953,15 +1096,20 @@ discord 서비스가 쓰는 연동 계정을 그 팀의 **관리자**로 넣어�
 | `POST /api/tasks/{id}/extend` `{due_date, reason, version}` | 200 | 400, 409 |
 | `GET /api/today` · `POST /api/today` `{task_id}` · `DELETE /api/today/{task_id}`(오늘 제외) · `DELETE /api/today/excluded`(제외 복원) · `PATCH /api/today/order` `{task_ids}` · `PATCH /api/today/settings` `{auto_pull_days}` | 200 `TodayOut` | 400, 404 |
 | `GET /api/reports/weekly?team=&week_start=` | 200 dict (`weekly`) | 400, 404 |
-| `GET /api/integrations/discord/webhooks?team=` | 200 `{urls: [...]}` | 403(팀 관리자 아님), 404 |
 | `POST /api/integrations/{name}/status` `{ok, detail}` | 204 | 404 |
+| `POST /api/integrations/discord/link` `{code, discord_user_id}` | 200 `{display_name}` | 400(코드 틀림·만료·사용됨), 403(bot 범위 아님) |
+| `POST /api/integrations/discord/unlink` `{discord_user_id}` | 200 `{unlinked: bool}` | 403 |
+| `POST /api/integrations/discord/today` `{discord_user_id}` | 200 `{display_name, date, items, counts}` | 403, 404(미연결) |
+| `POST /api/integrations/discord/tasks/{id}/done` `{discord_user_id}` | 200 `{was, task}` | 400, 403, 404(미연결·안 보이는 태스크), 409 |
+| `POST /api/integrations/discord/tasks/{id}/extend` `{discord_user_id, due_date, reason}` | 200 `{task}` | 400, 403, 404, 409 |
 
 공통:
 
 - 인증 실패 401. 읽기 토큰으로 쓰기 요청 403.
 - 검증 실패 400 본문: `{"detail": {"필드": "메시지"}}`.
 - 충돌 409 본문: `{"detail": "conflict", "latest": <TaskOut 또는 ProjectOut>}`.
-- 헤더 `X-Source: mcp`가 있고 토큰 인증이면 변경 이력 `source`가 `mcp`로 기록된다.
+- 헤더 `X-Source: mcp`가 있고 토큰 인증이면 변경 이력 `source`가 `mcp`로 기록된다. `/api/integrations/discord/`의 5개 경로는 헤더와 무관하게 `source="dc"`다(라우터가 정한다).
+- `/api/integrations/discord/`는 `bot` 범위 토큰만 통한다. 세션 쿠키·읽기·쓰기 토큰은 403이고, 반대로 `bot` 토큰은 `/api/integrations/` 밖의 쓰기(`POST /api/tasks` 등)에서 403이다.
 - 막힘·일시정지는 `transition`으로 한다: `{"status":"blocked","reason":"서류 대기","version":3}`. 이미 멈춘 태스크의 사유만 고치려면 `PATCH {"stop_reason": "...", "version": n}`.
 - 진행 메모는 `PATCH {"notes": "..."}`로 통째로 바꾼다(덧붙이기는 클라이언트가 읽어서 이어 붙인다).
 
@@ -991,6 +1139,18 @@ from accounts.models import User, ApiToken
 u = User.objects.get(username='u1')
 t, raw = ApiToken.issue(u, 'test', 'write')
 print(raw)
+"
+```
+
+봇 경로는 범위 차단까지 확인한다. 위의 **쓰기** 토큰으로 `POST /api/integrations/discord/today`를 부르면 403(`Discord 봇 토큰이 필요합니다.`)이어야 하고, `bot` 범위 토큰으로 `POST /api/tasks`를 부르면 403(`읽기 전용 토큰입니다.`)이어야 한다.
+
+```bash
+uv run python manage.py shell -c "
+from accounts.models import User, ApiToken
+from accounts.services import issue_link_code
+u = User.objects.get(username='u1')
+print(ApiToken.issue(u, 'Discord 봇', 'bot')[1])
+print(issue_link_code(u))
 "
 ```
 

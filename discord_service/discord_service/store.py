@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS sent(
   PRIMARY KEY(task_id, kind, due_date)
 );
 CREATE TABLE IF NOT EXISTS daily(kind TEXT NOT NULL, date TEXT NOT NULL, PRIMARY KEY(kind, date));
+-- (봇, Discord 사용자) 쌍의 DM 채널. 매번 열면 40003(DM 여는 속도 초과)이 난다.
+CREATE TABLE IF NOT EXISTS dm(discord_user_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS weekly(
   period_start TEXT PRIMARY KEY, data_json TEXT NOT NULL, summary TEXT NOT NULL,
   source TEXT NOT NULL, sent_status TEXT NOT NULL, sent_at TEXT
@@ -66,6 +68,25 @@ class Store:
                 "DELETE FROM sent WHERE task_id=? AND kind=? AND due_date=? AND status='sending'",
                 (task_id, kind, due_date),
             )
+
+    # --- DM 채널 캐시 ---
+    def dm_channel(self, discord_user_id: str) -> str | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT channel_id FROM dm WHERE discord_user_id=?", (str(discord_user_id),)
+            ).fetchone()
+            return row["channel_id"] if row else None
+
+    def save_dm_channel(self, discord_user_id: str, channel_id: str):
+        with self._conn() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO dm(discord_user_id, channel_id) VALUES(?,?)",
+                (str(discord_user_id), str(channel_id)),
+            )
+
+    def forget_dm_channel(self, discord_user_id: str):
+        with self._conn() as c:
+            c.execute("DELETE FROM dm WHERE discord_user_id=?", (str(discord_user_id),))
 
     # --- 하루 1회 작업 ---
     def claim_daily(self, kind: str, date: str) -> bool:

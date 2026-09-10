@@ -3,7 +3,8 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from accounts.models import ApiToken, User
+from accounts.models import ApiToken
+from accounts.services import issue_link_code, unlink_discord
 
 from ..forms import ProfileForm, TokenForm
 
@@ -11,26 +12,34 @@ from ..forms import ProfileForm, TokenForm
 @login_required
 def profile(request):
     u = request.user
-    form = ProfileForm(
-        request.POST or None,
-        initial={"display_name": u.display_name, "discord_user_id": u.discord_user_id or ""},
-    )
+    form = ProfileForm(request.POST or None, initial={"display_name": u.display_name})
     if request.method == "POST" and form.is_valid():
-        d = form.cleaned_data
-        discord = (d["discord_user_id"] or "").strip()
-        taken = discord and User.objects.filter(discord_user_id=discord).exclude(pk=u.pk).exists()
-        if discord and not discord.isdecimal():
-            form.add_error("discord_user_id", "숫자만 입력하세요.")
-        elif taken:
-            # unique=True라서 그냥 저장하면 IntegrityError로 500이 된다.
-            form.add_error("discord_user_id", "다른 사용자가 이미 쓰는 Discord 사용자 ID입니다.")
-        else:
-            u.display_name = d["display_name"]
-            u.discord_user_id = discord or None
-            u.save(update_fields=["display_name", "discord_user_id"])
-            messages.success(request, "프로필을 저장했습니다.")
-            return redirect("profile")
-    return render(request, "settings/profile.html", {"form": form})
+        u.display_name = form.cleaned_data["display_name"]
+        u.save(update_fields=["display_name"])
+        messages.success(request, "프로필을 저장했습니다.")
+        return redirect("profile")
+    return render(
+        request,
+        "settings/profile.html",
+        # 연결 코드는 발급 직후 한 번만 보여준다(토큰 화면의 new_token과 같은 방식).
+        {"form": form, "link_code": request.session.pop("discord_link_code", None)},
+    )
+
+
+@login_required
+@require_POST
+def discord_link(request):
+    """연결 코드 발급. 실제 연결은 Discord에서 봇에게 DM으로 코드를 보낼 때 이뤄진다."""
+    request.session["discord_link_code"] = issue_link_code(request.user)
+    return redirect("profile")
+
+
+@login_required
+@require_POST
+def discord_unlink(request):
+    unlink_discord(request.user)
+    messages.success(request, "Discord 연결을 끊었습니다. 마감 알림 DM도 멈춥니다.")
+    return redirect("profile")
 
 
 @login_required

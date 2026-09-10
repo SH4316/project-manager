@@ -4,19 +4,26 @@ import httpx
 import pytest
 
 from discord_service.core_client import CoreClient
-from discord_service.discord import Webhook
+from discord_service.discord import Bot
+from discord_service.messages import STATUS
 from discord_service.store import Store
 
 OPEN = ("todo", "doing", "paused", "blocked", "review")
+BOT_PREFIX = "/api/integrations/discord/"
+CHANNEL = "999"  # 팀 채널 id (DISCORD_CHANNEL_ID)
 
 
-def task(i, due, status="todo", stop_reason=""):
+def member(i=2, did="111", name="팀원"):
+    return {"id": i, "display_name": name, "discord_user_id": did}
+
+
+def task(i, due, status="todo", stop_reason="", assignee=None):
     return {
         "id": i,
         "number": f"TASK-{i}",
         "title": f"할 일 {i}",
         "project": {"id": 1, "name": "학식 API", "team_id": 1},
-        "assignee": {"id": 2, "display_name": "팀원", "discord_user_id": "111"},
+        "assignee": member() if assignee is None else assignee,
         "status": status,
         "priority": 5,
         "due_date": due,
@@ -27,7 +34,13 @@ def task(i, due, status="todo", stop_reason=""):
 
 
 def weekly_data(
-    completed=(), reopened=(), due_this_week=(), overdue=(), blocked=(), by_project=None
+    completed=(),
+    reopened=(),
+    due_this_week=(),
+    overdue=(),
+    blocked=(),
+    by_project=None,
+    members=None,
 ):
     completed, reopened = list(completed), list(reopened)
     due_this_week, overdue, blocked = list(due_this_week), list(overdue), list(blocked)
@@ -62,27 +75,29 @@ def weekly_data(
             "review": 0,
             "no_due": 0,
         },
-        "members": [{"id": 2, "display_name": "팀원", "discord_user_id": "111"}],
+        "members": [member()] if members is None else list(members),
     }
 
 
 class FakeCore:
-    """core API 흉내. tasks dict를 바꾸면 응답이 바뀐다."""
+    """core API 흉내. tasks dict를 바꾸면 응답이 바뀐다.
 
-    def __init__(
-        self,
-        tasks: list[dict],
-        weekly: dict | None = None,
-        webhook_urls: list[str] | None = None,
-    ):
+    봇 명령 5개(`/api/integrations/discord/…`)를 함께 흉내 낸다. `bot_status`를
+    404·403·409·429·400 중 하나로 바꾸면 그 상태와 `bot_detail`(한국어 문구)로 답한다.
+    """
+
+    def __init__(self, tasks: list[dict], weekly: dict | None = None):
         self.tasks = {t["id"]: t for t in tasks}
         self.weekly_data = weekly
         self.status_reports = []
-        self.webhook_urls = (
-            ["https://discord.com/api/webhooks/1/aaa"] if webhook_urls is None else webhook_urls
-        )
-        self.webhook_status = 200  # 500으로 바꾸면 목록 조회가 실패한다
-        self.webhook_calls = 0
+        self.calls: list[tuple[str, dict]] = []  # 봇 명령 호출 (경로, 본문)
+        self.writes: list[tuple[str, dict]] = []  # 실제로 태스크를 바꾼 호출만
+        self.bot_status = 200
+        self.bot_detail = "x"
+
+    # --- 조회 도움말 ---
+    def paths(self) -> list[str]:
+        return [p for p, _ in self.calls]
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -99,31 +114,125 @@ class FakeCore:
             return httpx.Response(200, json=t) if t else httpx.Response(404, json={"detail": "x"})
         if path == "/api/reports/weekly":
             return httpx.Response(200, json=self.weekly_data)
-        if path == "/api/integrations/discord/webhooks":
-            self.webhook_calls += 1
-            if self.webhook_status != 200:
-                return httpx.Response(self.webhook_status, json={"detail": "x"})
-            return httpx.Response(200, json={"urls": self.webhook_urls})
-        if path.startswith("/api/integrations/"):
+        if path == BOT_PREFIX + "status":
             self.status_reports.append(json.loads(request.content))
             return httpx.Response(204)
+        if path.startswith(BOT_PREFIX):
+            return self._bot(path.removeprefix(BOT_PREFIX), json.loads(request.content))
         return httpx.Response(404)
 
+    def _bot(self, cmd: str, body: dict) -> httpx.Response:
+        self.calls.append((cmd, body))
+        if self.bot_status != 200:
+            return httpx.Response(self.bot_status, json={"detail": self.bot_detail})
+        if cmd == "link":
+            return httpx.Response(200, json={"display_name": "홍길동"})
+        if cmd == "unlink":
+            return httpx.Response(200, json={"unlinked": True})
+        if cmd == "today":
+            items = [t for t in self.tasks.values() if t["status"] in OPEN]
+            return httpx.Response(
+                200,
+                json={
+                    "display_name": "홍길동",
+                    "date": "2026-09-09",
+                    "items": items,
+                    "counts": {"my_open": len(items), "done_today": 1},
+                },
+            )
+        parts = cmd.split("/")  # tasks/<id>/<action>
+        if len(parts) == 3 and parts[0] == "tasks":
+            t = self.tasks.get(int(parts[1]))
+            if t is None:
+                return httpx.Response(404, json={"detail": "태스크를 찾을 수 없습니다."})
+            self.writes.append((cmd, body))
+            if parts[2] == "done":
+                was = STATUS[t["status"]]
+                t["status"] = "done"
+                return httpx.Response(200, json={"was": was, "task": t})
+            if parts[2] == "extend":
+                t["due_date"] = body["due_date"]
+                return httpx.Response(200, json={"task": t})
+        return httpx.Response(404, json={"detail": "x"})
 
-class FakeHook:
-    def __init__(self, statuses=None):
-        self.sent = []
-        self.payloads = []
-        self.urls = []
-        self.statuses = list(statuses or [])
+
+class FakeBot:
+    """Discord 봇 REST 흉내. 실제 `Bot`을 MockTransport로 감싼다.
+
+    `errors[채널id]`(또는 모든 채널을 뜻하는 `"*"`)에 `(상태, 본문)`을 넣으면 그 순서로
+    답한다. 예: `{"dm-111": [(403, {"code": 50007})]}`, `{"*": [429]}`.
+    """
+
+    def __init__(self, errors: dict | None = None):
+        self.calls: list[dict] = []  # 모든 요청 (경로·본문·헤더)
+        self.opened: list[str] = []  # /users/@me/channels 를 부른 recipient_id
+        self.messages: list[dict] = []  # 성공한 발송 (채널·본문·allowed_mentions)
+        self.errors = {k: list(v) for k, v in (errors or {}).items()}
+
+    # --- 조회 도움말 ---
+    @property
+    def sent(self) -> list[str]:
+        return [m["content"] for m in self.messages]
+
+    def to(self, channel: str) -> list[str]:
+        return [m["content"] for m in self.messages if m["channel"] == channel]
+
+    def dm(self, discord_user_id: str) -> list[str]:
+        return self.to(f"dm-{discord_user_id}")
+
+    def attempts(self, channel: str) -> int:
+        return sum(1 for c in self.calls if c["path"] == f"/channels/{channel}/messages")
 
     def handler(self, request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
-        self.payloads.append(payload)
-        self.urls.append(str(request.url))
-        self.sent.append(payload["content"])
-        code = self.statuses.pop(0) if self.statuses else 204
-        return httpx.Response(code, headers={"Retry-After": "0"} if code == 429 else {})
+        path = request.url.path.removeprefix("/api/v10")
+        body = json.loads(request.content)
+        self.calls.append(
+            {
+                "path": path,
+                "body": body,
+                "auth": request.headers.get("Authorization"),
+                "ua": request.headers.get("User-Agent"),
+            }
+        )
+        if path == "/users/@me/channels":
+            recipient = str(body["recipient_id"])
+            self.opened.append(recipient)
+            return httpx.Response(200, json={"id": f"dm-{recipient}"})
+        channel = path.split("/")[2]
+        status, payload = self._next(channel)
+        if status != 200:
+            headers = {"Retry-After": "0"} if status == 429 else {}
+            return httpx.Response(status, json=payload, headers=headers)
+        self.messages.append(
+            {
+                "channel": channel,
+                "content": body["content"],
+                "allowed_mentions": body["allowed_mentions"],
+            }
+        )
+        return httpx.Response(200, json={"id": "m1"})
+
+    def _next(self, channel: str) -> tuple[int, dict]:
+        for key in (channel, "*"):
+            queue = self.errors.get(key)
+            if queue:
+                e = queue.pop(0)
+                return (e, {}) if isinstance(e, int) else e
+        return 200, {}
+
+
+def make_bot(fake: FakeBot, store=None, channel_id: str = CHANNEL) -> Bot:
+    return Bot(
+        "botsecret",
+        channel_id,
+        store,
+        transport=httpx.MockTransport(fake.handler),
+        sleep=lambda s: None,
+    )
+
+
+def make_core(fake: FakeCore) -> CoreClient:
+    return CoreClient("http://core", "pm_test", transport=httpx.MockTransport(fake.handler))
 
 
 @pytest.fixture
@@ -132,22 +241,10 @@ def store(tmp_path):
 
 
 @pytest.fixture
-def fake_hook():
-    return FakeHook()
-
-
-def make_hook(fake: FakeHook) -> Webhook:
-    return Webhook(
-        "https://discord.com/api/webhooks/x/y",
-        transport=httpx.MockTransport(fake.handler),
-        sleep=lambda s: None,
-    )
+def fake_bot():
+    return FakeBot()
 
 
 @pytest.fixture
-def hook(fake_hook):
-    return make_hook(fake_hook)
-
-
-def make_core(fake: FakeCore) -> CoreClient:
-    return CoreClient("http://core", "pm_test", transport=httpx.MockTransport(fake.handler))
+def bot(fake_bot, store):
+    return make_bot(fake_bot, store)

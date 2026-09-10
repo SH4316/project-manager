@@ -8,15 +8,19 @@
 
 | 파트 | 테스트 (SQLite) | 테스트 (Postgres 16) | ruff check | ruff format |
 |---|---|---|---|---|
-| `core/` | **140 passed**, skip 0 | **140 passed**, skip 0 | 0 | 통과 |
-| `discord_service/` | **29 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
+| `core/` | **145 passed**, skip 0 | 이 개정에서는 **부분**(아래) | 0 | 통과 |
+| `discord_service/` | **58 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 | `mcp_server/` | **16 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 
-`/api/docs`에 [GUIDE-01-3](GUIDE-01-core-3-api.md) 5.7 표의 엔드포인트 21개가 모두 보인다.
+`/api/docs`에 [GUIDE-01-3](GUIDE-01-core-3-api.md) 5.7 표의 엔드포인트 25개가 모두 보인다.
 MCP 서버 ↔ 실제 core E2E(헤더 인증·URL 토큰·도구 14개·`append_note`·이력 경로 `mcp`·폐기 토큰 오류)를 확인했다.
 Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경로까지 실행했다(Docker 검증 절).
 그 뒤 독립 렌즈 6개로 심층 감사를 돌리고(확정 16건), 그 수정들을 다시 적대 검증해
 **총 22건을 고쳤다**(심층 감사 절). 지시서 코드 블록 46곳도 함께 고쳤다.
+
+그 뒤 **Discord 연동을 Webhook에서 봇으로 바꿨다** — 마감 알림이 담당자 개인 DM으로 가고,
+봇에게 DM으로 보내는 평문 명령으로 태스크를 처리한다(마지막 절). 아래 '알림 채널 화면' 절은
+그 전 단계의 기록이며, 그 화면·모델·API는 봇 전환에서 삭제됐다.
 
 이어서 권한 검사(렌즈 5개 + 지적별 회의론자 3명, 에이전트 110개 → 확정 2건)를 돌리고,
 그 결과를 반영해 **알림 채널 화면**(`/teams/<id>/webhooks`)과 **팀원 관리 화면 보강**
@@ -93,12 +97,14 @@ Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경�
 - 만든 파일: `pyproject.toml`, `Dockerfile`, `README.md`,
   `discord_service/{__init__,__main__,config,store,core_client,discord,messages,notify,weekly,summarize,scheduler}.py`,
   `tests/{conftest,test_notify,test_weekly,test_discord,test_store}.py`
-- 검증: `uv run pytest -q` → **20 passed**. `ruff check` 0.
+- 검증: `uv run pytest -q` → **20 passed**(당시). `ruff check` 0.
   `grep -r "from core\|import django" discord_service/` 결과 없음(core 미의존 확인).
 - 지시서와 다르게 한 것: **2건** (7·8번)
 - 컨테이너에서 실제 core에 붙여 `deadlines`(sent 3 → 재실행 skipped 3)·`weekly --now`·`test`·`once`를
   전부 실행하고 메시지 본문까지 검증했다(Docker 검증 절). Webhook은 로컬 싱크를 썼다.
 - 실패하거나 못 한 것: **실제 Discord 채널** 발송만 남았다(진짜 Webhook URL 필요).
+- **이 절은 Webhook 시절의 기록이다.** 마지막 절('Discord 챗봇 전환')에서 `Webhook`·`Fanout`이
+  봇 REST(`Bot`)로, 채널 알림이 담당자 개인 DM으로 바뀌었고 `listener.py`·`commands.py`가 생겼다.
 
 ### mcp_server (`mcp_server: tools and auth`)
 
@@ -634,7 +640,12 @@ id를 받는 모든 경로(교차 팀 `assignee_id`·`owner_ids`·`project_id`·
 `/api/teams/invites/{id}`)와 "JSON 내보내기: 팀 관리자 가능" 표기(실제로는 모든 팀이 한 파일에
 담기므로 superuser 전용).
 
-### 2. 알림 채널 화면 (`/teams/<id>/webhooks`)
+### 2. 알림 채널 화면 (`/teams/<id>/webhooks`) — **이후 삭제됨**
+
+> 이 화면·모델(`teams.DiscordWebhook`)·API(`GET /api/integrations/discord/webhooks`)는
+> 다음 커밋의 봇 전환에서 전부 삭제됐다(마이그레이션 `teams/0003_delete_discordwebhook`).
+> 봇에는 대응 개념이 없다 — 설치는 운영자가 포털에서 1회, 개인 쪽은 DM `연결`이다.
+> 아래 기록은 그때 무엇을 만들고 무엇을 검증했는지 남기기 위한 것이다.
 
 전에는 발송 대상이 `discord_service`의 환경 변수 `DISCORD_WEBHOOK_URL` 하나였다. 이제 팀 관리자가
 웹에서 관리하고, discord 서비스가 그 목록을 HTTP로 읽어 간다. 세 파트는 여전히 HTTP로만 통신한다.
@@ -704,14 +715,176 @@ id를 받는 모든 경로(교차 팀 `assignee_id`·`owner_ids`·`project_id`·
 
 ---
 
+## Discord 챗봇 전환 (2026-09-10, 웹훅 삭제)
+
+요청: "디스코드챗봇으로하자웹훅이아니라그래서일부관리기능도제공하고데드라인알림은개인디엠으로전송되도록".
+Webhook을 지우고 봇 토큰으로 바꿨다. 마감 알림은 **담당자 개인 DM**으로 가고, 봇에게 DM으로
+보내는 평문 명령으로 태스크를 처리한다. 하루 전에 만든 알림 채널 화면은 대응 개념이 없어 삭제했다.
+
+### 1. 먼저 사실을 확인했다 (에이전트 15개)
+
+문서에 대고 검증한 렌즈 5개(DM 발송 · HTTP 인터랙션 · 게이트웨이 대안 · 포털·배포 · 현재 코드 영향)로
+Discord API 사실을 URL과 함께 모으고, 그 위에서 설계 3안을 짜 각 2명이 채점했다.
+**C(게이트웨이) 36 / B(core에 인터랙션 엔드포인트) 35 / A(discord_service에 엔드포인트) 23.5** —
+C와 B가 사실상 동점이라 심사가 찾은 결함(각 안 6~10건)을 합쳐 최종안을 만들었다.
+
+설계를 가른 사실들:
+
+| 사실 | 결과 |
+|---|---|
+| 봇에게 온 DM의 본문은 MESSAGE_CONTENT **특권 인텐트 예외**다 | 평문 DM 명령이 슬래시 명령보다 싸다. 등록 스크립트·하루 200 create 한도·`contexts`·중복 ACK(`40060`)가 전부 사라진다 |
+| **3초 응답 시한**은 인터랙션에만 붙는다 (게이트웨이든 HTTP든) | 평문 DM에는 시한이 없다. 터널 + gunicorn + Postgres 왕복을 3초에 맞출 필요가 없다 |
+| Python 표준 라이브러리에 **Ed25519가 없다** | HTTP 인터랙션은 pynacl을 강요한다. 게이트웨이를 고르면 **core의 의존성 표가 그대로다** |
+| 게이트웨이와 HTTP 인터랙션은 **양립하지 않는다** | 하나를 고르는 갈림길이다. 나중에 바꾸려면 한쪽을 지워야 한다 |
+| Cloudflare Tunnel은 인바운드 전용이고 게이트웨이는 봇이 **밖으로** 건다 | 공개 호스트네임·TLS·서명 검증·"Discord가 인터랙션 URL을 조용히 지움" 실패 모드가 없다 |
+| 손으로 쓴 게이트웨이는 하트비트/ACK · `resume_gateway_url` RESUME · 재접속 불가 close code(4004·4010~4014) · IDENTIFY 예산을 전부 구현해야 한다 | `discord.py`를 쓴다. 우리 코드는 리스너 59줄 |
+| `POST /users/@me/channels`는 봇 전체가 한 버킷이고 전용 오류 코드(`40003`)가 있다 | DM 채널 id를 SQLite에 캐시한다 |
+| `50007`·`50278`·`10013`은 그 사람에 대해 영구적이다 | 재시도하지 않는다(403은 10분당 1만 invalid-request 예산을 태우고 LXC는 egress IP가 하나다) |
+| Discord 문서가 이 제품을 직접 경고한다 — 서버 사람들에게 알리려고 이 엔드포인트를 쓰지 말 것, DM은 사용자 행동에서 시작되어야 한다 | 사용자가 직접 `연결`한 계정에만, 자기 담당 태스크만, 사람당 하루 최대 4건, `연결해제`가 즉시 opt-out |
+| 봇 요청에 **User-Agent가 필수**다 | 없으면 Cloudflare가 `40333`으로 막는다. 상수로 박았다 |
+| `ChangeLog.source`는 `max_length=4` | 코드는 `dc`, 표시는 "Discord". `discord`는 Postgres에서 DataError다 |
+
+### 2. 계정 연결에 소유 증명을 넣었다 (이 전환의 전제)
+
+전에는 프로필에서 `discord_user_id`를 **손으로 타이핑**했다. 봇이 "Discord id → PM 계정"으로
+행위자를 정하는 순간 그 값은 로그인 자격증명이 된다 — 남의 아직 안 쓴 Discord id를 먼저 적어 두면
+그 사람이 봇을 쓸 때 **내 계정으로** 동작한다.
+
+이제 두 신원을 맞바꿔야 연결된다: **코드**는 로그인한 웹 세션에서만 나오고(`issue_link_code`),
+**snowflake**는 게이트웨이가 채운 `author.id`에서만 나온다. 8자리 16진수 · 10분 · 1회용이고,
+비울 때는 반드시 `None`이다(빈 문자열은 unique 충돌). 이미 그 snowflake를 들고 있는 옛 행이 있으면
+**가져온다** — 양쪽이 증명된 이 순간 남의 행이 틀린 것이고, 선점당해 영구히 잠기는 경로가 없어진다.
+`user_by_discord_id`는 `discord_linked_at`이 있고 활성인 사용자만 돌려준다.
+
+마이그레이션 `accounts/0002_discord_link`의 `clear_unverified_links`가 **기존 값을 전부 비운다**.
+검증 안 된 값을 자격증명으로 승격시키지 않는다. 배포 전 공지가 필요하다 — 전원이 `연결`을 하기
+전까지 개인 DM 알림은 0건이다. 프로필의 입력칸은 삭제했고 admin에서도 읽기 전용이다.
+
+### 3. 봇 명령이 사람으로서 움직이는 방법
+
+`POST /api/integrations/discord/{link,unlink,today,tasks/{id}/done,tasks/{id}/extend}` 5개.
+라우터 인증이 `BotTokenAuth()` **하나**라서 API 기본 인증(세션 쿠키 + 일반 토큰)이 이 경로에
+아예 들어오지 못한다 — 엔드포인트마다 가드를 손으로 붙이면 다음 하나를 잊는다. 쓰기 게이트도
+`scope == "read"` → `scope != "write"`로 좁혀 `bot` 범위가 `/api/integrations/` 밖에서 쓰지 못한다.
+
+행위자는 봇이 아니라 **연결된 사람**이다. 태스크 범위도 그 사람의 팀(`get_visible_task(actor, …)`)이고,
+변경 이력에는 행위자=사람 · 경로=`dc`(표시 "Discord") · 토큰=봇 토큰 세 줄이 남는다.
+
+`expected_version`: 채팅 명령에는 버전이 없다. 의도는 "지금 완료로 바꿔라"이므로 서버가 **한 요청
+안에서** 읽고 그 값으로 CAS를 건다. 그 사이(수 ms)에 웹 편집이 끼면 409로 알린다
+("방금 다른 곳에서 바뀌었어요. 다시 보내 주세요."). 조용히 덮어쓰지 않고, 재시도 루프도 만들지 않는다.
+같은 `완료` 재요청은 `transition`의 같은-상태 조기 반환으로 무해하고(이력 1줄), `연장`은
+새 날짜가 현 기한보다 뒤가 아니면 거부해 이중 연장이 구조적으로 불가능하다.
+
+명령: `오늘` · `완료 <번호>` · `연장 <번호> <YYYY-MM-DD> <사유>` · `연결 <코드>` · `연결해제` ·
+그 밖의 텍스트는 도움말. 번호는 `12`와 `TASK-12` 둘 다 받는다.
+
+### 4. 마감 알림을 개인 DM으로
+
+`(종류, 담당자)`로 묶어 사람당 종류당 1건, **하루 최대 4건**을 보낸다. 태스크마다 한 통씩 보내면
+아침 DM 폭탄이 되고 Developer Policy의 '원치 않는 반복 DM'에 걸린다. 중복 방지 키는
+`(0, "<종류>:<사용자 id>", 날짜)`로 기존 `sent` 표를 그대로 쓴다(`kind`는 길이 제약 없는 TEXT) —
+**스키마 변경 0**. 기존 볼륨의 옛 키는 아무도 읽지 않는 죽은 행이 되고, `claim_daily("deadline", …)`가
+이미 하루 1회로 막으므로 **배포 시각 제약이 없다**.
+
+실패 분기를 전부 다르게 처리한다:
+
+| 상황 | 처리 |
+|---|---|
+| 담당자가 Discord 미연결 | 자리를 잡지 않는다(나중에 연결하면 다음 알림부터 정상). `unlinked` 카운트 + 이름, 주간 보고에 미연결 한 줄. **실패는 아니다** — 한 명 때문에 `/ops`가 영구 빨강이면 그 신호를 아무도 안 본다 |
+| `50007`·`50278`·`10013` (DM 거부) | 즉시 포기, `failed`, 팀 채널에 하루 1회 통보(태스크 제목·URL 없이) |
+| DM 채널 열기 실패(타임아웃·5xx·틀린 봇 토큰) | `ChannelOpenFailed` → 자리를 **놓아주고** 다음 틱에 재시도. 채널 열기는 멱등이라 '결과 불명확'이 아니다. `skipped`와 따로 세어(`open_failed`) `/ops`를 빨강으로 만든다 — 안 그러면 틀린 봇 토큰이 영원히 재시도만 하는데 화면은 초록이다 |
+| 조각 여러 개 중 하나에서 채널이 죽음 | 캐시를 지우고 1회 재개설, **그 조각부터** 이어 보낸다(본문 전체를 다시 보내면 앞 조각이 두 번 도착한다) |
+| `429`·`5xx` | `Retry-After`/본문 `retry_after` 기반 백오프 3회. 숫자 하드코딩 금지 |
+| 타임아웃(발송) | `UnknownResult` → `unknown`. 중복 발송하지 않는다 |
+| 발송 직전 재확인 실패(core 5xx·429·타임아웃) | `release` + **그날 문턱 다시 열기** → 다음 틱에 다시 훑는다(하루 3회까지). `recheck_failed`로 세어 `/ops`도 빨강 |
+
+`tick`은 `failed > 0`이면 `/ops`에 `ok: false`로 보고한다(예전엔 실패 수가 detail에만 있었다).
+
+### 5. 프로세스·비밀
+
+컨테이너가 하나 늘었다: `discord`(60초 발송 틱, SQLite 단일 writer)와 `discord-bot`(게이트웨이 수신,
+**SQLite를 열지 않는다**). 리스너는 동기 httpx를 `asyncio.to_thread`로 부른다 — 이벤트 루프를 막으면
+하트비트가 굶어 게이트웨이가 연결을 끊는다. 발신자별 분당 20회 한도도 걸었다(core의 60/m 버킷을
+봇 계정 하나로 세므로 한 사람이 다 쓰면 남의 명령까지 429가 된다).
+
+| 비밀 | 사는 곳 | 반경 |
+|---|---|---|
+| `DISCORD_BOT_TOKEN` (신규) | `.env.discord`만 | 봇으로서 DM·채널 게시. **core에는 아무 요청도 못 한다** |
+| `CORE_TOKEN` (범위 `bot`으로 확대) | `.env.discord` | 연결된 사용자로 3개 동작(오늘·완료·연장), 그 사람 팀 범위 안에서만. `/api/integrations/` 밖 쓰기 403 |
+| 연결 코드 (신규) | core DB, 화면에 1회 | 살아 있는 10분 안에 그 계정에 자기 Discord를 붙일 수 있다. `/ops` 내보내기 제외 |
+| `DiscordWebhook.url` (삭제됨) | — | 채널 하나에 글쓰기 권한이 DB에 앉아 웹 UI로 편집됐다 |
+
+`.env`와 `.env.discord`를 나눴다 — 예전 구성은 `web` 컨테이너에도 봇 토큰이 들어갔다.
+`SecretFilter`에 `Bot <token>` · 봇 토큰 형태 · `DISCORD_BOT_TOKEN=` 패턴을 넣었다(기존 `bearer`
+패턴은 `Bot ` 형태를 못 잡는다). **core는 이제 Discord로 나가는 요청이 0건이다.**
+
+### 6. 확인
+
+- core 145(SQLite) / discord_service 58 / mcp_server 16 전부 통과, ruff check·format 0.
+- **Postgres 16: 이 개정에서는 전체 실행을 못 끝냈다.** `accounts`·`tasks` 테스트만 따로 돌려
+  통과했고(이 변경에서 Postgres에 민감한 것 — `User`의 새 컬럼 3개와 unique·`None` 처리,
+  `ChangeLog.source`가 varchar(4)에 들어가는지 — 는 그 두 파일에 다 들어 있다), 전체 스위트는
+  db 컨테이너가 접속을 끊어 5회 시도 모두 중간에 멈췄다. 이 세션에서 에이전트를 180개 넘게
+  돌린 호스트 상태 문제로 보이고, 직전 커밋(3e59b3b)의 140개는 같은 방법으로 통과했다.
+  **남은 검증 1건**으로 아래 목록에 넣었다. 도중에 알아낸 것:
+  `localhost`가 아니라 `127.0.0.1`을 써야 한다 — compose는 `127.0.0.1:5432`(IPv4)에만
+  바인딩하는데 Windows에서 `localhost`는 `::1`을 먼저 시도해 **접속 하나가 130초** 걸린다
+  (측정: `localhost` 130.6s / `127.0.0.1` 1.6s). 지시서·README의 명령을 고쳤다.
+- **실행 중인 core에 실제로 붙여** 명령 전체를 돌렸다: 미연결 → 연결 안내, 웹에서 받은 코드로
+  `연결` → "팀원 계정과 연결했습니다", `오늘` → 실제 목록(멘션·담당자 칼럼 없음),
+  `완료` → 막힘에서 done으로 바뀌고 이력이 **source=dc · 행위자=사람 · 토큰=봇 토큰**,
+  같은 명령 두 번 → 이력 증가 0, 없는 태스크·잘못된 날짜·잘못된 번호 → 각각의 한국어 안내.
+- 권한 경계: 봇 토큰으로 `/api/tasks` POST → **403**, 세션 쿠키로 봇 경로 → **401**, 읽기 토큰 → **403**.
+- 컨테이너: `discord` 이미지 287MB 빌드, 안에서 `import discord`·리스너 임포트 확인,
+  `python -m discord_service bot`이 Discord 로그인까지 도달(가짜 토큰이라 `LoginFailure` — 배선 확인).
+- 웹 화면: 프로필에 Discord 입력칸이 없고 `[Discord 연결]`이 코드를 1회 노출한다(브라우저 확인).
+- 새 코드만 대상으로 적대 검토를 한 번 더 돌렸다(렌즈 5개 + 지적마다 회의론자 2명, 에이전트 51개).
+  지적 23건 중 **확정 1건**(high)을 고쳤다 — 아래 6번.
+- 내 코드에서 잡은 결함 6건을 고쳤다:
+  1. `10003`이 즉시-포기 집합에 없어 **채널 재개설 분기가 죽은 코드**였다(404가 `RuntimeError`로 샜다).
+  2. 조각 여러 개 중 하나가 실패하면 **본문 전체를 다시 보내** 앞 조각이 두 번 도착했다.
+  3. 채널 열기 타임아웃을 '보냄 여부 불명'으로 기록해 **그날 알림을 잃었다**.
+  4. 그 실패가 `/ops`에 초록으로 보였다(틀린 봇 토큰이면 영원히 조용히 재시도).
+  5. `run`이 `Store`를 두 번 열었다.
+  6. **`release()`만으로는 재시도되지 않았다.** 발송 직전 재확인이 실패하면 자리를 놓아주고
+     "다음 틱에 재시도"라고 적어 뒀지만, `claim_daily("deadline", 날짜)`가 그날 문턱을 이미
+     소비했으므로 그날 다시 돌지 않는다 — 그 사람들은 알림을 못 받고 `/ops`는 초록이었다.
+     `skipped`에 섞여 있어 손실이 보이지도 않았다. 이제 `recheck_failed`로 따로 세고,
+     놓아준 자리가 있으면 **그날 문턱을 다시 열어**(하루 3회까지) 아직 안 보낸 묶음만 다시 훑는다.
+     중복 걱정은 없다 — 이미 보낸 묶음은 `sent` 행이 막는다. 이 결함은 웹훅 시절 코드에도
+     같은 형태로 있었다(그때 '고쳤다'고 적은 것이 실은 절반만 고친 것이었다).
+
+### 7. 일부러 빼둔 것
+
+| 뺀 것 | 이유 |
+|---|---|
+| `메모` 명령 | `update_text`가 ChangeLog를 남기지 않아 내용을 바꾸는 명령이 감사 기록에서 사라진다. `services.py`에 이력 한 줄을 넣기로 결정한 뒤에 |
+| `시작`·`막힘` 명령 | `완료`와 같은 호출 지점(`transition`)에 리터럴만 다르다. 5명에게 명령 6개는 과하다 |
+| 슬래시 명령·버튼 | 등록 스크립트·3초 시한·`contexts`·중복 ACK가 딸려 온다. 평문 DM은 그 전부가 없다. 명령이 10개를 넘으면 다시 본다 |
+| 자유 대화형(LLM) 응답 | 요청 범위 밖이다. `LLM_PROVIDER`는 주간 요약 자리로만 남아 있다 |
+| 팀별 채널 모델 | 비밀도 아닌 숫자 하나를 위해 모델·마이그레이션·관리 화면을 다시 만드는 것이 방금 지운 그 화면이다. 팀이 둘 이상이 되면 `Team.discord_channel_id` 컬럼 하나 |
+| 주간 보고를 개인 DM으로 | `weekly` PK가 `period_start` 하나이고 SQLite는 PK를 ALTER할 수 없다. 팀 보고는 공유물이다 |
+| 리스너의 `/ops` 상태 행 | `report_status`가 경로를 하드코딩하고 `IntegrationStatus`는 `name` 단일 키라 틱의 행을 덮어쓴다. discord.py가 재접속을 맡으니 보고할 close code도 없다. `docker compose logs discord-bot`으로 본다 |
+
+---
+
 ## 남은 것 (사용자 인프라가 필요한 것)
 
 Docker 관련 항목은 위에서 모두 실행했다. 남은 것은 **사용자 계정·인프라가 있어야 하는 것들**뿐이다.
 GUIDE-04 Step 5~8을 그대로 진행하면 된다.
 
-- 실제 Discord 채널 발송 — 웹 화면 `팀 → 알림 채널`에 진짜 Webhook 주소를 등록하고
-  [테스트 발송]을 누른다. 정기 알림은 `docker compose up -d discord` 후 자동
-  (연동 계정을 그 팀의 관리자로 올려야 주소를 읽는다)
+- **Discord 앱 만들기**: Developer Portal에서 앱·봇 생성 → [Reset Token]으로 `DISCORD_BOT_TOKEN`,
+  Guild Install(scope `bot`, permissions 3072)로 팀 서버에 추가, 주간 보고 채널 id를
+  `DISCORD_CHANNEL_ID`에. **특권 인텐트는 켤 것이 없다**(APPLICATION ID·PUBLIC KEY도 필요 없다)
+- **팀원 전원**: 그 서버에 참여 + 서버 우클릭 → 개인정보 보호 설정 → '서버 멤버의 DM 허용' 켜기,
+  그리고 각자 웹 `/settings/profile` → [Discord 연결] → 봇에게 DM으로 `연결 <코드>`
+  (안 하면 그 사람은 DM 알림을 받지 못한다 — 주간 보고에 이름이 나온다)
+- **연동 계정**: `discord-bot` 계정을 팀에 넣고(**팀원이면 된다**) `bot` 범위 토큰을 셸 한 줄로
+  발급해 `.env.discord`의 `CORE_TOKEN`에. 그 뒤 `docker compose up -d discord discord-bot`
+- **core 테스트를 Postgres 16으로 전체 실행** (이 개정에서 못 끝낸 검증):
+  `cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q --create-db`
+  → 145개. `localhost`를 쓰면 접속당 2분 걸린다
 - Cloudflare Tunnel 토큰 발급과 공개 호스트 2개 등록 (`pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`)
 - Proxmox LXC(`nesting=1`, `keyctl=1`) 생성·배포, `https://pm.<도메인>/healthz` 확인
 - UptimeRobot 모니터 등록, Proxmox vzdump 예약

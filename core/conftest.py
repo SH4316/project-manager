@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+from django.utils import timezone
 
 from accounts.models import ApiToken, User
 from common.dates import today_kst
@@ -17,8 +18,18 @@ def admin(db):
 
 @pytest.fixture
 def member(db):
+    """Discord 연결이 끝난 팀원.
+
+    UI로는 snowflake를 심을 수 없지만(코드 교환만) 픽스처는 DB를 시드해도 된다.
+    `discord_linked_at`을 같이 채운다 — 연결 시각이 없는 행은 `user_by_discord_id()`가
+    돌려주지 않으므로, id만 있는 반쪽 행은 어떤 코드 경로도 만들 수 없는 상태다.
+    """
     return User.objects.create_user(
-        "member1", password="pw12345678", display_name="팀원", discord_user_id="111"
+        "member1",
+        password="pw12345678",
+        display_name="팀원",
+        discord_user_id="111",
+        discord_linked_at=timezone.now(),
     )
 
 

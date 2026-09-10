@@ -1,6 +1,8 @@
-from datetime import date, timedelta, timezone
+"""마감 알림. 태스크당이 아니라 (종류, 담당자)당 개인 DM 1건이다."""
 
-from conftest import FakeCore, FakeHook, make_core, make_hook, task
+from datetime import date, datetime, timedelta, timezone
+
+from conftest import CHANNEL, FakeBot, FakeCore, make_bot, make_core, member, task
 
 from discord_service.config import Config
 from discord_service.notify import classify, run_deadlines
@@ -9,6 +11,8 @@ from discord_service.scheduler import tick
 TODAY = date(2026, 9, 9)
 # tzdata가 없는 환경(Windows)에서도 돌도록 고정 오프셋을 쓴다. 운영은 ZoneInfo("Asia/Seoul").
 KST = timezone(timedelta(hours=9))
+OTHER = member(3, "222", "다른 팀원")
+UNLINKED = member(4, "", "미연결")
 
 
 def _cfg(tmp_path):
@@ -16,7 +20,8 @@ def _cfg(tmp_path):
         core_url="http://core",
         core_token="pm_test",
         team_id=1,
-        webhook_url="https://discord.com/api/webhooks/x/y",
+        bot_token="botsecret",
+        channel_id=CHANNEL,
         tz=KST,
         send_hour=9,
         weekly_weekday=0,
@@ -25,6 +30,10 @@ def _cfg(tmp_path):
         db_path=str(tmp_path / "s.sqlite"),
         site_name="산돌이 업무",
     )
+
+
+def _kinds(store) -> list[str]:
+    return sorted(r["kind"] for r in store.recent()["sent"])
 
 
 def test_classify():
@@ -37,7 +46,48 @@ def test_classify():
     assert classify(task(1, "2026-09-09", status="done"), TODAY) is None
 
 
-def test_sends_each_kind_once(store, fake_hook, hook):
+def test_dm_goes_to_the_assignee_only(store, fake_bot, bot):
+    """DM 1건 = 채널 개설 1회 + 발송 1회. 본문에 멘션도 담당자 칼럼도 없다."""
+    core = make_core(FakeCore([task(1, "2026-09-10")]))
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert r["sent"] == 1
+    assert fake_bot.opened == ["111"]
+    assert fake_bot.dm("111") == fake_bot.sent
+    msg = fake_bot.messages[0]
+    assert msg["allowed_mentions"] == {"parse": []}
+    assert "<@" not in msg["content"]
+    assert "TASK-1" in msg["content"]
+    assert all(c["auth"] == "Bot botsecret" for c in fake_bot.calls)
+    assert all(c["ua"].startswith("DiscordBot (") for c in fake_bot.calls)
+
+
+def test_same_kind_same_assignee_is_one_dm(store, fake_bot, bot):
+    """묶기: 같은 담당자·같은 종류 2건 → DM 1건, 자리는 (종류, 담당자) 하나."""
+    core = make_core(FakeCore([task(1, "2026-09-10"), task(2, "2026-09-10")]))
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert r["sent"] == 1
+    assert len(fake_bot.messages) == 1
+    assert "TASK-1" in fake_bot.sent[0] and "TASK-2" in fake_bot.sent[0]
+    assert _kinds(store) == ["d1:2"]
+
+
+def test_each_assignee_gets_their_own_dm(store, fake_bot, bot):
+    """담당자별 분리. 같은 날 두 번째 실행은 아무것도 보내지 않는다."""
+    core = make_core(
+        FakeCore([task(1, "2026-09-01"), task(2, "2026-09-02", assignee=OTHER)]),
+    )
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert r["sent"] == 2
+    assert fake_bot.dm("111") and fake_bot.dm("222")
+    assert _kinds(store) == ["overdue:2", "overdue:3"]
+
+    r2 = run_deadlines(core, bot, store, 1, TODAY)
+    assert r2["sent"] == 0
+    assert r2["skipped"] == 2
+    assert len(fake_bot.messages) == 2
+
+
+def test_sends_each_kind_once(store, fake_bot, bot):
     core = make_core(
         FakeCore(
             [
@@ -49,36 +99,91 @@ def test_sends_each_kind_once(store, fake_hook, hook):
             ]
         )
     )
-    r = run_deadlines(core, hook, store, 1, TODAY)
-    assert r["sent"] == 4
-    assert len(fake_hook.sent) == 4
-    overdue_msg = [m for m in fake_hook.sent if "기한 초과" in m][0]
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert r["sent"] == 4  # 사람당 하루 최대 4건(D-3·D-1·당일·기한 초과)
+    assert len(fake_bot.messages) == 4
+    assert fake_bot.opened == ["111"]  # 채널은 캐시된다
+    overdue_msg = [m for m in fake_bot.sent if "기한 초과" in m][0]
     assert "TASK-4" in overdue_msg and "TASK-5" in overdue_msg
 
-    r2 = run_deadlines(core, hook, store, 1, TODAY)
+    r2 = run_deadlines(core, bot, store, 1, TODAY)
     assert r2["sent"] == 0
     assert r2["skipped"] >= 4
 
 
-def test_due_changed_before_send_not_sent(store, fake_hook, hook, monkeypatch):
-    fake = FakeCore([task(1, "2026-09-12")])
-    core = make_core(fake)
+def test_unlinked_assignee_is_counted_not_claimed(store, fake_bot, bot):
+    """미연결이면 DM도 자리도 없다 — 연결한 뒤 그 다음 알림부터 정상으로 받는다."""
+    core = make_core(FakeCore([task(1, "2026-09-10", assignee=UNLINKED)]))
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert fake_bot.calls == []
+    assert store.recent()["sent"] == []
+    assert r["sent"] == 0 and r["failed"] == 0
+    assert r["unlinked"] == 1
+    assert r["unlinked_names"] == ["미연결"]
+
+
+def test_blocked_dm_fails_once_and_notifies_channel(store, fake_bot, bot):
+    """50007: 그 행만 failed, HTTP 1회, 팀 채널 통보 1건(태스크 내용 없음)."""
+    fake_bot.errors["dm-111"] = [(403, {"code": 50007})]
+    core = make_core(
+        FakeCore([task(1, "2026-09-10"), task(2, "2026-09-10", assignee=OTHER)]),
+    )
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert r["failed"] == 1 and r["sent"] == 1
+    assert fake_bot.attempts("dm-111") == 1  # 재시도하지 않는다
+    assert fake_bot.dm("222")  # 다른 담당자는 정상
+    rows = {row["kind"]: row for row in store.recent()["sent"]}
+    assert rows["d1:2"]["status"] == "failed"
+    assert "50007" in rows["d1:2"]["last_error"]
+
+    notices = fake_bot.to(CHANNEL)
+    assert len(notices) == 1
+    assert "<@111>" in notices[0]
+    assert "할 일" not in notices[0] and "http" not in notices[0]
+
+    fake_bot.errors["dm-111"] = [(403, {"code": 50007})]
+    r2 = run_deadlines(core, bot, store, 1, TODAY)
+    assert r2["sent"] == 0 and r2["failed"] == 0
+    assert fake_bot.attempts("dm-111") == 1  # 다음 틱에 재발송하지 않는다
+    assert fake_bot.to(CHANNEL) == notices  # 통보도 하루 1회
+
+
+def test_due_changed_before_send_not_sent(store, fake_bot, bot, monkeypatch):
+    core = make_core(FakeCore([task(1, "2026-09-12")]))
     monkeypatch.setattr(type(core), "task", lambda self, tid: task(tid, "2026-09-20"), raising=True)
-    r = run_deadlines(core, hook, store, 1, TODAY)
+    r = run_deadlines(core, bot, store, 1, TODAY)
     assert r["sent"] == 0
     assert r["skipped"] == 1
-    assert store.recent()["sent"] == []
+    assert store.recent()["sent"] == []  # 자리를 놓아준다
 
 
-def test_completed_before_send_not_sent(store, fake_hook, hook, monkeypatch):
+def test_completed_before_send_not_sent(store, fake_bot, bot, monkeypatch):
     core = make_core(FakeCore([task(1, "2026-09-12")]))
     monkeypatch.setattr(
         type(core), "task", lambda self, tid: task(tid, "2026-09-12", status="done"), raising=True
     )
-    assert run_deadlines(core, hook, store, 1, TODAY)["sent"] == 0
+    assert run_deadlines(core, bot, store, 1, TODAY)["sent"] == 0
+    assert fake_bot.messages == []
 
 
-def test_blocked_task_included(store, fake_hook, hook):
+def test_recheck_failure_releases_the_claim(store, fake_bot, bot, monkeypatch):
+    """발송 직전 재확인이 실패하면 자리를 놓아주고 skipped와 따로 센다.
+
+    skipped(이미 보냄·더 이상 해당 없음)에 섞으면 손실이 /ops에서 안 보인다.
+    """
+
+    def boom(self, tid):
+        raise RuntimeError("core down")
+
+    core = make_core(FakeCore([task(1, "2026-09-10")]))
+    monkeypatch.setattr(type(core), "task", boom, raising=True)
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert r["sent"] == 0 and r["recheck_failed"] == 1 and r["skipped"] == 0
+    assert store.recent()["sent"] == []
+    assert fake_bot.messages == []
+
+
+def test_blocked_task_included(store, fake_bot, bot):
     core = make_core(
         FakeCore(
             [
@@ -87,43 +192,130 @@ def test_blocked_task_included(store, fake_hook, hook):
             ]
         )
     )
-    r = run_deadlines(core, hook, store, 1, TODAY)
+    r = run_deadlines(core, bot, store, 1, TODAY)
     assert r["sent"] == 2
-    joined = "\n".join(fake_hook.sent)
+    joined = "\n".join(fake_bot.sent)
     assert "막힘" in joined
     assert "서류 대기" in joined
     assert "일시정지" in joined
 
 
-def test_no_backfill_for_missed_days(store, fake_hook, hook):
+def test_no_backfill_for_missed_days(store, fake_bot, bot):
     core = make_core(FakeCore([task(1, "2026-09-11")]))
-    r = run_deadlines(core, hook, store, 1, TODAY)
+    r = run_deadlines(core, bot, store, 1, TODAY)
     assert r["sent"] == 0
-    assert fake_hook.sent == []
+    assert fake_bot.messages == []
 
 
-def test_failed_send_recorded(store):
-    fake = FakeHook(statuses=[500, 500, 500])
+def test_failed_send_recorded(store, fake_bot, bot):
+    fake_bot.errors["*"] = [500, 500, 500]
     core = make_core(FakeCore([task(1, "2026-09-12")]))
-    r = run_deadlines(core, make_hook(fake), store, 1, TODAY)
+    r = run_deadlines(core, bot, store, 1, TODAY)
     assert r["failed"] == 1
     assert store.recent()["sent"][0]["status"] == "failed"
 
 
-def test_retry_on_429_then_success(store):
-    fake = FakeHook(statuses=[429, 204])
+def test_retry_on_429_then_success(store, fake_bot, bot):
+    fake_bot.errors["*"] = [429]
     core = make_core(FakeCore([task(1, "2026-09-12")]))
-    r = run_deadlines(core, make_hook(fake), store, 1, TODAY)
+    r = run_deadlines(core, bot, store, 1, TODAY)
     assert r["sent"] == 1
-    assert len(fake.sent) == 2
+    assert fake_bot.attempts("dm-111") == 2
 
 
-def test_status_reported_to_core(tmp_path, fake_hook, hook, store):
-    from datetime import datetime
-
+def test_failure_is_reported_to_core_as_not_ok(tmp_path, store, fake_bot, bot):
+    """DM 거부 하나라도 있으면 /ops가 ok로 보이지 않아야 한다."""
+    fake_bot.errors["dm-111"] = [(403, {"code": 50007})]
     fake = FakeCore([task(1, "2026-09-12")])
-    core = make_core(fake)
     cfg = _cfg(tmp_path)
-    now = datetime(2026, 9, 9, 10, 0, tzinfo=cfg.tz)
-    tick(cfg, core, hook, store, now)
+    r = tick(cfg, make_core(fake), bot, store, datetime(2026, 9, 9, 10, tzinfo=KST))
+    assert r[0]["failed"] == 1
+    assert fake.status_reports[-1]["ok"] is False
+
+
+def test_unlinked_alone_is_still_ok(tmp_path, store, fake_bot, bot):
+    """미연결 한 명으로 /ops가 영구 빨강이 되면 그 신호를 아무도 안 본다."""
+    fake = FakeCore([task(1, "2026-09-12", assignee=UNLINKED)])
+    cfg = _cfg(tmp_path)
+    r = tick(cfg, make_core(fake), bot, store, datetime(2026, 9, 9, 10, tzinfo=KST))
+    assert r[0]["unlinked"] == 1 and r[0]["failed"] == 0
     assert fake.status_reports[-1]["ok"] is True
+
+
+def test_status_reported_to_core(tmp_path, store, fake_bot, bot):
+    fake = FakeCore([task(1, "2026-09-12")])
+    cfg = _cfg(tmp_path)
+    tick(cfg, make_core(fake), bot, store, datetime(2026, 9, 9, 10, 0, tzinfo=KST))
+    assert fake.status_reports[-1]["ok"] is True
+
+
+def test_channel_open_failure_releases_the_claim(store, monkeypatch):
+    """DM 채널을 못 열면 자리를 놓아준다. 그날 알림을 조용히 잃지 않는다."""
+    from discord_service.discord import ChannelOpenFailed
+
+    fake = FakeBot()
+    bot = make_bot(fake, store)
+
+    def boom(did):
+        raise ChannelOpenFailed("timeout")
+
+    monkeypatch.setattr(bot, "dm_channel", boom)
+    core = make_core(FakeCore([task(1, "2026-09-10")]))
+    r = run_deadlines(core, bot, store, 1, TODAY)
+    assert r["sent"] == 0 and r["open_failed"] == 1 and r["failed"] == 0
+    assert store.recent()["sent"] == []  # 자리가 남지 않는다 = 다음 틱에 재시도
+    assert fake.messages == []
+
+
+def test_released_alerts_reopen_the_day_and_are_retried(
+    tmp_path, store, fake_bot, bot, monkeypatch
+):
+    """놓아준 자리는 그날 문턱을 다시 열어야 실제로 재시도된다.
+
+    `claim_daily("deadline", 날짜)`가 하루 1회로 막으므로, release()만 하면 그 사람은
+    그날 알림을 못 받는다 — /ops는 초록인 채로.
+    """
+    calls = {"n": 0}
+    real = type(make_core(FakeCore([]))).task
+
+    def flaky(self, tid):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("core down")
+        return real(self, tid)
+
+    fake_core = FakeCore([task(1, "2026-09-10")])
+    core = make_core(fake_core)
+    monkeypatch.setattr(type(core), "task", flaky, raising=True)
+    cfg = _cfg(tmp_path)
+    now = datetime(2026, 9, 9, 9, 0, tzinfo=KST)
+
+    first = tick(cfg, core, bot, store, now)[0]
+    assert first["recheck_failed"] == 1 and first["sent"] == 0
+    assert first["reopened"] is True
+    assert fake_core.status_reports[-1]["ok"] is False  # /ops가 빨강이다
+    assert fake_bot.messages == []
+
+    second = tick(cfg, core, bot, store, now)[0]  # 같은 날 다시 훑는다
+    assert second["sent"] == 1
+    assert fake_bot.dm("111")
+
+
+def test_reopening_the_day_is_bounded(tmp_path, store, fake_bot, bot, monkeypatch):
+    """core가 계속 아프면 매 분 전체 스캔을 반복하지 않는다(하루 3회까지)."""
+
+    def boom(self, tid):
+        raise RuntimeError("core down")
+
+    core = make_core(FakeCore([task(1, "2026-09-10")]))
+    monkeypatch.setattr(type(core), "task", boom, raising=True)
+    cfg = _cfg(tmp_path)
+    now = datetime(2026, 9, 9, 9, 0, tzinfo=KST)
+
+    reopened = []
+    for _ in range(6):
+        r = tick(cfg, core, bot, store, now)
+        if r:
+            reopened.append(r[0]["reopened"])
+    assert reopened == [True, True, True, False]  # 첫 훑기 + 재훑기 3회로 끝
+    assert fake_bot.messages == []

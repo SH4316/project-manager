@@ -1,11 +1,13 @@
 # 산돌이 업무 관리 시스템 개발 계획
 
-버전: 0.3
+버전: 0.5
 작성일: 2026-09-09
 기준 문서: [docs/SPEC.md](docs/SPEC.md) (기능 명세 v0.1) + Leantime 참고 적용안 + 2026-09-09 결정 사항
-상태: **1~3단계 구현 완료 (2026-09-10).** 팀 관리자용 알림 채널·팀원 관리 화면 포함. `core`·`discord_service`·`mcp_server` 구현·테스트·컨테이너 검증까지 끝났다. 4단계(배포·시범)는 사용자 인프라가 필요하다. 결과와 남은 일은 [docs/IMPL-REPORT.md](docs/IMPL-REPORT.md).
+상태: **1~3단계 구현 완료 (2026-09-10).** 팀원 관리 화면과 Discord 봇(담당자 DM 알림 + DM 명령) 포함. `core`·`discord_service`·`mcp_server` 구현·테스트·컨테이너 검증까지 끝났다. 4단계(배포·시범)는 사용자 인프라가 필요하다. 결과와 남은 일은 [docs/IMPL-REPORT.md](docs/IMPL-REPORT.md).
 
 **구현 지시서:** 실제 구현은 [docs/GUIDE-00-rules.md](docs/GUIDE-00-rules.md)부터 시작하는 GUIDE 문서를 따른다. 이 계획서와 지시서가 다르면 지시서가 우선한다.
+
+**2026-09-10 추가 (v0.5):** Discord 연동을 웹훅에서 **봇**으로 바꿨다. 마감 알림은 담당자 개인 DM으로 묶어 보내고, 봇에게 온 DM 평문 명령(`오늘`·`완료`·`연장`)으로 처리한다. 계정 연결은 웹 1회용 코드와 게이트웨이 `author.id`의 교환이다. `teams.DiscordWebhook`과 알림 채널 화면은 삭제했다. 전환 근거와 범위는 [docs/IMPL-PLAN.md](docs/IMPL-PLAN.md) §8 마지막 항목, 절차는 [docs/GUIDE-04-deploy.md](docs/GUIDE-04-deploy.md) Step 7.
 
 **2026-09-10 추가 (v0.4):** 목업 핸드오프([README.md](README.md))가 확정되면서 도메인 모델·화면이 바뀌었다. 정합 결정과 근거는 [docs/IMPL-PLAN.md](docs/IMPL-PLAN.md)에 있고, 지시서(GUIDE-00~04)는 그에 맞춰 개정을 마쳤다. 이 계획서의 §3(데이터 모델)·§5(API)·§6(화면)은 개정 전 요약이므로, 다르면 지시서와 IMPL-PLAN §3 결정표를 따른다.
 
@@ -22,10 +24,10 @@
 | 담당자 | 프로젝트 대표 담당자는 비워 둘 수 있음. 태스크 담당자는 필수이며 비우면 생성자가 자동 지정 |
 | 배포 | 팀 Proxmox 서버, Docker Compose, Cloudflare Tunnel로 외부 노출. 도메인 있음 |
 | 백업 | 당장 고려하지 않음. 후속 |
-| Discord | **별도 코드베이스·별도 프로세스.** core의 HTTP API만 호출. 자체 SQLite 상태 |
+| Discord | **별도 코드베이스·프로세스 둘.** `discord`(발송 틱)와 `discord-bot`(DM 수신 리스너). core의 HTTP API만 호출. 자체 SQLite 상태. core는 Discord로 나가는 요청을 하지 않는다 |
 | AI 클라이언트 | Claude(Claude Code, Claude 앱 커넥터)와 ChatGPT(커넥터, Codex CLI) 모두 지원 |
 | MCP 서버 | 별도 프로세스. core의 HTTP API만 호출. 웹 화면에 AI 패널 없음 |
-| Discord 사용자 ID | 프로필에서 수동 입력. Discord OAuth는 후속 |
+| Discord 사용자 ID | **웹에서 발급한 1회용 코드(10분)를 봇에게 DM으로 보내 연결한다.** 수동 입력 칸은 없다(소유 증명이 없어 봇의 행위자 판정에 쓸 수 없다). Discord OAuth는 후속 |
 | 주간 요약 LLM | 제공업체 미정. 고정 형식 보고서를 먼저 만들고 요약 함수 자리만 둠 |
 | 화면 방향 | Leantime식 개인 실행 우선. 기본 진입은 "오늘". 전체 통계는 "팀 현황" |
 | Notion 이전 | 범위 밖. 필요 시 사람 또는 AI가 API·MCP로 직접 입력 |
@@ -48,7 +50,9 @@
 - 명세 3.2의 "관리자"는 팀별 역할이다. 사이트 전체 관리자(Django superuser)는 운영 작업만 한다.
 - 명세 5.2 프로젝트 대표 담당자는 선택 항목이 된다. 참여자 목록은 두지 않는다. 팀 멤버십이 그 역할을 한다.
 - 명세 6.5 관련 프로젝트(다중 소속)는 넣지 않는다. 계층으로 대신한다.
-- 명세 8.1 "관리자가 웹에서 Webhook 등록·테스트"는 Discord 서비스의 설정 파일과 CLI로 옮긴다. 프로젝트별 채널은 만들지 않는다.
+- 명세 8.1 "관리자가 웹에서 Webhook 등록·테스트"는 **봇 설치 1회(운영자, Discord 포털) + 개인 계정 연결**로 바뀐다. 웹훅과 알림 채널 관리 화면은 없다. 확인 발송은 `python -m discord_service test`. 프로젝트별 채널은 만들지 않는다.
+- 명세 8.2 팀 채널 알림은 **담당자 개인 DM**으로 바뀐다. 팀 공통 채널 하나는 주간 보고와 'DM을 보낼 수 없다' 통보에만 쓴다.
+- 명세 2 제외 항목 "Discord에서 태스크를 수정하는 명령어·버튼"의 **명령어 쪽은 범위에 들어온다**(DM 평문 `오늘`·`완료`·`연장`). 버튼·슬래시 명령·인터랙션 엔드포인트는 그대로 제외다.
 - 명세 11.1 "예약 작업은 같은 코드베이스"는 Discord 서비스 분리 결정으로 뒤집힌다. core에는 예약 작업이 없다.
 - 명세 11.2 백업은 후속으로 미룬다. A17도 후속.
 - 명세 10 Notion 이전은 통째로 제외한다. A15·A16 제외.
@@ -64,7 +68,10 @@
 ```
 [브라우저] ──HTTPS──> Cloudflare ──Tunnel──> cloudflared ──> web (Django: 화면 + /api)
 [AI 클라이언트] ──HTTPS──> Cloudflare ──Tunnel──> cloudflared ──> mcp_server ──Bearer──> web /api
-discord_service (자체 스케줄 루프, SQLite) ──Bearer──> web /api ──> Discord Webhook
+discord      (60초 틱, SQLite) ──Bearer──> web /api        발송: 담당자 DM·주간 채널
+             └──Bot 토큰──> Discord REST
+discord-bot  (게이트웨이 리스너)  ──Bearer──> web /api        수신: DM 평문 명령
+             └──Bot 토큰──> Discord Gateway (아웃바운드 WebSocket)
                                         web ──── PostgreSQL
 ```
 
@@ -80,7 +87,7 @@ discord_service (자체 스케줄 루프, SQLite) ──Bearer──> web /api �
 | 파트 | 형태 | core와의 접점 | 자체 상태 | 우선순위 |
 |---|---|---|---|---|
 | `core/` | Django 프로젝트, PostgreSQL | 없음 | PostgreSQL | 1 |
-| `discord_service/` | 독립 파이썬 패키지, 장기 실행 프로세스 | HTTP API(읽기 토큰) + 상태 보고 엔드포인트 | SQLite 파일 (알림 기록, 주간 보고) | 2 |
+| `discord_service/` | 독립 파이썬 패키지, 장기 실행 프로세스 둘(발송·수신) | HTTP API(`bot` 범위 토큰: 팀 범위 읽기 + 봇 명령 5개) + 상태 보고 엔드포인트 | SQLite 파일 (알림 기록, 주간 보고, DM 채널 캐시) | 2 |
 | `mcp_server/` | 독립 파이썬 패키지, HTTP 서버 | HTTP API(사용자 토큰 전달) | 없음 | 3 |
 
 계약은 core의 OpenAPI 문서(`/api/docs`) 하나다. 다른 파트 사람이 그것만 보고 개발할 수 있어야 한다.
@@ -94,24 +101,26 @@ project-manager/
   README.md              실행·개발 명령
   PLAN.md                이 문서
   docs/SPEC.md           명세 원문
-  compose.yml            cloudflared, web, db, discord, mcp
-  .env.example
+  compose.yml            cloudflared, web, db, discord, discord-bot, mcp
+  .env.example           web·db·cloudflared 용
+  .env.discord.example   discord·discord-bot 용 (봇 토큰·CORE_TOKEN)
   core/
     pyproject.toml       django, django-ninja, psycopg[binary], gunicorn, whitenoise, pytest-django, ruff
     Dockerfile
     manage.py
     config/              settings, urls, wsgi
-    accounts/            사용자, 프로필(discord_user_id), API 토큰
+    accounts/            사용자, 프로필, API 토큰, services.py(Discord 계정 연결)
     teams/               팀, 멤버십, 초대 링크
     projects/            프로젝트, 보관
     tasks/               태스크, 체크리스트, 오늘 목록, 댓글, 링크, 변경 이력, services.py
     reports/             주간 집계(숫자만, LLM 없음)
-    api/                 Django Ninja 라우터, 인증, 스키마, 통합 상태 보고
+    api/                 Django Ninja 라우터, 인증, 스키마, 통합 상태 보고, routers/discord.py(봇 명령)
     web/                 템플릿, 화면 뷰, 정적 파일(HTMX, Pico CSS 벤더링)
   discord_service/
-    pyproject.toml       httpx 하나. 나머지 stdlib(sqlite3, zoneinfo)
+    pyproject.toml       httpx + discord.py(게이트웨이 수신). 나머지 stdlib(sqlite3, zoneinfo)
     Dockerfile
-    discord_service/     config, core_client, notify, weekly, summarize, store, __main__
+    discord_service/     config, core_client, discord(봇 REST), notify, weekly, summarize,
+                         store, scheduler, listener(게이트웨이), commands(DM 명령), __main__
     tests/
   mcp_server/
     pyproject.toml       mcp, httpx
@@ -132,13 +141,14 @@ project-manager/
 
 | 모델 | 필드 |
 |---|---|
-| `User` (AbstractUser) | `username`, `password`, `display_name`, `discord_user_id`(nullable, unique), `is_active`, `is_superuser` |
-| `ApiToken` | `user`, `name`, `prefix`(앞 8자), `key_hash`(sha256), `scope`(read/write), `expires_at`, `revoked_at`, `last_used_at` |
+| `User` (AbstractUser) | `username`, `password`, `display_name`, `discord_user_id`(nullable, unique), `discord_link_code`(nullable, unique, 8자)·`discord_link_expires_at`·`discord_linked_at`, `auto_pull_days`, `is_active`, `is_superuser` |
+| `ApiToken` | `user`, `name`, `prefix`(앞 8자), `key_hash`(sha256), `scope`(read/write/bot), `expires_at`, `revoked_at`, `last_used_at` |
 | `IdempotencyKey` | `user`, `key`, `target_type`, `target_id`, `created_at`. unique(`user`, `key`) |
 
 - 가입은 자유. 가입만 한 사용자는 아무 팀에도 속하지 않아 아무 데이터도 못 본다.
 - `is_active=False`가 비활성. 로그인·API 차단, 신규 담당자 지정 불가. 기존 데이터 보존.
-- 연동 계정(Discord 서비스용)도 그냥 `User`다. 팀 멤버로 넣고 읽기 토큰을 발급한다. 새 개념을 만들지 않는다.
+- 연동 계정(Discord 서비스용)도 그냥 `User`다. 팀 **멤버**로 넣고 `bot` 범위 토큰을 발급한다(서버 셸로만). 새 개념을 만들지 않는다.
+- Discord 연결 필드 3개는 코드 교환용이다. `discord_linked_at`이 없는 행은 봇 명령의 행위자가 될 수 없고, `discord_link_code`는 `/ops` 내보내기에 넣지 않는다(유효한 10분 동안 자격증명이다).
 
 ### teams
 
@@ -239,11 +249,13 @@ DB 제약: `status=doing`이면 `due_date` 필수, `is_blocked`면 `blocked_reas
 | 프로젝트 생성·수정 | 가능 | 가능 | |
 | 프로젝트 보관·복원 | 불가 | 가능 | |
 | 초대 링크 발급·폐기, 멤버 역할 변경·제거 | 불가 | 가능 | |
-| Discord 알림 채널 등록·끄기·삭제·테스트 발송 | 불가 | 가능 | |
+| 내 Discord 계정 연결·해제 | 가능(본인만) | 가능(본인만) | |
 | JSON 내보내기 | 불가 | 불가 | 가능 (모든 팀이 한 파일에 담기므로 superuser만) |
 | 사용자 비활성화, 통합 상태 확인 | 불가 | 불가 | 가능 |
 
-오늘 목록은 본인만. API 토큰 `scope=read`는 GET만. 예외: 통합 상태 보고 엔드포인트는 read 토큰도 POST할 수 있다(태스크 데이터에 손대지 않으므로).
+오늘 목록은 본인만. API 토큰은 `scope=write`만 쓰기가 된다(`read`·`bot`은 GET만). 예외: `/api/integrations/` 아래는 `read`·`bot` 토큰도 POST할 수 있다(통합 상태 보고).
+
+`scope=bot` 토큰은 Discord 봇 계정 하나만 쓴다. `/api/integrations/discord/`의 5개 경로에서만 통하고(라우터 인증이 `BotTokenAuth` 하나라 세션 쿠키·`read`·`write` 토큰은 그 경로에 들어오지 못한다), 그 밖의 쓰기는 403이다. 그 경로의 **행위자는 봇이 아니라 연결된 그 사람**이며 범위도 그 사람의 팀이다. 웹 화면에서는 `bot` 범위를 발급할 수 없다(자기 발급 = 권한 상승). 발급은 서버 셸 한 줄로만 한다.
 
 ---
 
@@ -258,7 +270,6 @@ DB 제약: `status=doing`이면 `due_date` 필수, `is_blocked`면 `blocked_reas
 | `GET /api/teams/{id}/members` | 담당자 선택용 활성 멤버. `discord_user_id` 포함 |
 | `GET /api/teams/{id}/status` | 명세 7.3 지표 + 담당자 없는 프로젝트. 프로젝트별·담당자별 |
 | `POST /api/teams/{id}/invites` · `DELETE /api/teams/invites/{id}` | 초대 링크 발급·폐기 (admin) |
-| `GET /api/integrations/discord/webhooks?team=` | 팀의 알림 채널 주소 (팀 admin만). discord 서비스가 읽는다 |
 | `GET /api/projects?team=&include_archived=` | 프로젝트 목록 |
 | `GET /api/projects/{id}` | 상세 + 집계(미완료·초과·검토·막힘·완료 n/m) + 링크 |
 | `POST /api/projects` · `PATCH /api/projects/{id}` | 생성·수정(version 필수) |
@@ -273,6 +284,9 @@ DB 제약: `status=doing`이면 `due_date` 필수, `is_blocked`면 `blocked_reas
 | `GET /api/today` · `POST /api/today` · `DELETE /api/today/{task_id}` · `PATCH /api/today/order` | 내 오늘 목록 |
 | `GET /api/reports/weekly?team=&week_start=YYYY-MM-DD` | 주간 집계 원본(숫자·ID·링크). LLM 없음 |
 | `POST /api/integrations/{name}/status` | 통합 서비스 실행 결과 보고 |
+| `POST /api/integrations/discord/link` · `/unlink` | 1회용 코드 + `author.id` 교환, 연결 해제 (`bot` 범위만) |
+| `POST /api/integrations/discord/today` | DM `오늘`. 그 사람의 오늘 화면 내용 (`bot` 범위만) |
+| `POST /api/integrations/discord/tasks/{id}/done` · `/extend` | DM `완료`·`연장`. 행위자는 연결된 사람, 변경 경로 `dc` (`bot` 범위만) |
 | `GET /healthz` | DB 응답 확인 |
 
 오류: 400은 `{field: message}`, 409는 최신 객체 포함, 401·403·404 표준. Ninja 내장 throttling으로 토큰당 분당 60회.
@@ -333,7 +347,7 @@ DB 제약: `status=doing`이면 `due_date` 필수, `is_blocked`면 `blocked_reas
 | `/projects/new` `/projects/{id}` | 목록·보드 전환, 완료·취소 포함 토글. 보드 이동은 상태 선택 메뉴 |
 | `/tasks/new` | 진입 화면에 따라 프로젝트·담당자 자동 지정 |
 | `/search` | 번호·제목·프로젝트명. 완료·취소·보관 포함 토글. 내 팀 범위 |
-| `/settings/profile` | 표시 이름, Discord 사용자 ID 수동 입력 |
+| `/settings/profile` | 표시 이름, Discord 연결(1회용 코드 발급·해제). 사용자 ID 입력칸은 없다 |
 | `/settings/tokens` | 개인 API 토큰 발급·폐기. 원문은 1회만 표시. MCP 연결 안내 |
 | `/ops` (superuser) | `IntegrationStatus` 표, 최근 실패 detail, JSON 내보내기 |
 | `/admin/` (Django admin) | 사용자 비활성화, 팀·멤버십, 프로젝트 보관·복원(미완료 태스크 있으면 거부하고 목록 표시) |
@@ -352,41 +366,68 @@ DB 제약: `status=doing`이면 `due_date` 필수, `is_blocked`면 `blocked_reas
 
 ---
 
-## 7. Discord 서비스 (2단계, `discord_service/`, 별도 프로세스)
+## 7. Discord 서비스 (2단계, `discord_service/`, 별도 프로세스 둘)
 
-core와 코드를 공유하지 않는다. 의존성은 `httpx` 하나. 상태는 SQLite 파일 하나.
+core와 코드를 공유하지 않는다. 의존성은 `httpx`(발송)와 `discord.py`(게이트웨이 수신) 둘. 상태는 SQLite 파일 하나.
 
-### 설정 (환경 변수)
+한 이미지에서 프로세스 둘을 띄운다. `discord`는 60초 틱으로 **보내고**, `discord-bot`은 게이트웨이에 붙어 DM을 **받는다**. 리스너는 SQLite를 열지 않으므로(답장은 게이트웨이 커넥션으로) 단일 writer 불변식이 유지되고, 그 컨테이너에는 볼륨이 없다.
 
-`CORE_URL`, `CORE_TOKEN`(연동 계정의 읽기 토큰. 그 계정은 팀 **관리자**여야 한다), `TEAM_ID`, `DISCORD_WEBHOOK_URL`(예비용. 발송 대상은 웹 화면 `팀 → 알림 채널`에서 관리), `TZ=Asia/Seoul`, `SEND_HOUR=9`, `WEEKLY_WEEKDAY=0`, `WEEKLY_HOUR=9`, `LLM_PROVIDER=`(비우면 고정 형식), `DB_PATH=/data/discord.sqlite`
+### 설정 (환경 변수, `.env.discord`)
+
+`CORE_URL`, `CORE_TOKEN`(연동 계정의 **`bot` 범위** 토큰. 그 계정은 팀 **멤버**면 된다), `TEAM_ID`, `DISCORD_BOT_TOKEN`(포털 Bot 페이지의 `[Reset Token]`), `DISCORD_CHANNEL_ID`(주간 보고·DM 불가 통보용 채널), `TZ=Asia/Seoul`, `SEND_HOUR=9`, `WEEKLY_WEEKDAY=0`, `WEEKLY_HOUR=9`, `LLM_PROVIDER=`(비우면 고정 형식), `DB_PATH=/data/discord.sqlite`
+
+`web` 컨테이너는 이 파일을 읽지 않는다. 봇 토큰과 `CORE_TOKEN`을 사용자 요청을 처리하는 프로세스의 환경에 두지 않으려고 `.env`와 나눴다.
 
 ### 실행
 
 - `python -m discord_service run`: 60초마다 깨어나 시각을 확인한다. `SEND_HOUR`에 마감 알림, 주간 시각에 주간 보고. 단일 인스턴스로만 띄운다.
   `# ponytail: 단일 프로세스라 잠금 없음. 복제 수를 늘리면 SQLite 잠금 추가`
-- `python -m discord_service test`: 테스트 메시지 1건.
+- `python -m discord_service bot`: 게이트웨이 리스너로 상주한다. **`Store`를 만들지 않는다.**
+- `python -m discord_service test`: 팀 채널에 확인 메시지 1건.
 - `python -m discord_service weekly --now`: 주간 보고 즉시 발송.
+- `python -m discord_service deadlines --date YYYY-MM-DD`: 마감 알림 즉시 실행.
 - `python -m discord_service status`: 최근 발송 성공·실패·미확정 출력.
+
+### 발송 경로
+
+`POST /users/@me/channels`로 (봇, 사용자) DM 채널을 열고(SQLite `dm` 표에 캐시) `POST /channels/{id}/messages`로 보낸다. 모든 요청에 `Authorization: Bot <token>`과 `User-Agent: DiscordBot (…)`. UA가 없으면 Cloudflare가 막는다. 개인 DM은 `allowed_mentions.parse=[]`, 팀 채널 게시는 `["users"]`.
+
+매 틱 채널을 다시 열지 않는다 — 봇 전체가 한 버킷을 쓰고 `40003 You are opening direct messages too fast` 전용 코드까지 있다. `10003 Unknown channel`이면 캐시 행을 지우고 **한 번만** 다시 연다.
 
 ### 마감 알림
 
-- `GET /api/tasks?team=&status=todo,doing,review&due_to=오늘+3일`로 후보를 받고 D-3·D-1·당일·초과로 나눈다.
+- `GET /api/tasks?team=&status=…&due_to=오늘+3일`로 후보를 받고 D-3·D-1·당일·초과로 나눈다.
+- **(종류, 담당자)로 묶어 담당자 개인 DM 한 통씩** 보낸다. 사람당 하루 최대 4건. 태스크마다 한 통씩 보내면 아침에 DM 폭탄이 되고 Discord Developer Policy의 '원치 않는 반복 DM'에 걸린다.
 - 발송 직전 `GET /api/tasks/{id}`로 다시 읽어 완료·취소·기한 변경을 확인한다 (A09, A10).
-- SQLite `sent(task_id, kind, due_date, sent_at, status)` unique(`task_id`, `kind`, `due_date`)로 중복 방지 (A11).
-- D-3·D-1·당일은 그 날에만. 놓치면 건너뛴다. 초과는 매일 묶어 1건.
-- 재시도: 429·5xx 3회, 지수 백오프. 응답 없음은 `unknown`.
-- 메시지: 제목, 프로젝트, 담당자 멘션(`discord_user_id` 있을 때만), 기한, 상태, 링크. `@everyone` 없음.
+- 중복 방지: SQLite `sent`에 `(0, "<종류>:<담당자 PM id>", 오늘)`로 자리를 먼저 잡는다(claim → 발송 → mark). 키를 PM 사용자 id로 잡으므로 재연결해도 그날의 자리가 바뀌지 않는다 (A11).
+- D-3·D-1·당일은 그 날에만. 놓치면 건너뛴다. 초과도 담당자별로 하루 1건.
+- 담당자가 미연결이면 DM을 시도하지 않고 **자리도 잡지 않는다** → 나중에 연결하면 다음 알림부터 정상. `unlinked`로 세고 주간 보고에 명단 한 줄. `/ops`의 ok 판정은 `failed == 0`이므로 미연결로 빨강이 되지 않는다.
+- DM 영구 거부(`50007`·`50278`·`10013`)는 재시도하지 않고 `failed`로 기록한다. 팀 채널에 그 사람 하루 1회 안내를 올리고, 그 본문에는 태스크 제목·URL을 넣지 않는다.
+- 재시도: 429·5xx 3회, `Retry-After`를 따르는 지수 백오프. 응답 없음은 `unknown`(중복 발송하지 않는다).
+- 메시지: 번호·제목, 프로젝트, 기한, 상태, 링크, 답장 방법 한 줄. **담당자 멘션은 넣지 않는다**(받는 사람 본인이다). `@everyone` 없음.
+
+### DM 명령 (리스너)
+
+- 인텐트는 `DIRECT_MESSAGES` 하나(비특권). `message.guild is not None`이거나 `author.bot`이면 무시한다.
+- 명령은 평문 5종: `연결 <코드>` / `연결해제` / `오늘` / `완료 <번호>` / `연장 <번호> <YYYY-MM-DD> <사유>`. 그 밖의 텍스트는 도움말을 답장한다. 번호는 `12`와 `TASK-12`를 모두 받는다.
+- 슬래시 명령·버튼·인터랙션 엔드포인트는 만들지 않는다(등록 스크립트, 3초 응답 시한, 서명 검증, 세 번째 공개 호스트네임이 전부 딸려 온다. 마감 DM에는 여전히 봇 토큰이 필요하므로 부품만 늘어난다).
+- 업무 규칙은 하나도 리스너에 없다. `commands.py`는 파싱과 문구뿐이고 판단은 core의 services가 한다.
+- 발신자별 분당 20회 쿨다운. core의 처리량 제한(60/m)은 봇 계정 하나로 세므로 한 사람이 다 쓰면 다른 사람 명령까지 429가 된다.
+- core 호출은 동기 `httpx`라 `asyncio.to_thread`로 부른다(이벤트 루프를 막으면 하트비트가 굶어 게이트웨이가 끊는다).
+- 리스너는 `/ops`에 보고하지 않는다(`IntegrationStatus.name`이 단일 키라 틱의 행을 덮어쓴다). 상태는 컨테이너 로그와 `restart: unless-stopped`로 본다.
 
 ### 주간 보고
 
 - `GET /api/reports/weekly?team=&week_start=`로 집계를 받는다. 숫자 계산은 core가 한다.
 - `summarize(data)`: `LLM_PROVIDER`가 비어 있거나 호출이 실패하면 고정 템플릿 (A12). 특이 사항 없으면 한 줄.
+- 끝에 Discord 미연결자 명단 한 줄을 붙인다(`/ops`는 staff만 보지만 이 보고는 당사자가 본다).
+- 팀 채널(`DISCORD_CHANNEL_ID`)에 게시한다. 개인 DM으로 쪼개지 않는다 — `weekly` 표의 PK가 `period_start` 하나이고 팀 보고는 공유물이다.
 - SQLite `weekly(period_start, data_json, summary, source, sent_status)`.
 - 제공업체가 정해지면 `summarize.py`에 분기 하나 추가. 다른 파일은 손대지 않는다.
 
 ### 상태 보고
 
-매 실행 후 `POST /api/integrations/discord/status`에 `{ok, detail}`을 보낸다. core `/ops`가 이것을 보여 준다.
+매 실행 후 `POST /api/integrations/discord/status`에 `{ok, detail}`을 보낸다. `detail`에 `sent`·`skipped`·`failed`·`unknown`·`unlinked`가 들어간다. core `/ops`가 이것을 보여 준다.
 
 ---
 
@@ -431,9 +472,9 @@ Python `mcp` SDK의 FastMCP, streamable HTTP, 무상태. 사용자 토큰을 그
 ## 9. 배포 (Proxmox + Cloudflare Tunnel)
 
 - Proxmox에 Debian 12 LXC 하나 (2 vCPU, 2 GB, 20 GB). Docker + Compose.
-- `compose.yml`: `cloudflared`(터널 토큰), `web`(gunicorn 2 workers), `db`(postgres:16, 볼륨), `discord`(2단계, SQLite 볼륨), `mcp`(3단계).
-- Cloudflare 터널 라우팅: `pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`. TLS는 Cloudflare가 끝낸다. 서버는 어떤 포트도 열지 않는다.
-- Django: `SECURE_PROXY_SSL_HEADER`, `CSRF_TRUSTED_ORIGINS`, `ALLOWED_HOSTS`를 도메인으로. 비밀값은 `.env`에만. 로그 필터로 토큰·키 제거.
+- `compose.yml`: `cloudflared`(터널 토큰), `web`(gunicorn 2 workers), `db`(postgres:16, 볼륨), `discord`(2단계, SQLite 볼륨), `discord-bot`(2단계, 리스너, 볼륨 없음), `mcp`(3단계). `web`은 `.env`, 두 discord 서비스는 `.env.discord`를 읽는다.
+- Cloudflare 터널 라우팅: `pm.<도메인>` → `web:8000`, `mcp.<도메인>` → `mcp:8080`. TLS는 Cloudflare가 끝낸다. 서버는 어떤 포트도 열지 않는다. **Discord 봇은 공개 호스트네임이 필요 없다** — 게이트웨이는 아웃바운드 연결이고 터널은 인바운드 전용이다.
+- Django: `SECURE_PROXY_SSL_HEADER`, `CSRF_TRUSTED_ORIGINS`, `ALLOWED_HOSTS`를 도메인으로. 비밀값은 `.env`(core)와 `.env.discord`(봇)에만. 로그 필터로 API 토큰·Discord 봇 토큰 제거.
 - `/login` `/signup` 요청 제한은 Cloudflare WAF 규칙 하나로. `/admin/`은 Cloudflare Access로 막을 수 있다(선택).
 - MCP 응답은 짧은 JSON 위주로 두어 Cloudflare 100초 제한에 걸리지 않게 한다.
 - 상태 확인: `/healthz`를 UptimeRobot 무료 플랜이 5분마다. Discord 서비스는 `IntegrationStatus`로 core에 보고하고 `/ops`에서 본다.
@@ -448,7 +489,7 @@ Python `mcp` SDK의 FastMCP, streamable HTTP, 무상태. 사용자 토큰을 그
 | 단계 | 산출물 | 완료 조건 |
 |---|---|---|
 | 1. 업무 관리 기반 (`core/`) | accounts, teams(초대), projects, tasks(체크리스트·오늘·다음 행동), api, web(오늘·내 업무·팀·프로젝트·검색·상세 패널), admin, compose + cloudflared, `/healthz` | A01 A02 A03 A04 A06 A07 A13 A14 A18 B01~B05 통과. 도메인으로 접속됨 |
-| 2. Discord 서비스 (`discord_service/`) | 마감 알림, 고정 형식 주간 보고, SQLite 기록, 상태 보고, CLI | A09 A10 A11 A12 통과. 실제 채널에 테스트·주간 보고 1회 |
+| 2. Discord 서비스 (`discord_service/`) | 담당자 DM 마감 알림, DM 평문 명령(리스너), 계정 연결, 고정 형식 주간 보고, SQLite 기록, 상태 보고, CLI | A09 A10 A11 A12 통과. 실제로 DM 1건 수신 + DM `완료` 왕복 1회 + 주간 보고 1회 |
 | 3. MCP 서버 (`mcp_server/`) | 도구 15개(별칭 포함), 헤더·비밀 URL 인증 | A05 A14 통과. Claude Code, Codex CLI, Claude 앱, ChatGPT 네 곳에서 `list_tasks` 확인 |
 | 4. 시범 운영 | 데이터 입력(사람 또는 AI), 주간 보고 2주기, 6.5 측정, LLM 제공업체 결정 | 팀이 Notion 대신 여기에 태스크를 쓴다 |
 
@@ -467,11 +508,11 @@ Python `mcp` SDK의 FastMCP, streamable HTTP, 무상태. 사용자 토큰을 그
 | A03 | `core/tasks/tests.py` | 담당자·생성자 모두 없으면 거부. 생성자만 있으면 생성자가 담당자 |
 | A04 A06 A07 | `core/tasks/tests.py` | `transition` 단위 테스트, ChangeLog 검사 |
 | A05 | `mcp_server/tests/` | 도구 호출이 API를 거쳐 A04와 같은 결과 |
-| A09 A10 A11 | `discord_service/tests/` | core API와 Webhook을 가짜 서버로. 발송 전 상태 변경, `run` 두 번 실행 |
+| A09 A10 A11 | `discord_service/tests/` | core API와 Discord REST를 가짜 transport로. 발송 전 상태 변경, 같은 날 두 번 실행 |
 | A12 | `discord_service/tests/` | `summarize`가 예외를 던져도 고정 형식 |
 | A13 | `core/api/tests.py` | 같은 version으로 두 번 PATCH, 두 번째 409 |
 | A14 | `core/api/tests.py` | 폐기 토큰 401 |
-| A18 | 수동 | 모바일 브라우저에서 `/today` 완료 처리 |
+| A18 | 수동 | 모바일 브라우저에서 `/today` 완료 처리. Discord DM `완료 12`도 같은 결과 |
 | B01 | `core/tasks/tests.py` | 오늘에 추가해도 상태·기한·중요도·version·ChangeLog 불변 |
 | B02 | `core/tasks/tests.py` | 남의 오늘 목록 접근 불가. 어제 남은 일 자동 편입 없음 |
 | B03 | `core/tasks/tests.py` | 체크리스트 전부 완료해도 태스크 상태 불변. `PATCH checklist` 전체 교체 |

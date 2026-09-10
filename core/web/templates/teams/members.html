@@ -3,10 +3,7 @@
 <section class="card">
   <div class="card-head">
     <h1 class="t24">{{ team.name }} 팀원 관리</h1>
-    <div class="row">
-      <a class="btn sm" href="{% url 'team_webhooks' team.pk %}">알림 채널</a>
-      <a class="btn sm" href="{% url 'team_detail' team.pk %}">팀 현황</a>
-    </div>
+    <a class="btn sm" href="{% url 'team_detail' team.pk %}">팀 현황</a>
   </div>
   <p class="muted t13">관리자 {{ admin_count }}명. 마지막 관리자는 역할을 바꾸거나 제거할 수 없습니다.</p>
   <table class="grid">
@@ -31,7 +28,7 @@
     {% endfor %}
     </tbody>
   </table>
-  <p class="muted t13">Discord가 &lsquo;없음&rsquo;인 팀원은 마감 알림에서 멘션 대신 이름만 나옵니다. 본인이 프로필에서 Discord 사용자 ID를 넣으면 됩니다.</p>
+  <p class="muted t13">Discord가 &lsquo;없음&rsquo;인 팀원은 마감 알림 DM을 받지 못합니다. 본인이 프로필 → [Discord 연결]에서 코드를 받아 봇에게 DM으로 보내면 됩니다.</p>
 </section>
 <section class="card">
   <h2>초대 링크</h2>
