@@ -630,3 +630,12 @@ def test_today_view_manual_item_also_scoped(task, member, project):
     assert v["items"] == []
     assert v["focus"] is None
     assert today_membership(member)["manual"] == set()
+
+
+def test_assignee_is_required(task, member):
+    """A03: 담당자 없이는 저장되지 않는다. 오류 항목이 assignee로 표시된다."""
+    with pytest.raises(ServiceError) as e:
+        update_task(task, {"assignee": None}, actor=member, source="web", expected_version=1)
+    assert "assignee" in e.value.errors
+    task.refresh_from_db()
+    assert task.assignee == member

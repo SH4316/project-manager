@@ -872,14 +872,14 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-- [ ] 위 두 명령 통과
-- [ ] core를 로컬에서 띄우고, 연동 계정 읽기 토큰으로 `uv run python -m discord_service test`가 실제 채널에 메시지를 보낸다
-- [ ] `deadlines --date <D-3인 날짜>`로 실제 알림 1건 발송 확인, 같은 명령 재실행 시 `skipped`
-- [ ] `weekly --now`로 고정 형식 주간 보고 1건 발송
-- [ ] core `/ops`에 `discord` 행이 생긴다
-- [ ] `docker build` 성공
-- [ ] core 코드를 import한 곳이 없다 (`grep -r "from core\|import django" discord_service/` 결과 없음)
-- [ ] 완료 보고서 작성
+- [x] 위 두 명령 통과 (20 passed, ruff 0)
+- [ ] 실제 Discord 채널 발송  ← 사용자 인프라 필요 — 컨테이너에서 로컬 싱크로 `test`·`deadlines`·`weekly` 경로와 메시지 본문을 검증했다. 진짜 `DISCORD_WEBHOOK_URL`만 넣으면 된다
+- [x] `deadlines` 1회 발송 후 재실행 시 `skipped` (sent 3 → skipped 3, 로컬 싱크)
+- [x] `weekly --now`로 고정 형식 주간 보고 1건 발송 (`source: fixed`)
+- [x] core `/ops`에 `discord` 행이 생긴다 (`POST /api/integrations/discord/status` → 204, Postgres 확인)
+- [x] `docker build` 성공 (269MB)
+- [x] core 코드를 import한 곳이 없다 (`grep` 결과 없음)
+- [x] 완료 보고서 작성 ([IMPL-REPORT.md](IMPL-REPORT.md))
 
 커밋: `discord_service: notifications and weekly report`
 

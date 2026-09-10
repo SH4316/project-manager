@@ -201,12 +201,67 @@ Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경�
 | 19 | 1150px 이하 패널 전용, 700px 이하 메뉴 두 줄·레일 가로 스크롤·지표 2열 | 통과 |
 | 20 | 토큰 1회 표시, `/ops`, `/ops/export.json`, 로그인 리다이렉트 | 통과 |
 
-## 검수 시나리오 대응
+## 목업 대조 (GUIDE-01-5 §7.9)
 
-A01 A03 A04 A05 A06 A07 A09 A10 A11 A12 A13 A14, B01~B05 에 대응하는 테스트가 있다
-(`teams/tests.py`, `tasks/tests.py`, `api/tests.py`, `discord_service/tests/*`, MCP E2E).
+목업(`python -m http.server 8765` → `산돌이 업무 목업 v2.dc.html`)을 실제로 띄우고, 다섯 화면의
+화면 문구를 목업·내 구현 양쪽에서 기계적으로 뽑아 대조했다.
+
+**일치한 것.** 상세 패널이 거의 그대로 일치한다 — `목표일` / `2026년 9월 4일 (초과)` /
+`목표일 연장하기` / `완료 조건` / `진행 메모` / `내용을 수정하면 자동 저장됩니다.` /
+`문서·PR 링크` / `링크 추가` / `변경 이력` / `더보기` /
+`일시정지: 개인 사유 또는 다른 작업 · 막힘: 외부 요인으로 진행 불가`.
+프로젝트 인라인 폼도 `담당자 (1명)` · `중요도 (1~10)` · `기한 미정 사유 (기한이 없을 때만)` ·
+`{프로젝트}에 태스크 만들기`까지 같다. 내 태스크의 그룹·기한·상태·중요도 필터 값,
+팀 현황 지표 6개와 표 열 구성, 검색 placeholder, TaskRow2의 배지·버튼 라벨도 같다.
+
+**차이 9건.** 전부 지시서가 다르게 지정했거나, 목업에만 있고 README·지시서에는 없는 것이다.
+GUIDE-01-4의 지시("이 문서와 README가 다르면 README를 따르고 완료 보고에 적는다")대로 기록한다.
+
+| # | 목업 | 내 구현 | 판단 |
+|---|---|---|---|
+| 1 | 프로젝트 레일 항목에 미완료 수(4, 2, 0 …) | 이니셜 + 이름만 | README 셸 문단·GUIDE base.html 모두 숫자를 말하지 않는다. GUIDE-00 §1.4(지시서에 없는 것 추가 금지) → 유지 |
+| 2 | `지금 할 일` / `중요도 9/10 · 오늘 목록 기준` 두 줄 | `지금 할 일 · 중요도 5/10 · 오늘 목록 기준` 한 줄 | README §1은 "메타"만 적고 구성은 미지정. GUIDE가 준 템플릿 그대로 → 유지 |
+| 3 | 포커스 메타: 제목 · 프로젝트 · 기한 · `체크리스트` | `TASK-2 · 학식 API · 9월 15일 · 제목` | 목업은 TASK 번호 없음, 체크리스트 있음. README 미지정 → 유지 |
+| 4 | 자동 담기 select `1일 이내` … `14일 이내` | `1일` … `14일` | GUIDE-01-1 `AUTO_PULL_CHOICES` 코드 그대로. README §1도 "1/3/5/7/14일" → 유지 |
+| 5 | `개별 태스크를 오늘 목록에서 제외할 수 있습니다.` 안내 | 없음 | README §1에 없는 문구 → 유지 |
+| 6 | 내 태스크 필터에 보이는 라벨(`팀원`·`그룹`·`기한`) | `aria-label`만 | README §2는 컨트롤을 나열하지만 라벨 표시는 미지정 → 유지 |
+| 7 | 중요도 필터 `높음 (8~10)` | `높음 8~10` | **README §2가 괄호 없이 "높음 8~10"으로 적었다 → 내 구현이 README와 일치** |
+| 8 | 팀 현황 상단에 팀 목적 + `프로젝트 만들기` 버튼 | 팀 이름 + `멤버·초대` | README §3은 지표·프로젝트 표·담당자별만. `새 프로젝트`는 표 헤더에 있다(구현됨) → 유지 |
+| 9 | 프로젝트 상태 라벨에 이모지 없음, 상태 힌트 `착수 전` | `🚧 진행 중`, `아직 손대지 않았어요.` | GUIDE-00 §5와 GUIDE-01-1 `STATUS_HINT`가 명시한 값 → 유지 |
+
+7번은 목업이 아니라 README를 따른 결과이므로, 우선순위 규칙(README > 목업 프로토타입)이 실제로 지켜졌다는 확인이기도 하다.
 
 ---
+
+## 검수 시나리오 대응
+
+SPEC §12의 A 시나리오와 GUIDE 표의 B 시나리오를 테스트에 하나씩 매핑했다.
+
+| 시나리오 | 대응 테스트 |
+|---|---|
+| A01 미승인 사용자 조회 불가 | `test_outsider_cannot_see_team_data_via_api`, `test_outsider_cannot_open_project_page`, `test_today_view_is_scoped_to_team_membership`, `test_today_view_manual_item_also_scoped`, `test_schedule_card_is_scoped_to_team_membership` |
+| A02 프로젝트 화면에서 생성 → 자동 연결 | `test_project_inline_task_create` (`t.project == project`, `status == "todo"` 단정) |
+| A03 담당자 없이 생성 거부 | `test_assignee_is_required`, `test_create_rejects_non_member_assignee` |
+| A04 웹에서 완료 → 상태·완료 시각·이력 | `test_transition_flow_records_completed_at_and_log`, `test_status_change_returns_row` |
+| A05 AI에서 완료 = 웹과 동일 | `test_transition_done_via_api_matches_web`, MCP E2E(이력 `source == "mcp"`) |
+| A06 완료 재시도 → 완료 시각 유지 | `test_done_again_is_noop` |
+| A07 완료 재개 → 완료 시각 해제, 이력 보존 | `test_reopen_clears_completed_at_reason_optional`, `test_reopen_then_done_sets_new_completed_at` |
+| A09 발송 전 기한 변경 → 미발송 | `test_due_changed_before_send_not_sent` |
+| A10 발송 전 완료 → 제외 | `test_completed_before_send_not_sent` |
+| A11 중복 실행 방지 | `test_sends_each_kind_once`, `test_claim_is_exclusive`, `test_claim_daily` + 컨테이너 재실행 `skipped 3` |
+| A12 AI 장애 → 고정 형식 | `test_summarize_falls_back_when_provider_fails` |
+| A13 동시 수정 | `test_optimistic_lock_conflict`, `test_patch_conflict_409_with_latest`, `test_status_change_conflict_shows_message` |
+| A14 토큰 폐기 → 호출 차단 | `test_revoked_token_401`, `test_bad_token_message`(MCP) |
+| A18 모바일에서 완료 | 375×812 뷰포트에서 오늘 화면 행의 상태 컨트롤로 완료 처리 → `done`·`completed_at`·이력 `todo→done/web` 확인 |
+| B01 오늘 담기가 태스크를 건드리지 않음 | `test_today_add_does_not_touch_task` |
+| B02 오늘 목록은 개인·날짜별 | `test_today_is_private_and_not_carried` |
+| B03 체크리스트 완료 ≠ 태스크 완료 | `test_checklist_replace_and_done_does_not_complete_task` |
+| B04 초대 사용 횟수·만료·폐기 | `test_join_by_token_creates_membership_and_counts`, `test_join_expired_or_revoked_invite_rejected` |
+| B05 관리자 없는 프로젝트 허용 | `test_project_without_owner_allowed` |
+
+A08(한 태스크를 여러 프로젝트에 연결), A15~A17(Notion 가져오기·완료 시각 미상 이전·백업 복원)은
+이번 범위 밖이다. A08은 IMPL-PLAN §3에서 태스크가 프로젝트 하나에 속하도록 확정했고,
+A15~A17은 GUIDE에 구현 지시가 없는 후속 과제다.
 
 ## Docker 검증 (2026-09-10 재실행, 전부 통과)
 

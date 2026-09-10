@@ -146,6 +146,7 @@ def api(client, write_token):
 | `test_create_defaults_assignee_to_actor` | `assignee` 없이 생성 → `assignee == actor`, `priority == 5`, ChangeLog `created` 1건 (A03) |
 | `test_create_requires_title_and_reason_without_due` | 제목 빈 문자열 → `ServiceError` key `title`. `due_date=None, no_due_reason=""` → key `no_due_reason` |
 | `test_create_rejects_non_member_assignee` | `assignee=outsider` → `ServiceError` key `assignee` (A03) |
+| `test_assignee_is_required` | `update_task({"assignee": None})` → `ServiceError` key `assignee`, 담당자는 그대로 (A03) |
 | `test_create_in_archived_project_rejected` | 보관된 프로젝트 → key `project` |
 | `test_priority_range_1_to_10` | `priority=0`, `priority=11` → `ServiceError` key `priority`. `Task.objects.create(... priority=11 ...)` → `IntegrityError` |
 | `test_db_constraint_doing_requires_due` | `Task.objects.create(... status="doing", due_date=None ...)` → `IntegrityError` (트랜잭션 안에서 `pytest.raises`) |
@@ -263,6 +264,7 @@ def api(client, write_token):
 | `test_long_idem_key_does_not_crash` | `POST /today/quick`에 `idem="z"*300` → 200 또는 204. (`IdempotencyKey.key`는 varchar(100)) |
 | `test_far_future_schedule_day_does_not_crash` | `/today?schedule=1&cal=month&day=`에 `9999-12-01`·`9999-12-31`·`0001-01-01` → 모두 200. (`week_days()`의 `OverflowError`) |
 | `test_admin_task_and_project_are_read_only` | staff로 admin 목록·상세는 200, `add/`·`delete/`는 403, `change/`에 POST는 403이고 값이 안 바뀐다 (GUIDE-00 §3) |
+| `test_secret_filter_redacts_tokens_and_webhooks` | `SecretFilter`가 `pm_` 토큰·`Bearer …`·`/u/<token>/`·Discord Webhook URL을 `[redacted]`로 바꾼다. `record.args`를 쓰는 형식도 포함 |
 
 ---
 
@@ -287,14 +289,14 @@ DATABASE_URL=postgres://pm:pm@localhost:5432/pm uv run pytest -q
 
 ## 7.9 core 완료 체크리스트
 
-- [ ] Step 0~7 검증 전부 통과
-- [ ] `uv run pytest` SQLite·Postgres 모두 통과
-- [ ] `ruff check`, `ruff format --check` 오류 0
-- [ ] `/api/docs`에 5.7 표의 엔드포인트가 전부 보인다
-- [ ] 01-4 §6.10의 수동 확인 완료
-- [ ] 목업(`python -m http.server 8765` 로 `산돌이 업무 목업 v2.dc.html`)과 나란히 놓고 오늘·내 태스크·팀 현황·프로젝트·상세 패널 다섯 화면의 문구·배치가 같다
-- [ ] 로그에 `pm_` 토큰 원문이 찍히지 않는다 (`SecretFilter`)
-- [ ] 명세 검수 A01 A02 A03 A04 A06 A07 A13 A14 와 B01~B05 에 대응하는 테스트가 있다
-- [ ] 완료 보고서 작성
+- [x] Step 0~7 검증 전부 통과
+- [x] `uv run pytest` SQLite·Postgres 모두 통과 (각 122개, skip 0)
+- [x] `ruff check`, `ruff format --check` 오류 0
+- [x] `/api/docs`에 5.7 표의 엔드포인트가 전부 보인다 (OpenAPI 경로 20개 확인)
+- [x] 01-4 §6.10의 수동 확인 완료 (20항목, 브라우저)
+- [x] 목업과 나란히 놓고 다섯 화면 대조 완료. 상세 패널·인라인 폼 문구는 목업과 일치. 차이 9건은 지시서·README가 다르게 지정한 것이거나 목업에만 있는 것이라 [IMPL-REPORT](IMPL-REPORT.md)의 '목업 대조' 절에 기록했다
+- [x] 로그에 `pm_` 토큰 원문이 찍히지 않는다 (`SecretFilter` 단위 테스트 + 실제 로깅 설정으로 확인)
+- [x] 명세 검수 A01~A14·A18, B01~B05 대응 테스트 확인 (IMPL-REPORT '검수 시나리오 매핑' 표)
+- [x] 완료 보고서 작성 ([IMPL-REPORT.md](IMPL-REPORT.md))
 
 다음: [GUIDE-02-discord.md](GUIDE-02-discord.md)

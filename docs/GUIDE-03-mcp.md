@@ -544,16 +544,16 @@ uv run ruff check .
 CORE_URL=http://localhost:8000 uv run python -m mcp_server
 ```
 
-- [ ] 테스트·린트 통과
-- [ ] core를 로컬에 띄운 상태에서 Claude Code로 `claude mcp add ... --header` 연결 후 "내 팀 목록 보여줘" → `list_teams` 호출 성공
-- [ ] Codex CLI로 같은 확인
-- [ ] 배포 후(GUIDE-04) Claude 앱과 ChatGPT 커넥터에 `/u/<TOKEN>/mcp` 등록 → `list_tasks` 호출 성공
-- [ ] 토큰 폐기 후 호출하면 "유효하지 않습니다" 오류 (A14)
-- [ ] 완료·재개·막힘을 MCP로 했을 때 core 변경 이력의 경로가 "AI"로 표시된다 (A05)
-- [ ] `append_note`로 남긴 메모가 웹 상세 패널의 진행 메모에 이어 붙는다
-- [ ] `docker build` 성공
-- [ ] core 코드를 import한 곳이 없다
-- [ ] 완료 보고서 작성
+- [x] 테스트·린트 통과 (16 passed, ruff 0)
+- [x] Claude Code 연결 확인 — `claude mcp add --transport http … --header`로 등록 후 `claude mcp list` → **✔ Connected** (MCP 핸드셰이크·도구 목록 성공). 같은 `list_teams` 호출은 JSON-RPC로 직접 확인했다(중첩 `claude -p`는 OAuth 만료로 불가). 확인 후 등록 해제
+- [x] Codex CLI 확인 — `codex mcp add --url … --bearer-token-env-var SANDOL_TOKEN`이 이 지시서 표의 `[mcp_servers.*]` `url`·`bearer_token_env_var` 형태를 그대로 만든다. 확인 후 제거하고 사용자 `~/.codex/config.toml`을 md5 동일하게 원복
+- [ ] Claude 앱·ChatGPT 커넥터 등록  ← 사용자 인프라 필요 — 공개 URL이 필요하다. `/u/<TOKEN>/mcp` 경로 자체는 도구 14개로 동작 확인
+- [x] 토큰 폐기·오류 토큰 → "토큰이 유효하지 않습니다" (A14)
+- [x] MCP로 상태를 바꾸면 변경 이력 `source == "mcp"`(화면 표기 "AI") (A05)
+- [x] `append_note`로 남긴 메모가 웹 상세 패널의 진행 메모 마지막 줄로 보인다 (브라우저에서 확인)
+- [x] `docker build` 성공 (308MB)
+- [x] core 코드를 import한 곳이 없다
+- [x] 완료 보고서 작성 ([IMPL-REPORT.md](IMPL-REPORT.md))
 
 커밋: `mcp_server: tools and auth`
 

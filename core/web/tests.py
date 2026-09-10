@@ -144,6 +144,8 @@ def test_project_inline_task_create(logged, project, member):
     assert "#task-" in r.headers["HX-Redirect"]
     t = Task.objects.get(title="인라인")
     assert t.assignee == member
+    assert t.project == project  # A02: 그 화면의 프로젝트에 자동 연결
+    assert t.status == "todo"
 
 
 def test_me_team_view_read_only(logged, task):
@@ -279,3 +281,30 @@ def test_admin_task_and_project_are_read_only(client, member, task, project):
     task.refresh_from_db()
     assert task.status == "todo"
     assert task.title == "메뉴 누락 개선"
+
+
+def test_secret_filter_redacts_tokens_and_webhooks(caplog):
+    """GUIDE-00: 로그에 토큰·Webhook URL 원문이 남지 않는다 (common.logging.SecretFilter)."""
+    import logging
+
+    from common.logging import SecretFilter
+
+    f = SecretFilter()
+    cases = [
+        ("token=pm_abcdefghijklmnopqrstuvwxyz012345", "pm_"),
+        ("Authorization: Bearer pm_abcdefghijklmnopqrstuvwxyz012345", "Bearer"),
+        ("GET /u/pm_abcdefghijklmnopqrstuvwxyz012345/mcp", "/u/pm_"),
+        ("POST https://discord.com/api/webhooks/123/abcXYZ", "discord.com/api/webhooks"),
+    ]
+    for msg, secret in cases:
+        rec = logging.LogRecord("t", logging.INFO, "p", 1, msg, None, None)
+        f.filter(rec)
+        assert "[redacted]" in rec.getMessage()
+        assert secret not in rec.getMessage(), rec.getMessage()
+
+    # args를 쓰는 형식도 가려진다
+    rec = logging.LogRecord(
+        "t", logging.INFO, "p", 1, "token %s", ("pm_abcdefghijklmnopqrstuvwxyz012345",), None
+    )
+    f.filter(rec)
+    assert "pm_" not in rec.getMessage()

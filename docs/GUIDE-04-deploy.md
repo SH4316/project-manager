@@ -255,15 +255,15 @@ docker compose logs --tail=50 web cloudflared
 
 ## 완료 체크
 
-- [ ] `docker compose build` 세 이미지 모두 성공
-- [ ] 로컬에서 `db web mcp` 기동 후 `/healthz` OK, Postgres로 core 테스트 통과
-- [ ] Proxmox LXC에서 기동, `https://pm.<도메인>/healthz` OK
-- [ ] 팀 생성, 초대 링크로 팀원 1명 참여 확인
-- [ ] Discord 연동 계정 토큰으로 `discord` 서비스 기동, 테스트 메시지 수신
-- [ ] `https://mcp.<도메인>/u/<TOKEN>/mcp`를 Claude 앱 또는 ChatGPT 커넥터에 등록해 `list_tasks` 성공
-- [ ] UptimeRobot 모니터 등록
-- [ ] Proxmox vzdump 예약 등록
-- [ ] `README.md` 작성
-- [ ] 완료 보고서 작성
+- [x] `docker compose build` 세 이미지 모두 성공 (web 376MB · mcp 308MB · discord 269MB)
+- [x] 로컬에서 `db web mcp` 기동 후 `/healthz` OK, Postgres 16으로 core 테스트 122개 통과
+- [ ] Proxmox LXC 기동·`https://pm.<도메인>/healthz`  ← 사용자 인프라 필요
+- [x] 팀 생성 → 초대 링크 발급 → 새 계정 가입 → 참여까지 실행 중 서버에서 확인 (참여 후 프로젝트 레일에 팀 프로젝트가 보이고 '초대 링크가 필요합니다' 안내가 사라진다)
+- [ ] 실제 Discord 채널 테스트 메시지 수신  ← 사용자 인프라 필요 — 컨테이너 기동·설정 파싱·발송 경로는 확인
+- [ ] 공개 URL로 커넥터 등록  ← 사용자 인프라 필요 — mcp 컨테이너에서 `list_tasks` 동작 확인
+- [ ] UptimeRobot 모니터 등록  ← 사용자 인프라 필요
+- [ ] Proxmox vzdump 예약 등록  ← 사용자 인프라 필요
+- [x] `README.md` 작성 (실행 안내 절을 앞에 덧붙이고 기존 핸드오프는 그대로 뒀다)
+- [x] 완료 보고서 작성 ([IMPL-REPORT.md](IMPL-REPORT.md))
 
 커밋: `deploy: compose, cloudflared, readme`

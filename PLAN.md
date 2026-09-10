@@ -3,7 +3,7 @@
 버전: 0.3
 작성일: 2026-09-09
 기준 문서: [docs/SPEC.md](docs/SPEC.md) (기능 명세 v0.1) + Leantime 참고 적용안 + 2026-09-09 결정 사항
-상태: 계획 단계. 코드 없음.
+상태: **1~3단계 구현 완료 (2026-09-10).** `core`·`discord_service`·`mcp_server` 구현·테스트·컨테이너 검증까지 끝났다. 4단계(배포·시범)는 사용자 인프라가 필요하다. 결과와 남은 일은 [docs/IMPL-REPORT.md](docs/IMPL-REPORT.md).
 
 **구현 지시서:** 실제 구현은 [docs/GUIDE-00-rules.md](docs/GUIDE-00-rules.md)부터 시작하는 GUIDE 문서를 따른다. 이 계획서와 지시서가 다르면 지시서가 우선한다.
 
