@@ -8,7 +8,7 @@
 
 | 파트 | 테스트 (SQLite) | 테스트 (Postgres 16) | ruff check | ruff format |
 |---|---|---|---|---|
-| `core/` | **105 passed**, skip 0 | **105 passed**, skip 0 | 0 | 통과 |
+| `core/` | **108 passed**, skip 0 | **108 passed**, skip 0 | 0 | 통과 |
 | `discord_service/` | **20 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 | `mcp_server/` | **16 passed**, skip 0 | (DB 미사용) | 0 | 통과 |
 
@@ -74,11 +74,12 @@ Docker 이미지 3개 빌드·기동, Postgres 16 테스트, discord 발송 경�
 ### Step 7. 테스트 (`step 7: tests`)
 
 - 만든 파일: `core/conftest.py`, `{teams,projects,tasks,reports,api,web}/tests.py`
-- 검증: `uv run pytest -q` → **105 passed**, skip 0. `ruff check`·`ruff format --check` 통과.
+- 검증: `uv run pytest -q` → **108 passed**, skip 0. `ruff check`·`ruff format --check` 통과.
+  (지시서 목록 105개 + 심층 감사에서 나온 회귀 테스트 3개)
 - 지시서와 다르게 한 것: 지시서 7.6 목록에 없는 테스트 2개를 추가했다
   (`test_bearer_write_passes_csrf`, `test_session_write_still_needs_csrf`).
   아래 2번 수정이 회귀하지 않게 막는 테스트다.
-- 실패하거나 못 한 것: 없음. SQLite와 **Postgres 16 모두 105개 통과**(Docker 검증 절).
+- 실패하거나 못 한 것: 없음. SQLite와 **Postgres 16 모두 108개 통과**(Docker 검증 절).
 
 ### discord_service (`discord_service: notifications and weekly report`)
 
@@ -216,7 +217,7 @@ docker compose up -d db     # postgres:16-alpine, healthcheck healthy
 cd core && DATABASE_URL=postgres://pm:pm@127.0.0.1:5432/pm uv run pytest -q
 ```
 
-**105 passed, skip 0.** SQLite 결과와 동일하다. GUIDE-01-5 §7.9의 "SQLite·Postgres 모두 통과" 충족.
+**108 passed, skip 0.** SQLite 결과와 동일하다. GUIDE-01-5 §7.9의 "SQLite·Postgres 모두 통과" 충족.
 
 ### 이미지 3개 빌드
 
@@ -285,6 +286,31 @@ Postgres에 팀·프로젝트·태스크를 심고 쓰기 토큰을 발급한 �
 - 모든 payload의 `allowed_mentions == {'parse': ['users']}` — `@everyone`·역할 멘션 차단
 - `discord_user_id`가 없는 담당자는 `display_name`으로 표시된다(멘션 fallback)
 
+### 운영 설정(`DEBUG=0`) + 프록시 뒤 동작
+
+Cloudflare Tunnel 뒤에 놓였을 때를 흉내 내 `.env`를 `DEBUG=0`,
+`ALLOWED_HOSTS=pm.example.com,localhost,web`, `CSRF_TRUSTED_ORIGINS=https://pm.example.com`,
+`SITE_URL=https://pm.example.com`로 바꿔 컨테이너를 다시 만들고, `Host: pm.example.com` +
+`X-Forwarded-Proto: https`로 요청했다. 확인 후 dev 설정으로 되돌렸다.
+
+| 확인 | 결과 |
+|---|---|
+| `/healthz` | 200 `{"ok": true}` |
+| `/login` | 200, `csrfmiddlewaretoken` 포함, `/static/app.css` 링크 포함 |
+| `csrftoken` 쿠키 | `Secure` 플래그 붙음 (`CSRF_COOKIE_SECURE`가 `DEBUG=0`에서 켜짐) |
+| 허용되지 않은 Host(`evil.example.com`) | **400** — `ALLOWED_HOSTS` 동작 |
+| `/static/app.css` (whitenoise, `DEBUG=0`) | 200, 16,543B (압축본) |
+| 비로그인 리다이렉트 | `/` → `/login` · `/today` → `/login?next=/today` · `/tasks/1` → `/login?next=/tasks/1` · `/me`·`/team` 동일 |
+| 비로그인 `/api/me` | **401** |
+| 비로그인 `/ops` | `/admin/login/?next=/ops` (staff 전용) |
+
+`manage.py check --deploy` 경고 3건은 모두 설계상 정상이다.
+
+- `security.W004`(HSTS)·`security.W008`(SSL 리다이렉트): TLS를 Cloudflare가 끝내는 구조라 엣지에서 처리한다.
+  Django가 직접 강제하길 원하면 `SECURE_HSTS_SECONDS`·`SECURE_SSL_REDIRECT`를 켜면 된다.
+- `security.W009`(SECRET_KEY 길이): 이 검사에 쓴 임시 키가 44자여서 난 경고다.
+  GUIDE-04 Step 7이 `secrets.token_urlsafe(50)`(약 67자)로 만들라고 지시하고 있어 실제 배포에서는 나지 않는다.
+
 ### 배포 파일 무결성
 
 - `core/uv.lock`, `discord_service/uv.lock`, `mcp_server/uv.lock`, 세 `Dockerfile`, `entrypoint.sh`,
@@ -300,6 +326,112 @@ Postgres에 팀·프로젝트·태스크를 심고 쓰기 토큰을 발급한 �
   `web/static/`이 `STATICFILES_DIRS`와 앱 static 디렉터리로 **두 번** 잡히기 때문이다.
   같은 파일이라 결과는 정상이고, 지시서가 지정한 설정 그대로여서 고치지 않았다.
 - 로컬 compose는 host 포트 **5432 하나만** 쓴다(`web`·`mcp`는 포트를 열지 않는다).
+
+---
+
+## 심층 감사 (Postgres 정합 · 배포 · 계약 · 권한)
+
+"테스트가 통과한다"와 "Postgres에서 옳다"는 다른 문제라서, 테스트가 놓칠 수 있는 것만 겨냥해
+독립 렌즈 6개로 코드를 훑고 각 발견을 적대적으로 검증했다.
+
+- 렌즈: `orm-multijoin`(다중 조인 집계 부풀림) · `pg-semantics`(SQLite가 관용하는 PG 의미) ·
+  `constraints-migrations`(제약·마이그레이션) · `deploy-runtime`(컨테이너가 실제로 뜨는가) ·
+  `contract-drift`(파트 간 필드 계약) · `security-authz`(권한·데이터 격리)
+- 검증: 발견 1건당 회의론자 3명(correctness / reachability / already-handled)이 **반박을 시도**하고,
+  2명 이상이 반박하면 폐기. 회의론자들은 실제로 프로브 테스트를 작성해 라이브 Postgres 16에 돌렸다.
+- 규모: 에이전트 87개, 도구 호출 1,576회, 오류 0.
+
+**결과: 확정 16건, 반박 11건.**
+
+### 고쳤다 (4건)
+
+전부 형제 코드와의 불일치(GUIDE-00 §1.3의 "오타" 범주) 또는 내가 만든 배포 산출물의 깨진 값이다.
+각각 회귀 테스트를 붙였다.
+
+| # | 위치 | 문제 | 고친 것 |
+|---|---|---|---|
+| 1 | `core/tasks/services.py:175, 223` | **`no_due_reason`이 `varchar(200)`에 절단 없이 들어간다.** 형제 필드는 모두 자른다(`title[:200]`, `done_when[:300]`, `next_action[:200]`, `stop_reason[:300]`). API·MCP 스키마는 길이 제한이 없어 LLM이 쓴 긴 사유가 그대로 온다. SQLite는 조용히 저장하고 **Postgres는 `DataError` → 500** | `.strip()[:200]` 두 곳 |
+| 2 | `.env.example:4` | **`ALLOWED_HOSTS=pm.example.com`에 `web`이 없다.** compose가 mcp·discord에 `CORE_URL=http://web:8000`을 주므로 그 요청의 Host는 `web` → **DisallowedHost 400**. 내가 컨테이너 검증할 때 실제로 `web`을 넣어야 통과했다 | `pm.example.com,web` + 이유 주석 |
+| 3 | `core/tasks/services.py:509` · `core/web/views/today.py:53` | **`today_view()`·일정 카드가 팀 범위를 안 탄다.** 다른 모든 읽기 경로는 `visible_tasks(user)`를 쓰는데 이 둘만 `Task.objects.filter(assignee=user)`. 팀에서 제거된 뒤에도 담당으로 남은 태스크의 제목·기한·완료 수가 계속 보인다 | `visible_tasks(user).filter(assignee=user)` |
+| 4 | `compose.yml:2` | **`db`에만 `restart` 정책이 없다.** 나머지 네 서비스는 `unless-stopped`. 호스트 재부팅 시 Postgres만 안 올라오고 web이 `migrate`에서 크래시 루프 | `restart: unless-stopped` |
+
+확인:
+
+- SQLite **108 passed**, Postgres 16 **108 passed** (회귀 테스트 3개 추가), `ruff check` 0, `ruff format` 통과.
+- 1번은 라이브 컨테이너 API로 재확인: 250자 `no_due_reason`으로 `POST /api/tasks` → **201, 저장값 200자**
+  (수정 전 같은 요청이 Postgres에서 500이었다).
+- 3번 회귀 테스트는 멤버십을 지운 뒤 `today_view`·`/today?schedule=1`에서 태스크가 사라지는지 본다.
+
+### 확정했지만 안 고쳤다 (12건)
+
+요청 범위(Docker·Postgres·빌드)를 넘고, 지시서가 지정한 코드에 손을 대야 하는 것들이라 남겼다.
+같은 문제가 두 렌즈에서 중복으로 잡힌 2건을 합쳐 12건이다. 클래스별로 묶으면 다음과 같다.
+
+**A. `varchar` 초과 → Postgres 500** (고친 1번과 같은 클래스, 각 한 줄)
+
+- `core/accounts/models.py:24` — `User.save()`가 `username`(150자)을 `display_name`(50자)에 복사한다.
+  50자 넘는 아이디로 가입하면 Postgres에서 500. → `self.username[:50]`
+- `core/projects/services.py:68` — `name`(100자)·`purpose`(200자)를 자르지 않는다. → `[:100]`, `[:200]`
+
+**B. 검증 안 된 쿼리 파라미터 → 400이어야 할 곳에서 500**
+
+- `core/api/routers/tasks.py:62` — `due_from`/`due_to`가 `str`로 선언되어 `DateField` 조회에 그대로 간다.
+  MCP가 `due_from="next week"`를 보내면 500. → 스키마를 `date | None`으로
+- `core/web/views/projects.py:53` — `?team=abc`가 `filter(pk=...)`로 들어가 `ValueError` → 500
+- `core/tasks/services.py:698` · `core/web/views/me.py:21` — `str.isdigit()`가 `int()` 성공을 보장하지 않는다.
+  `/search?q=²`, `/me?member=²`, `/me?project=²` 모두 500. → `isdecimal()`
+
+**C. 처리 안 된 `IntegrityError` → 500**
+
+- `core/web/views/settings.py:26` — 남이 쓰는 `discord_user_id`를 넣으면 필드 오류가 아니라 500
+- `core/tasks/admin.py:11` — `completed_at`이 `readonly_fields`라 admin에서 상태를 `done`으로 바꾸면
+  DB CHECK 제약에 걸려 500(입력 내용도 사라진다)
+
+**D. discord 복원력**
+
+- `discord_service/discord_service/notify.py:48` — `store.claim()`과 발송 사이의 `core.task()`가 무방비다.
+  core가 일시적으로 429/502를 주면 예외가 `run_deadlines`를 벗어나 `sending` 행이 남고,
+  그 마감 알림은 **영구히 안 나간다**. → `core.task()`를 감싸고 실패 시 `store.release()`
+
+**E. 개발/운영 정렬 차이 (내가 직접 양쪽에서 확인)**
+
+- `core/api/routers/tasks.py:71` — `order_by("due_date", "id")`의 NULL 위치가 다르다.
+  **SQLite는 기한 미정이 맨 앞, Postgres는 맨 뒤.** 직접 측정한 값:
+
+  | | SQL 정렬 | Python `by_due()` | 일치 |
+  |---|---|---|---|
+  | SQLite | `undated0, undated1, dated0…` | `dated0, dated1, dated2, undated0…` | ✗ |
+  | Postgres 16 | `dated0, dated1, dated2, undated0…` | 같음 | ✓ |
+
+  **운영(Postgres)에서는 이미 옳다.** 개발용 SQLite에서만 API 목록·페이지네이션이 웹 화면과 다르게 보인다.
+  양쪽을 맞추려면 `order_by(F("due_date").asc(nulls_last=True), "id")` 한 줄.
+
+### 반박된 11건
+
+회의론자 2명 이상이 반박해 폐기한 것들이다. 참고용으로 남긴다.
+
+- 다중 조인 집계 부풀림 — `Count(filter=...)`가 여러 개여도 부풀지 않음(3표 반박)
+- 보관된 프로젝트에서 태스크 재개 — `transition()`에 `is_archived` 검사 없음(3표 반박)
+- `Idempotency-Key` check-then-insert 경합(3표 반박)
+- 프로젝트 이름 중복 check-then-write 경합(3표 반박)
+- `SECRET_KEY` 누락 시 하드코딩 키로 폴백(3표 반박)
+- 체크리스트만 PATCH할 때 `version` 무시(3표 반박)
+- 초대 링크가 발급자의 관리자 권한보다 오래 남음(3표 반박 — 재가입해도 `member`로만 들어간다)
+- `archive_project`/`restore_project`의 stale version(2표), `DATABASE_URL` 비밀번호 이스케이프(2표),
+  일정 카드가 프로젝트 이름을 노출(2표 — 템플릿은 제목만 그린다), NULL 정렬 중복 보고(2표)
+
+### 지시서와의 불일치
+
+고친 1·2·3·4번은 모두 지시서가 그대로 적어 준 코드·값에서 왔다. 지시서 자체는 건드리지 않았다.
+다시 구현할 때 같은 문제가 되살아나지 않게 하려면 지시서도 같이 고쳐야 한다.
+
+| 지시서 | 고칠 곳 |
+|---|---|
+| GUIDE-01-2 §3.3 `create_task`/`update_task` | `no_due_reason`에 `[:200]` |
+| GUIDE-01-2 §3.3 `today_view` | `mine = visible_tasks(user).filter(assignee=user)` |
+| GUIDE-01-4 §6.6 `_schedule` | 같은 범위로 |
+| GUIDE-04 Step 2 `compose.yml` | `db`에 `restart: unless-stopped` |
+| GUIDE-04 Step 3 `.env.example` | `ALLOWED_HOSTS=pm.example.com,web` |
 
 ---
 

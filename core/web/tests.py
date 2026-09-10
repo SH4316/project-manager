@@ -200,3 +200,15 @@ def test_token_shown_once(logged):
     assert r.status_code == 302
     assert "pm_" in logged.get("/settings/tokens").content.decode()
     assert "pm_" not in logged.get("/settings/tokens").content.decode()
+
+
+def test_schedule_card_is_scoped_to_team_membership(logged, task, project, member):
+    """일정 카드도 팀 범위를 따른다. 팀에서 빠지면 마감이 달력에 남지 않는다."""
+    from teams.models import Membership
+
+    body = logged.get("/today?schedule=1&cal=month").content.decode()
+    assert task.title in body
+
+    Membership.objects.filter(team=project.team, user=member).delete()
+    body = logged.get("/today?schedule=1&cal=month").content.decode()
+    assert task.title not in body

@@ -172,7 +172,7 @@ def create_task(
         assignee=assignee,
         priority=priority,
         due_date=due_date,
-        no_due_reason=(no_due_reason or "").strip(),
+        no_due_reason=(no_due_reason or "").strip()[:200],
         created_by=actor,
     )
     _log(task, "created", "", task.number, actor, source, token)
@@ -220,7 +220,7 @@ def update_task(task, changes: dict, *, actor, source, token=None, expected_vers
         _require_member(actor, new["project"])
         if new["project"].team_id != task.project.team_id:
             raise ServiceError({"project": "다른 팀의 프로젝트로 옮길 수 없습니다."})
-    new["no_due_reason"] = (new["no_due_reason"] or "").strip()
+    new["no_due_reason"] = (new["no_due_reason"] or "").strip()[:200]
     new["stop_reason"] = (new["stop_reason"] or "").strip()[:300]
     _validate(
         project=new["project"],
@@ -506,7 +506,8 @@ def today_view(user, day: date | None = None) -> dict:
         .select_related("task__project", "task__assignee")
         .order_by("position", "id")
     ]
-    mine = Task.objects.filter(assignee=user).select_related("project", "assignee")
+    # 팀에서 빠진 뒤에도 담당으로 남은 태스크가 새는 것을 막는다(다른 읽기 경로와 같은 범위).
+    mine = visible_tasks(user).filter(assignee=user)
     my_open = mine.filter(status__in=Task.OPEN)
     auto = []
     if m["pull_end"] is not None:

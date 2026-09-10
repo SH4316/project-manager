@@ -50,9 +50,8 @@ def _schedule(request, day: date) -> dict:
         sel = date.fromisoformat(request.GET.get("day", "")) if request.GET.get("day") else day
     except ValueError:
         sel = day
-    my_open = Task.objects.filter(assignee=request.user, status__in=Task.OPEN).select_related(
-        "project"
-    )
+    # today_view와 같은 범위(팀 소속 태스크만)를 쓴다.
+    my_open = ts.visible_tasks(request.user).filter(assignee=request.user, status__in=Task.OPEN)
     counts = dict(
         my_open.filter(due_date__year=sel.year, due_date__month=sel.month)
         .values_list("due_date")

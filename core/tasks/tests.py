@@ -581,3 +581,37 @@ def test_link_exactly_one_target(task, member, project):
         Link.objects.create(
             project=project, task=task, title="t", url="https://e.com", created_by=member
         )
+
+
+def test_no_due_reason_truncated_to_column_length(project, member):
+    """no_due_reason은 varchar(200)이다. 자르지 않으면 Postgres에서 DataError로 500이 된다."""
+    long_reason = "미" * 250
+    t = create_task(
+        project=project, title="기한 미정", actor=member, source="web", no_due_reason=long_reason
+    )
+    assert len(t.no_due_reason) == 200
+    t = update_task(
+        t,
+        {"no_due_reason": "정" * 250},
+        actor=member,
+        source="web",
+        expected_version=t.version,
+    )
+    assert len(t.no_due_reason) == 200
+
+
+def test_today_view_is_scoped_to_team_membership(task, member, project):
+    """팀에서 빠지면 담당으로 남은 태스크도 오늘 화면에서 보이지 않는다 (A01)."""
+    from teams.models import Membership
+
+    v = today_view(member)
+    assert [t.pk for t in v["items"]] == [task.pk]
+
+    Membership.objects.filter(team=project.team, user=member).delete()
+    v = today_view(member)
+    assert v["items"] == []
+    assert v["focus"] is None
+    assert v["counts"]["my_open"] == 0
+    assert v["counts"]["due_today"] == 0
+    assert v["counts"]["done_7d"] == 0
+    assert list(ts.visible_tasks(member)) == []
