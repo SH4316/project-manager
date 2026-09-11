@@ -1,0 +1,168 @@
+from django.db import transaction
+from django.utils import timezone
+
+from common.errors import ServiceError
+
+from .models import Invite, Organization, OrgMembership, Team, TeamMembership
+
+# ---------- 조직 ----------
+
+
+def orgs_of(user):
+    """user가 속한 조직 queryset."""
+    return Organization.objects.filter(memberships__user=user).distinct()
+
+
+def is_member(user, org) -> bool:
+    return OrgMembership.objects.filter(org=org, user=user).exists()
+
+
+def is_admin(user, org) -> bool:
+    return OrgMembership.objects.filter(org=org, user=user, role="admin").exists()
+
+
+def require_admin(user, org):
+    if not is_admin(user, org):
+        raise ServiceError({"org": "조직 관리자만 할 수 있습니다."})
+
+
+@transaction.atomic
+def create_org(name: str, purpose: str, actor) -> Organization:
+    name = name.strip()
+    if not name:
+        raise ServiceError({"name": "조직 이름을 입력하세요."})
+    org = Organization.objects.create(
+        name=name[:100], purpose=purpose.strip()[:200], created_by=actor
+    )
+    OrgMembership.objects.create(org=org, user=actor, role="admin")
+    return org
+
+
+def create_invite(org, actor, days: int = 7) -> Invite:
+    require_admin(actor, org)
+    if not 1 <= days <= 90:
+        raise ServiceError({"days": "만료일은 1~90일 사이여야 합니다."})
+    expires_at = timezone.now() + timezone.timedelta(days=days)
+    return Invite.objects.create(org=org, created_by=actor, expires_at=expires_at)
+
+
+def revoke_invite(invite, actor):
+    require_admin(actor, invite.org)
+    if invite.revoked_at is None:
+        invite.revoked_at = timezone.now()
+        invite.save(update_fields=["revoked_at"])
+
+
+@transaction.atomic
+def join_by_token(user, token: str) -> Organization:
+    invite = Invite.objects.select_for_update().select_related("org").filter(token=token).first()
+    if invite is None or not invite.is_usable:
+        raise ServiceError({"token": "초대 링크가 유효하지 않거나 만료되었습니다."})
+    _, created = OrgMembership.objects.get_or_create(
+        org=invite.org, user=user, defaults={"role": "member"}
+    )
+    if created:
+        invite.use_count += 1
+        invite.save(update_fields=["use_count"])
+    return invite.org
+
+
+def change_role(membership, role: str, actor):
+    require_admin(actor, membership.org)
+    if role not in dict(OrgMembership.ROLES):
+        raise ServiceError({"role": "알 수 없는 역할입니다."})
+    if membership.role == "admin" and role != "admin" and _admin_count(membership.org) <= 1:
+        raise ServiceError({"role": "마지막 관리자의 역할은 바꿀 수 없습니다."})
+    membership.role = role
+    membership.save(update_fields=["role"])
+
+
+def set_tags(membership, tags, actor):
+    """스킬 태그. 관리자만 고친다. 공백 제거·중복 제거·20자·최대 10개."""
+    require_admin(actor, membership.org)
+    cleaned, seen = [], set()
+    for t in tags:
+        t = (t or "").strip()[:20]
+        if t and t not in seen:
+            seen.add(t)
+            cleaned.append(t)
+    membership.tags = cleaned[:10]
+    membership.save(update_fields=["tags"])
+
+
+@transaction.atomic
+def remove_member(membership, actor):
+    """조직에서 빼면 그 조직의 모든 팀에서도 빠진다.
+
+    TeamMembership은 조직이 아니라 팀을 가리키므로 cascade가 닿지 않는다. 여기서 지우지
+    않으면 조직에 없는 사람이 팀 화면에 남는다.
+    """
+    require_admin(actor, membership.org)
+    if membership.role == "admin" and _admin_count(membership.org) <= 1:
+        raise ServiceError({"member": "마지막 관리자는 제거할 수 없습니다."})
+    TeamMembership.objects.filter(team__org=membership.org, user=membership.user).delete()
+    membership.delete()
+
+
+def _admin_count(org) -> int:
+    return OrgMembership.objects.filter(org=org, role="admin").count()
+
+
+# ---------- 팀 ----------
+
+
+def _validate_team_name(org, name: str, exclude_pk=None) -> str:
+    name = (name or "").strip()
+    if not name:
+        raise ServiceError({"name": "팀 이름을 입력하세요."})
+    name = name[:100]
+    qs = Team.objects.filter(org=org, name=name)
+    if exclude_pk is not None:
+        qs = qs.exclude(pk=exclude_pk)
+    if qs.exists():
+        raise ServiceError({"name": "같은 이름의 팀이 이미 있습니다."})
+    return name
+
+
+def create_team(*, org, name: str, purpose: str = "", actor) -> Team:
+    require_admin(actor, org)
+    return Team.objects.create(
+        org=org,
+        name=_validate_team_name(org, name),
+        purpose=(purpose or "").strip()[:200],
+        created_by=actor,
+    )
+
+
+def update_team(team, *, name: str, purpose: str = "", actor) -> Team:
+    require_admin(actor, team.org)
+    team.name = _validate_team_name(team.org, name, exclude_pk=team.pk)
+    team.purpose = (purpose or "").strip()[:200]
+    team.save(update_fields=["name", "purpose"])
+    return team
+
+
+def delete_team(team, actor):
+    """팀만 지운다. 멤버는 조직에 그대로 남고 프로젝트도 지워지지 않는다."""
+    require_admin(actor, team.org)
+    team.delete()
+
+
+def add_team_member(team, user, actor) -> TeamMembership:
+    require_admin(actor, team.org)
+    if not is_member(user, team.org):
+        raise ServiceError({"user": "먼저 조직에 초대해야 합니다."})
+    if not user.is_active:
+        raise ServiceError({"user": "비활성 사용자는 팀에 넣을 수 없습니다."})
+    membership, _ = TeamMembership.objects.get_or_create(team=team, user=user)
+    return membership
+
+
+def remove_team_member(team, user, actor):
+    require_admin(actor, team.org)
+    TeamMembership.objects.filter(team=team, user=user).delete()
+
+
+def teams_of(user, org):
+    """org 안에서 user가 속한 팀 queryset. 가시성 계산에 쓰지 않는다."""
+    return Team.objects.filter(org=org, memberships__user=user).distinct()

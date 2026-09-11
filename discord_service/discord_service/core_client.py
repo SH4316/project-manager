@@ -10,12 +10,12 @@ class CoreClient:
             transport=transport,
         )
 
-    def open_tasks(self, team_id: int, due_to: str | None = None) -> list[dict]:
+    def open_tasks(self, org_id: int, due_to: str | None = None) -> list[dict]:
         """미완료 태스크 전부 (페이지 순회). due_to는 'YYYY-MM-DD'."""
         items, offset = [], 0
         while True:
             params = {
-                "team": team_id,
+                "org": org_id,
                 "status": "todo,doing,paused,blocked,review",
                 "limit": 200,
                 "offset": offset,
@@ -37,8 +37,8 @@ class CoreClient:
         r.raise_for_status()
         return r.json()
 
-    def weekly(self, team_id: int, week_start: str) -> dict:
-        r = self.http.get("/api/reports/weekly", params={"team": team_id, "week_start": week_start})
+    def weekly(self, org_id: int, week_start: str) -> dict:
+        r = self.http.get("/api/reports/weekly", params={"org": org_id, "week_start": week_start})
         r.raise_for_status()
         return r.json()
 

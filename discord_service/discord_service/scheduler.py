@@ -36,7 +36,7 @@ def tick(cfg: Config, core: CoreClient, bot: Bot, store: Store, now: datetime) -
     day = today.isoformat()
     if now.hour >= cfg.send_hour and store.claim_daily("deadline", day):
         try:
-            r = run_deadlines(core, bot, store, cfg.team_id, today)
+            r = run_deadlines(core, bot, store, cfg.org_id, today)
             # 발송 실패는 예외로 올라오지 않고 결과에 세어진다(DM 거부·채널 열기 실패·재확인 실패).
             # /ops에 ok로 보이면 아무도 모른다. 미연결(unlinked)은 실패가 아니다 —
             # 한 명이 연결을 안 했다고 /ops가 영구 빨강이 되면 그 신호를 아무도 안 본다.
@@ -58,7 +58,7 @@ def tick(cfg: Config, core: CoreClient, bot: Bot, store: Store, now: datetime) -
         ws = last_monday(today)
         if not store.weekly_sent(ws.isoformat()):
             try:
-                r = run_weekly(core, bot, store, cfg.team_id, ws, cfg.llm_provider)
+                r = run_weekly(core, bot, store, cfg.org_id, ws, cfg.llm_provider)
                 store.record_run("weekly", r["status"] == "sent", str(r))
                 core.report_status(r["status"] == "sent", {"job": "weekly", **r})
                 results.append({"job": "weekly", **r})
@@ -74,7 +74,7 @@ def loop(cfg: Config):
     core = CoreClient(cfg.core_url, cfg.core_token)
     store = Store(cfg.db_path)
     bot = Bot(cfg.bot_token, cfg.channel_id, store)
-    log.info("discord_service 시작 (team=%s, send_hour=%s)", cfg.team_id, cfg.send_hour)
+    log.info("discord_service 시작 (org=%s, send_hour=%s)", cfg.org_id, cfg.send_hour)
     while True:
         try:
             tick(cfg, core, bot, store, datetime.now(cfg.tz))

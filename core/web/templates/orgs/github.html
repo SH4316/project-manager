@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% block title %}{{ org.name }} · GitHub{% endblock %}
+{% block main %}
+{% include "orgs/_tabs.html" %}
+<div class="card">
+  <h2>설치 상태</h2>
+  {% if install %}
+  <p class="row">연결됨 · {{ install.account_login }}
+    <span class="badge">{% if install.repo_selection == "all" %}전체 저장소{% else %}선택된 저장소{% endif %}</span>
+  </p>
+  <p class="muted t13">설치 시각 {{ install.installed_at|date:"Y-m-d H:i" }}</p>
+  <a class="btn sm" target="_blank" rel="noopener"
+     href="https://github.com/organizations/{{ install.account_login }}/settings/installations/{{ install.installation_id }}">GitHub에서 설정</a>
+  {% else %}
+  <p class="muted t13">이 조직에 아직 GitHub 앱이 설치되지 않았습니다.</p>
+  <a class="btn primary" href="{% url 'github_install' org.pk %}">GitHub 앱 설치</a>
+  {% endif %}
+  <p class="muted t13">이 앱이 할 수 있는 것: 저장소 내용 읽기·브랜치 만들기 · 이슈 읽기·쓰기 · PR 읽기 · 조직 멤버와 팀 관리</p>
+  <p class="muted t13">할 수 없는 것: 저장소 삭제·설정 변경, 브랜치 보호 규칙, 저장소 권한 부여, PR 병합</p>
+</div>
+<div class="card">
+  <h2>내 GitHub 연결</h2>
+  {% if identity %}
+  <p class="row">연결됨 · @{{ identity.login }} · 접근 가능 저장소 {{ identity.repos|length }}개</p>
+  <p class="muted t13">{% if identity.repos_checked_at %}{{ identity.repos_checked_at|date:"Y-m-d H:i" }} 마지막 확인{% else %}아직 확인하지 않았습니다.{% endif %}</p>
+  <form method="post" action="{% url 'github_refresh' %}">{% csrf_token %}<button class="btn sm">다시 확인</button></form>
+  {% else %}
+  <p class="muted t13">GitHub 계정을 연결하지 않았습니다.</p>
+  <a class="btn sm" href="{% url 'profile' %}">프로필에서 연결</a>
+  {% endif %}
+</div>
+<div class="card">
+  <h2>저장소 연결 현황</h2>
+  <table class="grid">
+    <thead><tr><th>프로젝트</th><th>저장소</th><th></th></tr></thead>
+    <tbody>
+    {% for p in projects %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td>{% if p.repo %}연결됨 · {{ p.repo.full_name }}{% else %}<span class="muted">미연결</span>{% endif %}</td>
+      <td><a class="btn sm" href="{% url 'project_repo' p.pk %}">저장소 설정</a></td>
+    </tr>
+    {% empty %}<tr><td colspan="3" class="muted">프로젝트가 없습니다.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

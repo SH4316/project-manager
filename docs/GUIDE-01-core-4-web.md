@@ -1,5 +1,8 @@
 # 구현 지시서 01-4: core — 웹 화면 (Step 6)
 
+
+> **이 문서는 2026-09-10에 끝난 최초 구축의 기록이다.** 지금 할 일은 [GUIDE-V2-00-overview.md](GUIDE-V2-00-overview.md)부터 시작하는 묶음이다. 이 문서에 나오는 `Team`·`teams`·"팀"은 2026-09-11 개명 전 용어로 **조직**을 뜻한다. 대조표는 [GUIDE-V2-01](GUIDE-V2-01-org-teams.md) §1에 있다.
+
 이전: [01-3](GUIDE-01-core-3-api.md). Django 템플릿 + HTMX + 직접 쓴 CSS. SPA 없음. 뷰는 전부 함수형이고 업무 규칙은 services만 부른다.
 
 개정 2026-09-10: 목업(`README.md`, `산돌이 업무 목업 v2.dc.html`, `TaskRow2.dc.html`) 기준으로 전면 재작성. 색·크기·문구는 README 표가 원본이다. 이 문서와 README가 다르면 README를 따르고 완료 보고에 적는다.

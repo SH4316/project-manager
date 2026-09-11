@@ -16,6 +16,8 @@
 | [PLAN.md](PLAN.md) | 기획 배경과 전체 계획 |
 | [docs/SPEC.md](docs/SPEC.md) | 원래 요구사항 |
 | [docs/IMPL-PLAN.md](docs/IMPL-PLAN.md) | 지시서와 목업의 정합 결정표 (2026-09-10) |
+| [docs/IMPL-PLAN-2.md](docs/IMPL-PLAN-2.md) | 조직·팀 재구성과 GitHub 통합 결정 (2026-09-11) |
+| [docs/GUIDE-V2-00-overview.md](docs/GUIDE-V2-00-overview.md) ~ [V2-08](docs/GUIDE-V2-08-github-write.md) | 지금 진행 중인 라운드의 구현 지시서 |
 | [docs/GUIDE-00-rules.md](docs/GUIDE-00-rules.md) | 공통 규칙 (가장 먼저 읽는다) |
 | [docs/GUIDE-01-core-1-setup-models.md](docs/GUIDE-01-core-1-setup-models.md) ~ [01-5](docs/GUIDE-01-core-5-tests.md) | core 구현 지시서 |
 | [docs/GUIDE-02-discord.md](docs/GUIDE-02-discord.md) | discord_service 구현 지시서 |
@@ -69,9 +71,10 @@ docker compose up -d --build              # db·web·mcp만 뜬다
 docker compose exec web python manage.py createsuperuser
 ```
 
-- 웹: **http://localhost:8000** (`web`이 `127.0.0.1:8000`에 붙는다)
+- 웹: **http://localhost:8000** (`web`이 `0.0.0.0:8000`에 붙는다)
 - MCP: **http://localhost:8080** · Postgres: `127.0.0.1:5432`
-- 세 포트 모두 **루프백만** 바인딩한다. 바깥에서 들어오는 HTTPS는 Cloudflare Tunnel(`cloudflared`)이 넘긴다.
+- `web`의 8000번만 **바깥에 열려 있다.** 다른 장비의 리버스 프록시(NginxProxyManager)가 여기로 붙기 때문이다. 방화벽에서 **프록시 장비 IP만** 8000번을 열어 둔다 — 직접 오는 요청은 평문 HTTP다. Cloudflare Tunnel만 쓴다면 `compose.yml`의 `web` 포트를 `"127.0.0.1:8000:8000"`으로 되돌린다.
+- MCP와 Postgres는 루프백만 바인딩한다.
 
 `discord`·`discord-bot`·`cloudflared`는 **프로필**로 빼 두었다. 시크릿이 없으면 기동에 실패하므로
 기본 `up`에서 뜨지 않고, 필요할 때만 켠다:
@@ -131,7 +134,7 @@ docker compose exec -T web python manage.py loaddata --format=json - < devdata.j
 | 이름 | 설명 |
 |---|---|
 | `CORE_TOKEN` | `discord-bot` 계정의 **`bot` 범위** API 토큰. 웹에서는 발급할 수 없다(서버 셸 한 줄로만) |
-| `TEAM_ID` | 알림 대상 팀 id |
+| `ORG_ID` | 알림 대상 조직 id |
 | `DISCORD_BOT_TOKEN` | Developer Portal → Bot → `[Reset Token]`. 이 파일 밖으로 내보내지 않는다 |
 | `DISCORD_CHANNEL_ID` | 주간 보고와 'DM을 보낼 수 없다' 통보가 갈 채널 id |
 | `TZ` | 기본 `Asia/Seoul` |
@@ -155,6 +158,8 @@ python -m http.server 8765
 ---
 
 # 디자인 핸드오프: 산돌이 태스크 (팀 태스크 관리 웹앱)
+
+> 여기의 팀은 개명 전 용어로 조직을 뜻한다.
 
 ## 최신 목업 동작 (2026-09-10)
 

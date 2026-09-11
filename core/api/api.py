@@ -5,7 +5,17 @@ from ninja.throttling import AuthRateThrottle
 from common.errors import ConflictError, ServiceError
 
 from .auth import BrowserSessionAuth, TokenAuth
-from .routers import discord, integrations, me, projects, reports, tasks, teams, today
+from .routers import (
+    discord,
+    github,
+    integrations,
+    me,
+    orgs,
+    projects,
+    reports,
+    tasks,
+    today,
+)
 from .serialize import project_out, task_out
 
 
@@ -47,11 +57,12 @@ def _conflict(request, exc):
 
 
 api.add_router("/", me.router)
-api.add_router("/teams", teams.router)
+api.add_router("/orgs", orgs.router)
 api.add_router("/projects", projects.router)
 api.add_router("/tasks", tasks.router)
 api.add_router("/today", today.router)
 api.add_router("/reports", reports.router)
 # 고정 경로를 먼저. /integrations/{name}/status가 /integrations/discord/...를 삼키지 않게 한다.
 api.add_router("/integrations/discord", discord.router)
+api.add_router("/integrations/github", github.router)
 api.add_router("/integrations", integrations.router)

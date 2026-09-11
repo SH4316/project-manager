@@ -6,9 +6,9 @@ from django.shortcuts import render
 
 from accounts.models import User
 from api.models import IntegrationStatus
+from orgs.models import Invite, Organization, OrgMembership, Team, TeamMembership
 from projects.models import Project
 from tasks.models import ChangeLog, ChecklistItem, Link, Task, TodayItem
-from teams.models import Invite, Membership, Team
 
 
 def healthz(request):
@@ -38,13 +38,15 @@ def export_json(request):
                 "auto_pull_days",
             ),
         ),
-        serializers.serialize("json", Team.objects.all()),
-        serializers.serialize("json", Membership.objects.all()),
+        serializers.serialize("json", Organization.objects.all()),
+        serializers.serialize("json", OrgMembership.objects.all()),
         serializers.serialize(
             "json",
             Invite.objects.all(),
-            fields=("team", "expires_at", "revoked_at", "use_count"),
+            fields=("org", "expires_at", "revoked_at", "use_count"),
         ),
+        serializers.serialize("json", Team.objects.all()),
+        serializers.serialize("json", TeamMembership.objects.all()),
         serializers.serialize("json", Project.objects.all()),
         serializers.serialize("json", Task.objects.all()),
         serializers.serialize("json", ChecklistItem.objects.all()),

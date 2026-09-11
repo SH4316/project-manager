@@ -1,32 +1,39 @@
+from collections import defaultdict
 from datetime import date, timedelta
 
 from django.db.models import Count, Q
 
 from common.dates import kst_week_range, today_kst, week_bounds
+from orgs.models import TeamMembership
 from tasks.brief import task_brief, user_brief
 from tasks.models import ChangeLog, Task
 
 
-def _open_qs(team):
-    return Task.objects.filter(project__team=team, project__is_archived=False, status__in=Task.OPEN)
+def _open_qs(org):
+    return Task.objects.filter(project__org=org, project__is_archived=False, status__in=Task.OPEN)
 
 
-def team_status(team) -> dict:
-    """팀 현황 지표. 키: counts, by_project, by_assignee, projects_without_owner"""
+def org_status(org) -> dict:
+    """조직 지표. 키: counts, by_project, by_assignee, capacity, projects_without_owner"""
     today = today_kst()
     monday, sunday = week_bounds(today)
-    open_qs = _open_qs(team)
+    open_qs = _open_qs(org)
     counts = {
         "open": open_qs.count(),
-        "overdue": open_qs.filter(due_date__lt=today).count(),
-        "due_this_week": open_qs.filter(due_date__gte=monday, due_date__lte=sunday).count(),
+        "doing": open_qs.filter(status="doing").count(),
         "review": open_qs.filter(status="review").count(),
         "blocked": open_qs.filter(status="blocked").count(),
+        "overdue": open_qs.filter(due_date__lt=today).count(),
+        "due_this_week": open_qs.filter(due_date__gte=monday, due_date__lte=sunday).count(),
         "no_due": open_qs.filter(due_date__isnull=True).count(),
+        "done": Task.objects.filter(
+            project__org=org, project__is_archived=False, status="done"
+        ).count(),
     }
+
     projects = (
-        team.projects.filter(is_archived=False)
-        .prefetch_related("owners")
+        org.projects.filter(is_archived=False)
+        .prefetch_related("owners", "teams")
         .annotate(
             open_count=Count("tasks", filter=Q(tasks__status__in=Task.OPEN)),
             overdue_count=Count(
@@ -44,6 +51,7 @@ def team_status(team) -> dict:
             "name": p.name,
             "status": p.status,
             "owners": [user_brief(u) for u in p.owners.all()],
+            "teams": [{"id": t.pk, "name": t.name} for t in p.teams.all()],
             "open": p.open_count,
             "overdue": p.overdue_count,
             "review": p.review_count,
@@ -53,28 +61,68 @@ def team_status(team) -> dict:
         }
         for p in projects
     ]
+
     by_assignee = list(
         open_qs.values("assignee_id", "assignee__display_name")
         .annotate(
             open=Count("id"),
+            doing=Count("id", filter=Q(status="doing")),
             overdue=Count("id", filter=Q(due_date__lt=today)),
             review=Count("id", filter=Q(status="review")),
             blocked=Count("id", filter=Q(status="blocked")),
         )
         .order_by("-open")
     )
+
+    # 부하 현황은 미완료가 하나도 없는 사람도 보여야 한다. by_assignee는 집계라
+    # 태스크가 있는 사람만 나오므로 활성 멤버 전원을 기준으로 다시 만든다.
+    rows = {r["assignee_id"]: r for r in by_assignee}
+    tags_by_user = {m.user_id: m.tags for m in org.memberships.all()}
+    teams_by_user = defaultdict(list)
+    for tm in TeamMembership.objects.filter(team__org=org).select_related("team"):
+        teams_by_user[tm.user_id].append({"id": tm.team_id, "name": tm.team.name})
+
+    members = list(org.members.filter(is_active=True).order_by("display_name"))
+    capacity = []
+    for u in members:
+        r = rows.get(u.pk, {})
+        doing, review = r.get("doing", 0), r.get("review", 0)
+        overdue = r.get("overdue", 0)
+        capacity.append(
+            {
+                "user": user_brief(u),
+                "open": r.get("open", 0),
+                "doing": doing,
+                "review": review,
+                "blocked": r.get("blocked", 0),
+                "overdue": overdue,
+                "load": doing + review,
+                "tags": tags_by_user.get(u.pk, []),
+                "teams": teams_by_user.get(u.pk, []),
+            }
+        )
+    max_load = max([c["load"] for c in capacity], default=0) or 1
+    for c in capacity:
+        c["bar"] = round(c["load"] / max_load * 100)
+        c["over"] = c["load"] >= 4 or c["overdue"] >= 2
+        c["verdict"] = "과부하" if c["over"] else "여유" if c["load"] <= 1 else "적정"
+    counts["avg_doing"] = (
+        round(sum(c["doing"] for c in capacity) / len(members), 1) if members else 0.0
+    )
+
     projects_without_owner = list(
-        team.projects.filter(is_archived=False, owners__isnull=True).values("id", "name")
+        org.projects.filter(is_archived=False, owners__isnull=True).values("id", "name")
     )
     return {
         "counts": counts,
         "by_project": by_project,
         "by_assignee": by_assignee,
+        "capacity": capacity,
         "projects_without_owner": projects_without_owner,
     }
 
 
-def weekly(team, week_start: date) -> dict:
+def weekly(org, week_start: date) -> dict:
     """주간 집계. week_start는 월요일이어야 한다."""
     if week_start.weekday() != 0:
         raise ValueError("week_start must be a Monday")
@@ -83,11 +131,11 @@ def weekly(team, week_start: date) -> dict:
     this_monday, this_sunday = week_bounds(period_end)
     today = today_kst()
 
-    team_task_ids = Task.objects.filter(project__team=team).values("id")
+    org_task_ids = Task.objects.filter(project__org=org).values("id")
     logs = ChangeLog.objects.filter(
         target_type="task",
         field="status",
-        target_id__in=team_task_ids,
+        target_id__in=org_task_ids,
         created_at__gte=start,
         created_at__lt=end,
     )
@@ -106,7 +154,7 @@ def weekly(team, week_start: date) -> dict:
         )
         return [task_brief(t) for t in qs]
 
-    open_qs = _open_qs(team).select_related("project", "assignee")
+    open_qs = _open_qs(org).select_related("project", "assignee")
     due_this_week = [
         task_brief(t)
         for t in open_qs.filter(due_date__gte=this_monday, due_date__lte=this_sunday).order_by(
@@ -117,7 +165,7 @@ def weekly(team, week_start: date) -> dict:
     blocked = [task_brief(t) for t in open_qs.filter(status="blocked").order_by("id")]
 
     by_project = []
-    for p in team.projects.filter(is_archived=False).order_by("name"):
+    for p in org.projects.filter(is_archived=False).order_by("name"):
         p_ids = set(Task.objects.filter(project=p).values_list("id", flat=True))
         by_project.append(
             {
@@ -131,7 +179,7 @@ def weekly(team, week_start: date) -> dict:
         )
 
     return {
-        "team": {"id": team.pk, "name": team.name},
+        "org": {"id": org.pk, "name": org.name},
         "period_start": week_start.isoformat(),
         "period_end": period_end.isoformat(),
         "completed": briefs(completed_ids),
@@ -151,6 +199,6 @@ def weekly(team, week_start: date) -> dict:
             "no_due": open_qs.filter(due_date__isnull=True).count(),
         },
         "members": [
-            user_brief(u) for u in team.members.filter(is_active=True).order_by("display_name")
+            user_brief(u) for u in org.members.filter(is_active=True).order_by("display_name")
         ],
     }

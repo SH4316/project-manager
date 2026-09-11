@@ -1,0 +1,21 @@
+<form class="stack" hx-post="{% if ms %}{% url 'milestone_edit' ms.pk %}{% else %}{% url 'milestone_new' org.pk %}{% endif %}" hx-target="#dialog" hx-swap="innerHTML">
+  <h2 class="t20">{% if ms %}마일스톤 수정{% else %}새 마일스톤{% endif %}</h2>
+  <label class="field">프로젝트
+    <select class="select" name="project" required>
+      <option value="">선택</option>
+      {% for p in projects %}<option value="{{ p.pk }}"{% if values.project == p.pk|stringformat:"s" %} selected{% endif %}>{{ p.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field">이름<input class="input" name="name" value="{{ values.name }}" required autofocus></label>
+  <label class="field">시작일<input class="input" type="date" name="start_date" value="{{ values.start_date }}"></label>
+  <label class="field">목표일<input class="input" type="date" name="target_date" value="{{ values.target_date }}" required></label>
+  <div class="section">
+    <span class="label">상태</span>
+    <div class="radios">{% for code, label in statuses %}<label class="radio-card"><input type="radio" name="status" value="{{ code }}"{% if values.status == code %} checked{% endif %}><b>{{ label }}</b></label>{% endfor %}</div>
+  </div>
+  {% for msg in errors.values %}<div class="error">{{ msg }}</div>{% endfor %}
+  <div class="row">
+    <button class="btn primary">{% if ms %}변경 내용 저장{% else %}마일스톤 만들기{% endif %}</button>
+    <button type="button" class="btn" data-action="close-dialog">취소</button>
+  </div>
+</form>

@@ -69,26 +69,33 @@ p { margin: 0; }
 }
 .menu-list a:hover, .menu-list button:hover { background: var(--bg-secondary); }
 .frame { display: flex; align-items: flex-start; }
-.rail {
-  position: sticky; top: 64px; flex: none; width: 190px; max-height: calc(100vh - 64px); overflow: auto;
-  padding: 16px 8px; display: flex; flex-direction: column; gap: 2px;
-}
-.rail a {
-  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px; border-radius: 8px;
-  color: var(--text-primary); text-decoration: none; font-size: 13px; white-space: nowrap; overflow: hidden;
-}
+.rail { position: sticky; top: 64px; flex: none; width: 200px; padding: 16px 8px; display: flex; flex-direction: column; gap: 2px; }
+.rail.collapsed { width: 56px; }
+.rail-head { display: flex; align-items: center; gap: 8px; padding: 0 6px 6px; }
+.rail-head .grow { flex: 1; min-width: 0; }
+.rail-list { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 248px); min-height: 120px; overflow-y: auto; padding-right: 2px; }
+.rail a { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: 8px; color: var(--text-primary); text-decoration: none; font-size: 13px; }
+.rail a .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail a[aria-current="page"] { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
-.rail .initial {
-  flex: none; width: 24px; height: 24px; border-radius: 6px; background: var(--bg-fill);
-  display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
-}
+.rail .initial { flex: none; width: 24px; height: 24px; border-radius: 6px; background: var(--bg-fill); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.rail.collapsed .rail-only, .rail.collapsed a .label, .rail.collapsed a .count { display: none; }
+.rail.collapsed .rail-head { justify-content: center; padding: 0 0 6px; }
+.rail-new { height: 40px; padding: 0 10px; text-align: left; }
 .layout { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 16px; padding: 24px; }
 .layout > main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 aside#panel { flex: 1 1 380px; max-width: 480px; position: sticky; top: 88px; max-height: calc(100vh - 112px); overflow: auto; }
 aside#panel:empty { display: none; }
+.layout.wide { position: relative; }
 .layout.wide > main { display: none; }
-.layout.wide aside#panel { flex: 9999 1 480px; max-width: none; }
+.layout.wide aside#panel {
+  position: fixed; inset: 64px 0 0 0; z-index: 20; max-width: none; max-height: none;
+  overflow: auto; padding: 24px; background: rgba(25, 31, 40, .28);
+}
+.layout.wide aside#panel .panel { max-width: 820px; margin: 0 auto; padding: 32px; gap: 20px; }
 .layout.wide .panel-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.tabs a { height: 44px; padding: 0 14px; display: inline-flex; align-items: center; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.tabs a[aria-current="page"] { border-bottom-color: var(--primary); color: var(--primary); font-weight: 700; }
 
 /* ---- 카드 · 버튼 · 입력 ---- */
 .card {
@@ -138,6 +145,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; min-height: 4
 }
 .tile b { font-size: 26px; line-height: 32px; font-weight: 700; }
 .tile span { font-size: 13px; color: var(--text-secondary); }
+.tile.danger b { color: var(--danger); }
 
 /* ---- 태스크 행 (TaskRow2) ---- */
 ul.tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -181,8 +189,7 @@ ul.tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .group { display: flex; flex-direction: column; gap: 12px; }
 .subgroup { display: flex; flex-direction: column; gap: 8px; }
 .subgroup .head { display: flex; align-items: center; gap: 12px; }
-.subgroup .bar { flex: 1; height: 8px; border-radius: 999px; background: var(--bg-fill); overflow: hidden; }
-.subgroup .bar i { display: block; height: 100%; background: var(--primary); }
+.subgroup .bar { flex: 1; }   /* 나머지는 아래 공용 .bar 규칙이 맡는다 */
 .subgroup ul.tasks { border-left: 2px solid var(--border); padding-left: 12px; }
 table.grid { width: 100%; border-collapse: collapse; }
 table.grid th, table.grid td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -241,7 +248,6 @@ dialog::backdrop { background: rgba(15,50,60,.35); }
 .cal a.sel { border-color: var(--primary); background: var(--primary-bg); }
 .cal a small { font-size: 10px; color: var(--primary); }
 .cal a.today small { color: var(--on-primary); }
-.hours div { height: 32px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
 
 /* ---- 반응형 ---- */
 @media (max-width: 1150px) {
@@ -263,3 +269,66 @@ dialog::backdrop { background: rgba(15,50,60,.35); }
   .today-columns > .schedule { max-width: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- 칸반 드래그 (V2-03) ---- */
+.board .col { display: flex; flex-direction: column; gap: 8px; min-height: 120px; padding: 8px; border: 1px dashed var(--border); border-radius: 8px; }
+.board .col.over { background: var(--primary-bg); border-color: var(--primary); border-style: solid; }
+.task-row[draggable="true"] { cursor: grab; }
+.task-row.dragging { opacity: .4; }
+
+/* ---- 부하 현황 · 로드맵 (V2-04) ---- */
+.grow { flex: 1; min-width: 0; }
+.badge.danger { border-color: var(--danger); color: var(--danger); font-weight: 700; }
+.load-row { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; }
+.load-row .name { flex: 0 0 140px; font-size: 16px; font-weight: 600; color: var(--text-primary); text-decoration: none; }
+.load-row .grow { flex: 1 1 220px; min-width: 0; }
+.bar { height: 8px; border-radius: 999px; background: var(--bg-fill); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--primary); }
+.tag { padding: 0 8px; border-radius: 999px; background: var(--bg-fill); font-size: 12px; line-height: 22px; }
+.chip[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); text-decoration: none; }
+.tl-head, .tl-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.tl-name { flex: 0 0 220px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tl-track { flex: 1; min-width: 0; position: relative; height: 28px; display: grid; grid-template-columns: repeat(3, 1fr); font-size: 12px; color: var(--text-secondary); }
+.tl-bar { position: absolute; top: 4px; height: 20px; border-radius: 6px; background: var(--primary-bg); overflow: hidden; }
+.tl-bar.planned { background: var(--bg-fill); border: 1px dashed var(--text-disabled); }
+.tl-bar i { display: block; height: 100%; background: var(--primary); }
+@media (max-width: 700px) { .tl-name { flex-basis: 120px; } }
+
+/* ---- 회의록 (V2-05) ---- */
+.notes-columns { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.notes-columns > .list { flex: 1 1 320px; min-width: 0; }
+.notes-columns > .card:last-child { flex: 9999 1 420px; min-width: 0; }
+.note-item { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); text-align: left; cursor: pointer; }
+.note-item.sel { box-shadow: inset 3px 0 0 var(--primary); }
+.doc { display: flex; flex-direction: column; min-height: 360px; padding: 8px 0; cursor: text; }
+.blk { padding: 2px 6px; font-size: 15px; line-height: 24px; display: flex; gap: 8px; align-items: baseline; }
+.blk .txt { flex: 1; min-width: 0; }
+.blk .mk { flex: none; color: var(--text-secondary); }
+.blk-h { display: block; padding-top: 8px; }
+.blk-h.h1 .txt { font-size: 26px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; }
+.blk-h.h2 .txt { font-size: 20px; line-height: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.blk-h.h3 .txt { font-size: 17px; line-height: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.blk-quote .txt { padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+.blk-todo .txt.done { text-decoration: line-through; color: var(--text-secondary); }
+.blk code { background: var(--bg-fill); border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.blk hr { width: 100%; border: 0; border-top: 1px solid var(--border); }
+.blk-edit { display: block; width: 100%; padding: 2px 6px; border: 0; border-radius: 4px; background: var(--bg-secondary); outline: none; font: inherit; font-size: 15px; line-height: 24px; resize: none; overflow: hidden; color: var(--text-primary); }
+
+/* ---- API 문서 (V2-06) ---- */
+.op > summary { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; min-height: 48px; padding: 8px 12px; }
+.op { border: 1px solid var(--border); border-radius: 8px; }
+.op[open] { border-color: var(--primary); background: var(--bg-secondary); }
+.op .method { min-width: 64px; padding: 0 8px; border-radius: 4px; color: #fff; font-size: 12px; line-height: 24px; font-weight: 700; text-align: center; }
+.op .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; font-weight: 600; }
+.op .grow { flex: 1 1 160px; min-width: 0; }
+.op pre { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 18px; }
+
+/* ---- GitHub 패널 블록 (V2-07) ---- */
+.git-steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.git-steps > li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; }
+.git-steps .dot { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border); flex: none; }
+.git-steps > li.progress .dot { background: var(--primary-bg); color: var(--primary); border-color: transparent; }
+.git-steps > li.done .dot { background: var(--primary); color: var(--on-primary); border-color: transparent; }
+.git-steps > li.done > span:first-of-type ~ span { color: var(--text-primary); }
+.git-commits { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.git-commits code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

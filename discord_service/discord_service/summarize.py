@@ -5,7 +5,7 @@ def fixed_summary(data: dict) -> str:
     """LLM 없이 만드는 고정 형식 보고서."""
     c = data["counts"]
     head = (
-        f"📊 주간 업데이트 · {data['team']['name']} · "
+        f"📊 주간 업데이트 · {data['org']['name']} · "
         f"{data['period_start']} ~ {data['period_end']} (직전 주)"
     )
     quiet = (

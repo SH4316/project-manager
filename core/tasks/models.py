@@ -151,7 +151,15 @@ class TodayItem(models.Model):
 
 
 class Link(models.Model):
-    KINDS = [("doc", "문서"), ("pr", "PR"), ("repo", "저장소"), ("other", "기타")]
+    KINDS = [
+        ("doc", "문서"),
+        ("issue", "이슈"),
+        ("dash", "대시보드"),
+        ("other", "기타"),
+        # 아래 둘은 이제 폼에서 고를 수 없다. PR·저장소는 GitHub 연결이 자동으로 붙인다.
+        ("pr", "PR"),
+        ("repo", "저장소"),
+    ]
 
     project = models.ForeignKey(
         "projects.Project", on_delete=models.CASCADE, null=True, blank=True, related_name="links"
@@ -181,7 +189,7 @@ class Link(models.Model):
 class ChangeLog(models.Model):
     TARGETS = [("task", "task"), ("project", "project")]
     # source는 max_length=4다. "discord"는 안 들어가므로 코드는 "dc", 표시는 "Discord".
-    SOURCES = [("web", "웹"), ("api", "API"), ("mcp", "AI"), ("dc", "Discord")]
+    SOURCES = [("web", "웹"), ("api", "API"), ("mcp", "AI"), ("dc", "Discord"), ("gh", "GitHub")]
 
     target_type = models.CharField(max_length=10, choices=TARGETS)
     target_id = models.PositiveBigIntegerField()
@@ -189,7 +197,12 @@ class ChangeLog(models.Model):
     old_value = models.TextField(blank=True)
     new_value = models.TextField(blank=True)
     note = models.CharField(max_length=200, blank=True)
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    # GitHub 이벤트의 행위자가 아직 PM 계정과 이어지지 않았을 때 로그인을 남긴다(GUIDE-V2-07).
+    # 그 사람이 GitHub를 연결하면 소급해서 actor를 채운다.
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+", null=True, blank=True
+    )
+    external_actor = models.CharField(max_length=100, blank=True)
     source = models.CharField(max_length=4, choices=SOURCES)
     token = models.ForeignKey(
         "accounts.ApiToken", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

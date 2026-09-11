@@ -1,8 +1,8 @@
 from ninja.errors import HttpError
 
+from orgs.models import Organization
+from orgs.services import is_member
 from tasks.services import get_visible_task
-from teams.models import Team
-from teams.services import is_member
 
 
 def ctx(request) -> dict:
@@ -29,11 +29,11 @@ def task_or_404(request, task_id: int):
     return task
 
 
-def team_or_404(request, team_id: int):
-    team = Team.objects.filter(pk=team_id).first()
-    if team is None or not is_member(request.auth, team):
-        raise HttpError(404, "팀을 찾을 수 없습니다.")
-    return team
+def org_or_404(request, org_id: int):
+    org = Organization.objects.filter(pk=org_id).first()
+    if org is None or not is_member(request.auth, org):
+        raise HttpError(404, "조직을 찾을 수 없습니다.")
+    return org
 
 
 def clamp_page(limit: int, offset: int) -> tuple[int, int]:

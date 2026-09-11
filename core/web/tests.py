@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 import pytest
@@ -22,7 +23,7 @@ def test_root_redirects(client, member):
     assert client.get("/").headers["Location"] == "/today"
 
 
-def test_today_page_renders(logged, team, project, task):
+def test_today_page_renders(logged, org, project, task):
     body = logged.get("/today").content.decode()
     assert "오늘 태스크" in body
     assert "빠른 추가" in body
@@ -111,19 +112,19 @@ def test_extend_from_panel(logged, task):
     assert task.due_date == new
 
 
-def test_project_dialog_and_create(client, team, admin):
+def test_project_dialog_and_create(client, org, admin):
     client.login(username="admin1", password="pw12345678")
-    body = client.get(f"/projects/new?team={team.pk}", headers=HX).content.decode()
+    body = client.get(f"/projects/new?org={org.pk}", headers=HX).content.decode()
     assert "<form" in body
     assert "프로젝트 만들기" in body
     r = client.post(
         "/projects/new",
-        {"team": team.pk, "name": "챗봇", "status": "active", "owners": [admin.pk]},
+        {"org": org.pk, "name": "챗봇", "status": "active", "owners": [admin.pk]},
         headers=HX,
     )
     assert r.status_code == 204
     assert "/projects/" in r.headers["HX-Redirect"]
-    r = client.post("/projects/new", {"team": team.pk, "status": "active"}, headers=HX)
+    r = client.post("/projects/new", {"org": org.pk, "status": "active"}, headers=HX)
     assert r.status_code == 200
     assert "이름을 입력하세요" in r.content.decode()
 
@@ -154,8 +155,8 @@ def test_me_team_view_read_only(logged, task):
     assert "disabled" in body
 
 
-def test_team_page_renders(logged, team, project):
-    body = logged.get(f"/teams/{team.pk}").content.decode()
+def test_org_page_renders(logged, org, project):
+    body = logged.get(f"/orgs/{org.pk}").content.decode()
     assert "미완료" in body
     assert project.name in body
     assert "새 프로젝트" in body
@@ -183,12 +184,12 @@ def test_ops_requires_staff(client, member):
     assert client.get("/ops").status_code == 200
 
 
-def test_export_json_has_no_secrets(client, member, admin, team, task):
+def test_export_json_has_no_secrets(client, member, admin, org, task):
     """백업에 비밀번호·초대 token·Discord 연결 코드가 들어가지 않는다."""
     from accounts.services import issue_link_code
-    from teams.services import create_invite
+    from orgs.services import create_invite
 
-    invite = create_invite(team, admin)
+    invite = create_invite(org, admin)
     code = issue_link_code(admin)
     User.objects.filter(pk=member.pk).update(is_staff=True, is_superuser=True)
     client.login(username="member1", password="pw12345678")
@@ -216,22 +217,22 @@ def test_token_shown_once(logged):
     assert "pm_" not in logged.get("/settings/tokens").content.decode()
 
 
-def test_schedule_card_is_scoped_to_team_membership(logged, task, project, member):
-    """일정 카드도 팀 범위를 따른다. 팀에서 빠지면 마감이 달력에 남지 않는다."""
-    from teams.models import Membership
+def test_schedule_card_is_scoped_to_org_membership(logged, task, project, member):
+    """일정 카드도 조직 범위를 따른다. 조직에서 빠지면 마감이 달력에 남지 않는다."""
+    from orgs.models import OrgMembership
 
     body = logged.get("/today?schedule=1&cal=month").content.decode()
     assert task.title in body
 
-    Membership.objects.filter(team=project.team, user=member).delete()
+    OrgMembership.objects.filter(org=project.org, user=member).delete()
     body = logged.get("/today?schedule=1&cal=month").content.decode()
     assert task.title not in body
 
 
 def test_non_numeric_ids_are_404_not_500(logged, project):
     """쿼리·경로의 id가 숫자가 아니면 404다. filter(pk="abc")는 ValueError -> 500이 된다."""
-    assert logged.get("/projects/new?team=abc").status_code == 404
-    assert logged.post("/projects/new", {"team": "abc", "name": "x"}, headers=HX).status_code == 404
+    assert logged.get("/projects/new?org=abc").status_code == 404
+    assert logged.post("/projects/new", {"org": "abc", "name": "x"}, headers=HX).status_code == 404
 
 
 def test_weird_digit_query_params_do_not_crash(logged, task):
@@ -350,30 +351,30 @@ def test_secret_filter_redacts_tokens(caplog):
     assert "pm_" not in rec.getMessage()
 
 
-# ---------- 팀원 관리 (팀 관리자 전용) ----------
+# ---------- 멤버 관리 (조직 관리자 전용) ----------
 
 
 @pytest.fixture
-def as_admin(client, team):
+def as_admin(client, org):
     client.login(username="admin1", password="pw12345678")
     return client
 
 
-def test_admin_pages_are_hidden_from_members(logged, team):
-    """팀원에게는 관리 화면이 아예 없는 것처럼 보인다(403이 아니라 404)."""
-    assert logged.get(f"/teams/{team.pk}/members").status_code == 404
+def test_admin_pages_are_hidden_from_members(logged, org):
+    """멤버에게는 관리 화면이 아예 없는 것처럼 보인다(403이 아니라 404)."""
+    assert logged.get(f"/orgs/{org.pk}/teams").status_code == 404
 
 
-def test_webhook_routes_are_gone(as_admin, team):
+def test_webhook_routes_are_gone(as_admin, org):
     """알림 채널 화면은 대체가 아니라 삭제다. 관리자에게도 경로가 없다."""
-    for path in (f"/teams/{team.pk}/webhooks", f"/teams/{team.pk}/webhooks/new"):
+    for path in (f"/orgs/{org.pk}/webhooks", f"/orgs/{org.pk}/webhooks/new"):
         assert as_admin.get(path).status_code == 404
         assert as_admin.post(path, {"name": "x", "url": "https://x"}).status_code == 404
 
 
-def test_members_page_shows_workload_and_discord_link(as_admin, team, task, member):
-    body = as_admin.get(f"/teams/{team.pk}/members").content.decode()
-    assert "팀원 관리" in body
+def test_members_page_shows_workload_and_discord_link(as_admin, org, task, member):
+    body = as_admin.get(f"/orgs/{org.pk}/teams").content.decode()
+    assert "멤버" in body
     assert member.display_name in body
     assert "연결" in body  # member 픽스처는 연결이 끝난 상태다
     assert "관리자 1명" in body
@@ -389,3 +390,399 @@ def test_token_form_cannot_mint_a_bot_scope_token(logged, member):
     r = logged.post("/settings/tokens", {"name": "봇", "scope": "bot"})
     assert r.status_code == 200  # 폼이 무효라 발급 없이 화면만 다시 그린다
     assert not ApiToken.objects.exists()
+
+
+# ---------- V2-02: 셸과 내비게이션 ----------
+
+
+def test_project_index_uses_session_then_first(logged, org, project, member):
+    """세션 프로젝트 → 조직 첫 프로젝트 순서."""
+    from projects.services import create_project
+
+    r = logged.get("/projects")
+    assert r.status_code == 302
+    assert r.headers["Location"] == f"/projects/{project.pk}"
+
+    p2 = create_project(org=org, name="다른 프로젝트", actor=member, owners=[member])
+    session = logged.session
+    session["project_id"] = p2.pk
+    session.save()
+    r = logged.get("/projects")
+    assert r.headers["Location"] == f"/projects/{p2.pk}"
+
+
+def test_project_index_empty_screen(logged, org):
+    r = logged.get("/projects")
+    assert r.status_code == 200
+    assert "아직 프로젝트가 없습니다" in r.content.decode()
+
+
+def test_rail_only_in_project_area(logged, org, project):
+    assert 'class="rail"' not in logged.get("/today").content.decode()
+    assert 'class="rail"' not in logged.get(f"/orgs/{org.pk}").content.decode()
+    assert 'class="rail"' in logged.get(f"/projects/{project.pk}").content.decode()
+
+
+def test_rail_shows_open_counts(logged, project, task):
+    body = logged.get(f"/projects/{project.pk}").content.decode()
+    assert '<span class="count t12 muted">1</span>' in body
+
+
+def test_org_tabs_hidden_for_member(logged, org):
+    body = logged.get(f"/orgs/{org.pk}").content.decode()
+    assert f"/orgs/{org.pk}/teams" not in body
+
+
+def test_org_teams_requires_admin(logged, org):
+    assert logged.get(f"/orgs/{org.pk}/teams").status_code == 404
+
+
+def test_team_crud_via_web(as_admin, org):
+    from orgs.models import Team
+
+    r = as_admin.post(f"/orgs/{org.pk}/teams/new", {"name": "디자인", "purpose": "UI"}, headers=HX)
+    assert r.status_code == 204
+    team = Team.objects.get(org=org, name="디자인")
+
+    r = as_admin.post(f"/teams/{team.pk}/edit", {"name": "디자인팀", "purpose": ""}, headers=HX)
+    assert r.status_code == 204
+    team.refresh_from_db()
+    assert team.name == "디자인팀"
+
+    r = as_admin.post(f"/teams/{team.pk}/delete")
+    assert r.status_code == 302
+    assert not Team.objects.filter(pk=team.pk).exists()
+
+
+def test_team_member_add_remove_via_web(as_admin, org, team, member, admin, outsider):
+    r = as_admin.post(f"/teams/{team.pk}/members", {"user": outsider.pk})
+    assert r.status_code == 302
+    assert not team.members.filter(pk=outsider.pk).exists()  # 조직 멤버만 추가된다
+
+    r = as_admin.post(f"/teams/{team.pk}/members", {"user": admin.pk})
+    assert r.status_code == 302
+    assert team.members.filter(pk=admin.pk).exists()
+
+    assert team.members.filter(pk=member.pk).exists()
+    r = as_admin.post(f"/teams/{team.pk}/members/{member.pk}/remove")
+    assert r.status_code == 302
+    assert not team.members.filter(pk=member.pk).exists()
+
+
+def test_member_tags_saved_and_normalized(as_admin, org, member):
+    from orgs.models import OrgMembership
+
+    membership = OrgMembership.objects.get(org=org, user=member)
+    r = as_admin.post(
+        f"/orgs/memberships/{membership.pk}/tags", {"tags": " 파이썬 , 파이썬, ,장고"}
+    )
+    assert r.status_code == 302
+    membership.refresh_from_db()
+    assert membership.tags == ["파이썬", "장고"]
+
+
+def test_project_dialog_sets_teams(as_admin, org, project, team, admin):
+    from tasks.models import ChangeLog
+
+    r = as_admin.post(
+        f"/projects/{project.pk}/edit",
+        {
+            "name": project.name,
+            "purpose": project.purpose,
+            "status": project.status,
+            "owners": [admin.pk],
+            "teams": [team.pk],
+            "version": project.version,
+        },
+        headers=HX,
+    )
+    assert r.status_code == 204
+    project.refresh_from_db()
+    assert team in project.teams.all()
+    assert ChangeLog.objects.filter(
+        target_type="project", target_id=project.pk, field="teams"
+    ).exists()
+
+
+def test_org_overview_tiles(logged, org, project, task):
+    from reports.services import org_status
+
+    st = org_status(org)
+    body = logged.get(f"/orgs/{org.pk}").content.decode()
+    for label in ("미완료", "진행 중", "검토 대기", "기한 초과", "막힘", "완료"):
+        assert label in body
+    assert f"<b>{st['counts']['open']}</b>" in body
+
+
+# ---------- V2-03: 칸반 드래그 ----------
+
+
+def test_board_always_has_done_column(logged, project, task):
+    body = logged.get(f"/projects/{project.pk}?view=board").content.decode()
+    assert 'class="col" data-status="done"' in body
+    assert 'class="col" data-status="cancelled"' not in body
+
+
+def test_board_columns_cover_all_statuses(logged, project, task):
+    body = logged.get(f"/projects/{project.pk}?view=board&include_closed=1").content.decode()
+    assert body.count('class="col" data-status="') == len(Task.STATUSES)
+
+
+def test_board_part_renders_only_board(logged, project, task):
+    r = logged.get(f"/projects/{project.pk}?view=board&part=board")
+    body = r.content.decode().strip()
+    assert body.startswith('<div id="board"')
+
+
+def test_drop_changes_status_and_returns_board(logged, task):
+    r = logged.post(
+        f"/tasks/{task.pk}/status",
+        {"status": "doing", "version": task.version, "from": "board"},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    assert 'id="board"' in r.content.decode()
+    assert "task-updated" in r.headers["HX-Trigger"]
+    task.refresh_from_db()
+    assert task.status == "doing"
+
+
+def test_drop_to_doing_without_due_shows_error_in_board(logged, project, member):
+    from tasks.services import create_task
+
+    t = create_task(
+        project=project, title="기한 없음", actor=member, source="web", no_due_reason="사유"
+    )
+    r = logged.post(
+        f"/tasks/{t.pk}/status",
+        {"status": "doing", "version": t.version, "from": "board"},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    body = r.content.decode()
+    assert 'id="board"' in body
+    assert "error" in body
+    t.refresh_from_db()
+    assert t.status == "todo"
+
+
+def test_drop_blocked_without_reason_shows_error_in_board(logged, task):
+    r = logged.post(
+        f"/tasks/{task.pk}/status",
+        {"status": "blocked", "version": task.version, "from": "board"},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    assert 'id="board"' in r.content.decode()
+    task.refresh_from_db()
+    assert task.status != "blocked"
+
+
+def test_drop_conflict_shows_message_in_board(logged, task):
+    r = logged.post(
+        f"/tasks/{task.pk}/status",
+        {"status": "doing", "version": task.version + 1, "from": "board"},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    assert 'id="board"' in r.content.decode()
+
+
+def test_row_draggable_only_in_board(logged, project, task):
+    body = logged.get(f"/projects/{project.pk}?view=board").content.decode()
+    assert 'draggable="true"' in body
+    body = logged.get(f"/projects/{project.pk}?view=list").content.decode()
+    assert 'draggable="true"' not in body
+
+
+def test_schedule_has_no_time_view(logged, task):
+    """?cal=time을 줘도 시간표는 없고 월 캘린더만 나온다."""
+    body = logged.get("/today?schedule=1&cal=time").content.decode()
+    assert 'class="hours"' not in body
+    assert '<div class="cal">' in body
+
+
+def test_schedule_cells_multiple_of_seven(member, task):
+    from datetime import date
+
+    from django.test import RequestFactory
+
+    from web.views.today import _schedule
+
+    req = RequestFactory().get("/today", {"month": "2026-09"})
+    req.user = member
+    ctx = _schedule(req, date(2026, 9, 12))
+    assert len(ctx["cal_cells"]) in (28, 35, 42)
+
+
+def test_schedule_month_nav(logged, task):
+    from common.dates import today_kst
+
+    body = logged.get("/today?schedule=1").content.decode()
+    assert "이전 달" in body
+    assert "다음 달" in body
+    assert "이번 달" not in body
+
+    this_month = today_kst().replace(day=1)
+    prev_month = (this_month - timedelta(days=1)).replace(day=1)
+    body = logged.get(f"/today?schedule=1&month={prev_month:%Y-%m}").content.decode()
+    assert "이번 달" in body
+
+
+def test_schedule_labels(logged, project, member):
+    from common.dates import today_kst
+    from tasks.services import create_task
+
+    due = today_kst() + timedelta(days=2)
+    create_task(project=project, title="라벨용", actor=member, source="web", due_date=due)
+
+    body = logged.get(f"/today?schedule=1&month={due:%Y-%m}&day={due.isoformat()}").content.decode()
+    assert "마감 1건" in body
+
+    empty_day = due + timedelta(days=1)
+    body = logged.get(
+        f"/today?schedule=1&month={empty_day:%Y-%m}&day={empty_day.isoformat()}"
+    ).content.decode()
+    assert "마감 없음" in body
+
+    other_month_day = (today_kst().replace(day=1) - timedelta(days=40)).isoformat()
+    body = logged.get(f"/today?schedule=1&day={other_month_day}").content.decode()
+    assert "날짜를 누르면 그날 마감이 보입니다" in body
+
+
+def test_schedule_counts_exclude_closed(logged, project, member):
+    from common.dates import today_kst
+    from tasks import services as ts
+    from tasks.services import create_task
+
+    due = today_kst() + timedelta(days=2)
+    t = create_task(project=project, title="완료됨", actor=member, source="web", due_date=due)
+    ts.transition(t, "doing", actor=member, source="web", expected_version=t.version)
+    t.refresh_from_db()
+    ts.transition(t, "review", actor=member, source="web", expected_version=t.version)
+    t.refresh_from_db()
+    ts.transition(t, "done", actor=member, source="web", expected_version=t.version)
+
+    body = logged.get(f"/today?schedule=1&month={due:%Y-%m}").content.decode()
+    assert "●" not in body
+
+
+# ---------- 회의록 (V2-05) ----------
+
+
+def test_note_create_and_list_scopes(logged, org, project, member):
+    from notes.services import create_note
+
+    team_note = create_note(org=org, actor=member, title="팀 공통 회의록")
+    project_note = create_note(org=org, actor=member, title="프로젝트 회의록", project=project)
+
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all").content.decode()
+    assert "팀 공통 회의록" in body and "프로젝트 회의록" in body
+
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=team").content.decode()
+    assert "팀 공통 회의록" in body and "프로젝트 회의록" not in body
+
+    body = logged.get(f"/orgs/{org.pk}/notes?scope={project.pk}").content.decode()
+    assert "프로젝트 회의록" in body and "팀 공통 회의록" not in body
+
+    assert team_note.pk and project_note.pk
+
+
+def test_note_save_bumps_version(logged, org, member):
+    from notes.services import create_note
+
+    note = create_note(org=org, actor=member)
+    r = logged.post(
+        f"/notes/{note.pk}/save", {"field": "title", "value": "새 제목", "version": note.version}
+    )
+    assert r.status_code == 204
+    assert r.headers["X-Note-Version"] == "2"
+    note.refresh_from_db()
+    assert note.title == "새 제목"
+    assert note.version == 2
+
+
+def test_note_save_conflict_returns_409(logged, org, member):
+    from notes.services import create_note
+
+    note = create_note(org=org, actor=member)
+    logged.post(
+        f"/notes/{note.pk}/save", {"field": "title", "value": "1차 수정", "version": note.version}
+    )
+    r = logged.post(
+        f"/notes/{note.pk}/save", {"field": "title", "value": "낡은 수정", "version": note.version}
+    )
+    assert r.status_code == 409
+
+
+def test_task_note_link_unlink(logged, org, task, member, project, admin):
+    from notes.services import create_note
+    from orgs.models import OrgMembership
+    from orgs.services import create_org
+
+    note = create_note(org=org, actor=member)
+    r = logged.post(f"/tasks/{task.pk}/notes", {"note": note.pk})
+    assert r.status_code == 200
+    assert note in task.meeting_notes.all()
+
+    r = logged.post(f"/tasks/{task.pk}/notes/{note.pk}/unlink")
+    assert r.status_code == 200
+    assert note not in task.meeting_notes.all()
+
+    other_org = create_org("다른 조직", "", admin)
+    OrgMembership.objects.create(org=other_org, user=member, role="member")
+    other_note = create_note(org=other_org, actor=member)
+    r = logged.post(f"/tasks/{task.pk}/notes", {"note": other_note.pk})
+    assert other_note not in task.meeting_notes.all()
+
+
+def test_link_form_hides_pr_repo(logged, task):
+    body = logged.get(f"/tasks/{task.pk}/panel").content.decode()
+    assert "PR" not in body.split('name="kind"')[1].split("</select>")[0]
+    assert "저장소" not in body.split('name="kind"')[1].split("</select>")[0]
+
+
+def test_notes_hidden_from_other_org(client, org, outsider, member):
+    from notes.services import create_note
+
+    note = create_note(org=org, actor=member)
+    client.login(username="outsider", password="pw12345678")
+    assert client.get(f"/orgs/{org.pk}/notes").status_code == 404
+    assert (
+        client.post(f"/notes/{note.pk}/save", {"field": "title", "value": "x"}).status_code == 404
+    )
+
+
+# ---- V2-06: API 문서 ----
+
+
+def test_spec_upload_json_only(logged, project):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    r = logged.post(
+        f"/projects/{project.pk}/api",
+        {"file": SimpleUploadedFile("spec.txt", b"not json", content_type="text/plain")},
+    )
+    assert "json 파일만" in r.content.decode()
+    assert not hasattr(project, "api_spec") or project.api_spec is None
+
+
+def test_spec_upload_saves_and_shows_endpoints(logged, project):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from projects.tests import SAMPLE_SPEC
+
+    body = json.dumps(SAMPLE_SPEC).encode()
+    r = logged.post(
+        f"/projects/{project.pk}/api",
+        {"file": SimpleUploadedFile("openapi.json", body, content_type="application/json")},
+    )
+    assert r.status_code == 302
+    body = logged.get(f"/projects/{project.pk}/api").content.decode()
+    assert "/tasks" in body
+    assert "tasks" in body
+
+
+def test_api_tab_requires_membership(client, outsider, project):
+    client.login(username="outsider", password="pw12345678")
+    assert client.get(f"/projects/{project.pk}/api").status_code == 404

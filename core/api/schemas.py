@@ -20,7 +20,7 @@ class UserBrief(Schema):
 class ProjectBrief(Schema):
     id: int
     name: str
-    team_id: int
+    org_id: int
 
 
 class TaskBriefOut(Schema):
@@ -141,12 +141,20 @@ class ProjectStats(Schema):
     done: int
 
 
+class TeamOut(Schema):  # 새 의미: 조직 안의 사람 묶음
+    id: int
+    name: str
+    purpose: str
+    member_count: int
+
+
 class ProjectOut(Schema):
     id: int
-    team_id: int
+    org_id: int
     name: str
     purpose: str
     owners: list[UserBrief]
+    teams: list[TeamOut]
     status: ProjectStatus
     status_label: str
     is_archived: bool
@@ -157,10 +165,11 @@ class ProjectOut(Schema):
 
 
 class ProjectCreateIn(Schema):
-    team_id: int
+    org_id: int
     name: str
     purpose: str = ""
     owner_ids: list[int] = []
+    team_ids: list[int] = []
     status: ProjectStatus = "preparing"
 
 
@@ -169,10 +178,11 @@ class ProjectPatchIn(Schema):
     name: str | None = None
     purpose: str | None = None
     owner_ids: list[int] | None = None
+    team_ids: list[int] | None = None
     status: ProjectStatus | None = None
 
 
-class TeamBrief(Schema):
+class OrgBrief(Schema):
     id: int
     name: str
     purpose: str
@@ -185,15 +195,16 @@ class MeOut(Schema):
     display_name: str
     discord_user_id: str | None
     auto_pull_days: int
-    teams: list[TeamBrief]
+    orgs: list[OrgBrief]
 
 
-class TeamOut(Schema):
+class OrgOut(Schema):  # 기존 TeamOut
     id: int
     name: str
     purpose: str
     role: str
     projects: list[ProjectOut]
+    teams: list[TeamOut]
 
 
 class InviteIn(Schema):
@@ -255,6 +266,11 @@ class DiscordExtendIn(Schema):
     discord_user_id: str
     due_date: date
     reason: str = ""
+
+
+class ApiSpecIn(Schema):
+    spec: dict
+    source_url: str = ""
 
 
 class ErrorOut(Schema):

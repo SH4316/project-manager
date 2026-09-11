@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
@@ -27,7 +27,6 @@ from .common import (
 
 ROW_OPTS = "next,move,noassignee,today"
 WEEKDAYS = "월화수목금토일"
-HOURS = [f"{h:02d}:00" for h in range(9, 19)]
 
 
 def _ctx(request):
@@ -44,43 +43,66 @@ def _ctx(request):
 
 
 def _schedule(request, day: date) -> dict:
-    """일정 카드. cal=time|month, day=YYYY-MM-DD. 기한에 시각이 없으므로 시간표는 눈금과 '종일' 목록만."""
-    mode = "month" if request.GET.get("cal") == "month" else "time"
+    """일정 카드. 월 캘린더만 있다. ?month=YYYY-MM&day=YYYY-MM-DD"""
+    raw = request.GET.get("month", "")
+    try:
+        month = date.fromisoformat(f"{raw}-01") if raw else day.replace(day=1)
+    except ValueError:
+        month = day.replace(day=1)
     try:
         sel = date.fromisoformat(request.GET.get("day", "")) if request.GET.get("day") else day
     except ValueError:
         sel = day
-    # today_view와 같은 범위(팀 소속 태스크만)를 쓴다.
+
     my_open = ts.visible_tasks(request.user).filter(assignee=request.user, status__in=Task.OPEN)
     counts = dict(
-        my_open.filter(due_date__year=sel.year, due_date__month=sel.month)
+        my_open.filter(due_date__year=month.year, due_date__month=month.month)
         .values_list("due_date")
         .annotate(n=Count("id"))
     )
-    cells = [
-        None
-        if d is None
-        else {
-            "day": d.day,
-            "n": counts.get(d, 0),
-            "today": d == day,
-            "sel": d == sel,
-            "url": f"{reverse('today')}?schedule=1&cal=month&day={d.isoformat()}",
-            "aria": f"{d.month}월 {d.day}일 마감 {counts.get(d, 0)}건",
-        }
-        for d in week_days(sel)
-    ]
-    sel_tasks = sorted(my_open.filter(due_date=sel), key=ts.by_due)
+    cells_src = week_days(month)
+    while len(cells_src) % 7:  # 28·35·42 중 하나가 되도록 뒤를 채운다
+        cells_src.append(None)
+
+    def url(d: date, m: date | None = None) -> str:
+        m = m or month
+        return f"{reverse('today')}?schedule=1&month={m:%Y-%m}&day={d.isoformat()}"
+
+    sel_in_month = (sel.year, sel.month) == (month.year, month.month)
+    sel_tasks = sorted(my_open.filter(due_date=sel), key=ts.by_due) if sel_in_month else []
+    prev_m = (month.replace(day=1) - timedelta(days=1)).replace(day=1)
+    next_m = (
+        date(month.year + 1, 1, 1) if month.month == 12 else date(month.year, month.month + 1, 1)
+    )
+    this_m = day.replace(day=1)
+
+    if not sel_in_month:
+        sel_label = "날짜를 누르면 그날 마감이 보입니다"
+    elif sel_tasks:
+        sel_label = f"{fmt_md(sel)} 마감 {len(sel_tasks)}건"
+    else:
+        sel_label = f"{fmt_md(sel)} 마감 없음"
+
     return {
-        "cal_mode": mode,
-        "cal_title": f"{sel.year}년 {sel.month}월"
-        if mode == "month"
-        else f"{fmt_md(day)} ({WEEKDAYS[day.weekday()]})",
-        "cal_cells": cells,
-        "cal_sel_label": f"{fmt_md(sel)} 마감 {len(sel_tasks)}건",
+        "cal_title": f"{month.year}년 {month.month}월",
+        "cal_prev": url(prev_m, prev_m),
+        "cal_next": url(next_m, next_m),
+        "cal_this": url(this_m, this_m) if month != this_m else "",
+        "cal_cells": [
+            None
+            if d is None
+            else {
+                "day": d.day,
+                "n": counts.get(d, 0),
+                "today": d == day,
+                "sel": sel_in_month and d == sel,
+                "url": url(d),
+                "aria": f"{d.month}월 {d.day}일 마감 {counts.get(d, 0)}건",
+            }
+            for d in cells_src
+        ],
+        "cal_sel_label": sel_label,
         "cal_sel_tasks": sel_tasks,
-        "due_today_tasks": sorted(my_open.filter(due_date=day), key=ts.by_due),
-        "hours": HOURS,
     }
 
 

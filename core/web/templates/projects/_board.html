@@ -1,0 +1,11 @@
+{% load rows %}
+<div id="board" class="board" data-include-closed="{% if include_closed %}1{% endif %}">
+  {% for code, label, col in columns %}
+  <div class="col" data-status="{{ code }}">
+    <h3>{{ label }} <span class="muted">{{ col|length }}</span></h3>
+    <ul class="tasks">{% for r in col %}{% task_row r %}{% endfor %}</ul>
+    {% if not col %}<span class="t12" style="color:var(--text-disabled)">여기로 끌어다 놓기</span>{% endif %}
+  </div>
+  {% endfor %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+</div>

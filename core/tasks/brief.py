@@ -12,7 +12,7 @@ def task_brief(t) -> dict:
         "id": t.pk,
         "number": t.number,
         "title": t.title,
-        "project": {"id": t.project_id, "name": t.project.name, "team_id": t.project.team_id},
+        "project": {"id": t.project_id, "name": t.project.name, "org_id": t.project.org_id},
         "assignee": user_brief(t.assignee),
         "status": t.status,
         "priority": t.priority,

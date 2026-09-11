@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% block title %}로드맵{% endblock %}
+{% block main %}
+{% include "orgs/_tabs.html" %}
+<section class="card">
+  <div class="card-head">
+    <h1 class="t24">로드맵</h1>
+    <button type="button" class="btn primary" hx-get="{% url 'milestone_new' org.pk %}" hx-target="#dialog" hx-swap="innerHTML">새 마일스톤</button>
+  </div>
+  <div class="stack" style="gap:4px">
+    <div class="tl-head"><span class="tl-name"></span>
+      <div class="tl-track">{% for m in months %}<span>{{ m.month }}월</span>{% endfor %}</div>
+    </div>
+    {% for r in rows %}
+    <div class="tl-row">
+      <div class="tl-name">
+        <span class="t16" style="font-weight:600">{{ r.ms.name }}</span>
+        <span class="t12 muted">{{ r.meta }}</span>
+      </div>
+      <div class="tl-track">
+        <div class="tl-bar{% if not r.ready %} planned{% endif %}" style="left:{{ r.left }}%;width:{{ r.width }}%">
+          <i style="width:{{ r.pct }}%"></i>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn sm" hx-get="{% url 'milestone_edit' r.ms.pk %}" hx-target="#dialog" hx-swap="innerHTML">수정</button>
+      </div>
+    </div>
+    {% empty %}<p class="muted">이 기간에 보여 줄 마일스톤이 없습니다.</p>{% endfor %}
+  </div>
+  {% if hidden %}<p class="muted t13">표시 기간 밖의 마일스톤 {{ hidden }}건은 보이지 않습니다.</p>{% endif %}
+  <p class="muted t13">점선은 준비 중, 채워진 막대는 진행률입니다.</p>
+</section>
+<section class="card">
+  <h2>프로젝트 의존성</h2>
+  <div class="stack">
+    {% for d in deps %}
+    <div class="row" style="padding:12px 16px;border:1px solid var(--border);border-radius:8px">
+      <span style="font-weight:600">{{ d.from_project.name }}</span>
+      <span aria-hidden="true" class="muted">→</span>
+      <span style="font-weight:600">{{ d.to_project.name }}</span>
+      <span class="grow muted t13">{{ d.note }}</span>
+      <span class="badge{% if d.is_blocking %} danger{% endif %}">{% if d.is_blocking %}차단{% else %}차단 없음{% endif %}</span>
+      <form method="post" action="{% url 'dependency_delete' d.pk %}">{% csrf_token %}<button class="btn sm">삭제</button></form>
+    </div>
+    {% empty %}<p class="muted">의존성이 없습니다.</p>{% endfor %}
+  </div>
+  <form method="post" action="{% url 'dependency_add' org.pk %}" class="row">{% csrf_token %}
+    <select class="select" name="from_project" required>
+      <option value="">시작 프로젝트</option>
+      {% for p in projects %}<option value="{{ p.pk }}">{{ p.name }}</option>{% endfor %}
+    </select>
+    <select class="select" name="to_project" required>
+      <option value="">의존 프로젝트</option>
+      {% for p in projects %}<option value="{{ p.pk }}">{{ p.name }}</option>{% endfor %}
+    </select>
+    <input class="input" name="note" placeholder="메모">
+    <label class="check t13"><input type="checkbox" name="is_blocking"> 차단</label>
+    <button class="btn sm">추가</button>
+  </form>
+</section>
+{% endblock %}

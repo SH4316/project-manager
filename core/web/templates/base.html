@@ -15,7 +15,8 @@
   <nav class="nav" aria-label="주 메뉴">
     <a href="{% url 'today' %}"{% if nav == "today" %} aria-current="page"{% endif %}>오늘</a>
     <a href="{% url 'me' %}"{% if nav == "me" %} aria-current="page"{% endif %}>내 태스크</a>
-    <a href="{% url 'team' %}"{% if nav == "team" %} aria-current="page"{% endif %}>팀 현황</a>
+    <a href="{% url 'project_index' %}"{% if nav == "project" %} aria-current="page"{% endif %}>프로젝트</a>
+    <a href="{% url 'org' %}"{% if nav == "org" %} aria-current="page"{% endif %}>조직</a>
     <a href="{% url 'search' %}"{% if nav == "search" %} aria-current="page"{% endif %}>검색</a>
   </nav>
   <span class="spacer"></span>
@@ -30,7 +31,7 @@
       <span class="muted t13" style="padding:4px 10px">{{ user.display_name }}</span>
       <a href="{% url 'profile' %}">프로필</a>
       <a href="{% url 'tokens' %}">API 토큰</a>
-      {% if team_count > 1 %}<a href="{% url 'team_list' %}">팀 전환</a>{% endif %}
+      {% if org_count > 1 %}<a href="{% url 'org_list' %}">조직 전환</a>{% endif %}
       {% if user.is_staff %}<a href="{% url 'ops' %}">운영 상태</a>{% endif %}
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">로그아웃</button></form>
     </div>
@@ -39,11 +40,28 @@
 </header>
 {% if user.is_authenticated %}
 <div class="frame">
-  <nav class="rail" aria-label="프로젝트">
-    {% for p in nav_projects %}
-    <a href="{% url 'project_detail' p.pk %}"{% if p.pk == current_project_id %} aria-current="page"{% endif %}><span class="initial">{{ p.name|slice:":1" }}</span><span>{{ p.name }}</span></a>
-    {% empty %}<span class="muted t13" style="padding:0 10px">프로젝트 없음</span>{% endfor %}
+  {% if nav == "project" %}
+  <nav class="rail" aria-label="프로젝트" data-rail>
+    <div class="rail-head">
+      <span class="t13 muted grow">프로젝트 {{ nav_projects|length }}</span>
+      <span class="t12 muted rail-only">미완료</span>
+      <button type="button" class="btn sm icon" data-action="toggle-rail"
+              aria-expanded="true" aria-label="프로젝트 목록 접기" title="목록 접기">«</button>
+    </div>
+    <div class="rail-list">
+      {% for p in nav_projects %}
+      <a href="{% url 'project_detail' p.pk %}" title="{{ p.name }}"
+         {% if p.pk == current_project_id %}aria-current="page"{% endif %}>
+        <span class="initial">{{ p.name|slice:":1" }}</span>
+        <span class="label">{{ p.name }}</span>
+        <span class="count t12 muted">{{ p.open_count }}</span>
+      </a>
+      {% empty %}<span class="muted t13 rail-only" style="padding:0 10px">프로젝트 없음</span>{% endfor %}
+    </div>
+    <button type="button" class="btn link rail-only rail-new"
+            hx-get="{% url 'project_new' %}?org={{ current_org.pk }}" hx-target="#dialog" hx-swap="innerHTML">＋ 새 프로젝트</button>
   </nav>
+  {% endif %}
   <div class="layout{% block layout_class %}{% endblock %}">
     <main>
       {% for m in messages %}<p class="{% if m.tags == 'error' %}error{% else %}muted{% endif %}">{{ m }}</p>{% endfor %}
@@ -57,5 +75,6 @@
 {% endif %}
 <dialog id="dialog"></dialog>
 <script src="{% static 'app.js' %}"></script>
+<script src="{% static 'notes.js' %}"></script>
 </body>
 </html>

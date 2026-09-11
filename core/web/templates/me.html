@@ -4,7 +4,7 @@
   <div class="card-head">
     <div><h1 class="t24">{{ view.title }}</h1><div class="muted t13">{{ view.hint }}</div></div>
     <select name="member" form="me-filter" class="select auto" aria-label="팀원" onchange="this.form.requestSubmit()">
-      <option value="0"{% if member_id == 0 %} selected{% endif %}>팀 전체</option>
+      <option value="0"{% if member_id == 0 %} selected{% endif %}>조직 전체</option>
       {% for m in members %}<option value="{{ m.pk }}"{% if m.pk == member_id %} selected{% endif %}>{% if m.pk == user.pk %}나{% else %}{{ m.display_name }}{% endif %}</option>{% endfor %}
     </select>
   </div>

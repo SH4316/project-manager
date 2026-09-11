@@ -1,6 +1,6 @@
 from ninja import Router
 
-from teams.models import Membership
+from orgs.models import OrgMembership
 
 from ..schemas import MeOut
 
@@ -10,15 +10,15 @@ router = Router(tags=["me"])
 @router.get("/me", response=MeOut)
 def me(request):
     u = request.auth
-    memberships = Membership.objects.filter(user=u).select_related("team").order_by("team__name")
+    memberships = OrgMembership.objects.filter(user=u).select_related("org").order_by("org__name")
     return {
         "id": u.pk,
         "username": u.username,
         "display_name": u.display_name,
         "discord_user_id": u.discord_user_id,
         "auto_pull_days": u.auto_pull_days,
-        "teams": [
-            {"id": m.team_id, "name": m.team.name, "purpose": m.team.purpose, "role": m.role}
+        "orgs": [
+            {"id": m.org_id, "name": m.org.name, "purpose": m.org.purpose, "role": m.role}
             for m in memberships
         ],
     }

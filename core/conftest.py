@@ -5,10 +5,10 @@ from django.utils import timezone
 
 from accounts.models import ApiToken, User
 from common.dates import today_kst
+from orgs.models import OrgMembership
+from orgs.services import add_team_member, create_org, create_team
 from projects.services import create_project
 from tasks.services import create_task
-from teams.models import Membership
-from teams.services import create_team
 
 
 @pytest.fixture
@@ -39,15 +39,22 @@ def outsider(db):
 
 
 @pytest.fixture
-def team(admin, member):
-    t = create_team("산돌이", "학생 챗봇 서비스", admin)
-    Membership.objects.create(team=t, user=member, role="member")
+def org(admin, member):
+    o = create_org("산돌이", "학생 챗봇 서비스", admin)
+    OrgMembership.objects.create(org=o, user=member, role="member")
+    return o
+
+
+@pytest.fixture
+def team(org, admin, member):
+    t = create_team(org=org, name="백엔드", actor=admin)
+    add_team_member(t, member, admin)
     return t
 
 
 @pytest.fixture
-def project(team, admin):
-    return create_project(team=team, name="학식 API", actor=admin, owners=[admin], status="active")
+def project(org, admin):
+    return create_project(org=org, name="학식 API", actor=admin, owners=[admin], status="active")
 
 
 @pytest.fixture

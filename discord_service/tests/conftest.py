@@ -10,7 +10,7 @@ from discord_service.store import Store
 
 OPEN = ("todo", "doing", "paused", "blocked", "review")
 BOT_PREFIX = "/api/integrations/discord/"
-CHANNEL = "999"  # 팀 채널 id (DISCORD_CHANNEL_ID)
+CHANNEL = "999"  # 조직 채널 id (DISCORD_CHANNEL_ID)
 
 
 def member(i=2, did="111", name="팀원"):
@@ -22,7 +22,7 @@ def task(i, due, status="todo", stop_reason="", assignee=None):
         "id": i,
         "number": f"TASK-{i}",
         "title": f"할 일 {i}",
-        "project": {"id": 1, "name": "학식 API", "team_id": 1},
+        "project": {"id": 1, "name": "학식 API", "org_id": 1},
         "assignee": member() if assignee is None else assignee,
         "status": status,
         "priority": 5,
@@ -45,7 +45,7 @@ def weekly_data(
     completed, reopened = list(completed), list(reopened)
     due_this_week, overdue, blocked = list(due_this_week), list(overdue), list(blocked)
     return {
-        "team": {"id": 1, "name": "산돌이"},
+        "org": {"id": 1, "name": "산돌이"},
         "period_start": "2026-08-31",
         "period_end": "2026-09-07",
         "completed": completed,

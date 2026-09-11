@@ -7,6 +7,8 @@ from django.views.decorators.http import require_POST
 
 from common.dates import today_kst
 from common.errors import ConflictError, ServiceError
+from github.services import pr_compare_url, repo_state
+from github.writes import default_branch_name
 from tasks import services as ts
 from tasks.models import ChangeLog, ChecklistItem, Link
 
@@ -25,6 +27,22 @@ from .common import (
 )
 
 
+def _git_ctx(request, task) -> dict:
+    """패널 GitHub 블록의 context. repo_state()가 상태를, pr_compare_url()이 PR 열기 링크를 준다."""
+    rs = repo_state(request.user, task.project)
+    link = getattr(task, "git", None)
+    issues = rs["conn"].issues.all()[:50] if rs["state"] == "ok" else []
+    return {
+        "gh": {
+            **rs,
+            "link": link,
+            "issues": issues,
+            "pr_url": pr_compare_url(link) if link and link.branch else None,
+            "default_branch_name": default_branch_name(task) if rs["state"] == "ok" else "",
+        }
+    }
+
+
 def _panel_ctx(request, task, **extra):
     logs = (
         ChangeLog.objects.filter(target_type="task", target_id=task.pk)
@@ -38,6 +56,8 @@ def _panel_ctx(request, task, **extra):
         "checklist_done": sum(1 for i in checklist if i.is_done),
         "links": task.links.all(),
         "link_form": LinkForm(),
+        "notes": task.meeting_notes.all(),
+        "org_notes": task.project.org.notes.all(),
         "history": history_rows(logs),
         "priorities": range(10, 0, -1),
         "due_label": due_label(task),
@@ -53,6 +73,7 @@ def _panel_ctx(request, task, **extra):
         "extend_error": None,
         "extend_open": False,
     }
+    ctx.update(_git_ctx(request, task))
     ctx.update(extra)
     return ctx
 
@@ -62,13 +83,19 @@ def _panel(request, task, **extra):
 
 
 def _respond(request, task, origin, error=None):
-    """origin: 'row'(기본) | 'panel' | 'head'(오늘 화면 지금 할 일 카드)."""
+    """origin: 'row'(기본) | 'panel' | 'head'(오늘 화면 지금 할 일 카드) | 'board'."""
     if origin == "panel":
         return _panel(request, task, error=error)
     if origin == "head":
         from .today import head
 
         return head(request, error=error)
+    if origin == "board":
+        from .projects import board_context
+
+        ctx = board_context(request, task.project, request.POST.get("include_closed") == "1")
+        ctx["error"] = error
+        return render(request, "projects/_board.html", ctx)
     return render_row(request, task, error=error)
 
 
@@ -103,7 +130,7 @@ def task_edit(request, task_id):
         "next_action": task.next_action,
         "version": task.version,
     }
-    form = TaskForm(request.POST or None, team=task.project.team, initial=initial)
+    form = TaskForm(request.POST or None, org=task.project.org, initial=initial)
     if request.method == "POST" and form.is_valid():
         d = form.cleaned_data
         changes = {
@@ -293,14 +320,16 @@ def checklist_action(request, item_id, action):
     return trigger(_checklist(request, task), "task-changed", task)
 
 
-def _links(request, task, error=None):
+def _refs(request, task, error=None):
     return render(
         request,
-        "tasks/_links.html",
+        "tasks/_refs.html",
         {
             "task": task,
             "links": task.links.all(),
             "link_form": LinkForm(),
+            "notes": task.meeting_notes.all(),
+            "org_notes": task.project.org.notes.all(),
             "error": error,
             "link_open": bool(error),
         },
@@ -313,13 +342,13 @@ def link_add(request, task_id):
     task = task_or_404(request.user, task_id)
     form = LinkForm(request.POST)
     if not form.is_valid():
-        return _links(request, task, error="링크 입력이 올바르지 않습니다.")
+        return _refs(request, task, error="링크 입력이 올바르지 않습니다.")
     d = form.cleaned_data
     try:
         ts.add_link(actor=request.user, task=task, title=d["title"], url=d["url"], kind=d["kind"])
     except ServiceError as e:
-        return _links(request, task, error=" ".join(e.errors.values()))
-    return _links(request, task)
+        return _refs(request, task, error=" ".join(e.errors.values()))
+    return _refs(request, task)
 
 
 @login_required
@@ -329,7 +358,7 @@ def link_delete(request, link_id):
     if link.task_id:
         task = task_or_404(request.user, link.task_id)
         ts.delete_link(link, actor=request.user)
-        return _links(request, task)
+        return _refs(request, task)
     project_or_404(request.user, link.project_id)
     ts.delete_link(link, actor=request.user)
     return redirect("project_detail", project_id=link.project_id)

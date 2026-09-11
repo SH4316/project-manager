@@ -19,9 +19,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "accounts",
-    "teams",
+    "orgs",
     "projects",
     "tasks",
+    "notes",
+    "github",
     "reports",
     "api",
     "web",
@@ -93,7 +95,20 @@ LOGIN_URL = "/login"
 LOGIN_REDIRECT_URL = "/today"
 LOGOUT_REDIRECT_URL = "/login"
 
+# ---- 리버스 프록시 뒤에서 ----
+# 앞단(NginxProxyManager·Cloudflare Tunnel)이 TLS를 끝내고 평문 HTTP로 넘긴다. 이 헤더가
+# 없으면 request.is_secure()가 False라서 https 링크가 http로 나가고 CSRF가 오리진 비교에서
+# 막힌다. 프록시가 이 헤더를 **덮어써야** 한다(클라이언트가 보낸 값을 그대로 통과시키면 안 된다).
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# USE_X_FORWARDED_HOST는 켜지 않는다. NginxProxyManager는 Host를 원래 도메인 그대로 넘기고
+# X-Forwarded-Host를 세우지 않는다. 켜 두면 클라이언트가 그 헤더를 지어내 ALLOWED_HOSTS
+# 검사를 우회할 수 있다.
+
+# SECURE_SSL_REDIRECT도 켜지 않는다. mcp·discord 컨테이너가 http://web:8000 으로 직접
+# 부르는데 그 요청까지 https로 돌려보내면 연동이 통째로 끊긴다. 평문 접속 차단은 앞단의
+# Force SSL과 방화벽이 맡는다.
+
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -110,3 +125,18 @@ LOGGING = {
     },
     "root": {"handlers": ["console"], "level": "INFO"},
 }
+
+# ---- GitHub App ----
+# 등록 절차는 docs/GITHUB-APP-SETUP.md. 여기 있는 값은 전부 비밀이라 로그에 찍지 않는다
+# (common/logging.py의 SecretFilter가 키 이름과 토큰 접두어를 가린다).
+GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "")
+GITHUB_APP_SLUG = os.environ.get("GITHUB_APP_SLUG", "")
+GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
+GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+# .env에는 한 줄로 들어 있다. 줄바꿈 자리의 \n 을 되돌린다.
+GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY", "").replace("\\n", "\n")
+# 사용자 GitHub 토큰을 Fernet으로 암호화하는 키. 갈면 저장된 토큰을 전부 못 읽는다.
+CREDENTIAL_KEY = os.environ.get("CREDENTIAL_KEY", "")
+# 설정이 없으면 GitHub 화면과 버튼을 아예 그리지 않는다(개발·테스트 환경).
+GITHUB_ENABLED = bool(GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY and CREDENTIAL_KEY)

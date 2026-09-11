@@ -1,13 +1,23 @@
+import json
+
 from ninja import Router
 from ninja.errors import HttpError
 
 from accounts.models import User
+from orgs.models import Team
+from orgs.services import orgs_of
 from projects.models import Project
-from projects.services import create_project, update_project
-from teams.services import teams_of
+from projects.services import create_project, parse_spec, set_api_spec, update_project
 
-from ..context import ctx, team_or_404
-from ..schemas import ConflictOut, ErrorOut, ProjectCreateIn, ProjectOut, ProjectPatchIn
+from ..context import ctx, org_or_404
+from ..schemas import (
+    ApiSpecIn,
+    ConflictOut,
+    ErrorOut,
+    ProjectCreateIn,
+    ProjectOut,
+    ProjectPatchIn,
+)
 from ..serialize import project_out
 
 router = Router(tags=["projects"])
@@ -15,9 +25,9 @@ router = Router(tags=["projects"])
 
 def _visible(request):
     return (
-        Project.objects.filter(team__in=teams_of(request.auth))
-        .select_related("team")
-        .prefetch_related("owners")
+        Project.objects.filter(org__in=orgs_of(request.auth))
+        .select_related("org")
+        .prefetch_related("owners", "teams")
     )
 
 
@@ -35,14 +45,21 @@ def _owners(ids: list[int]) -> list[User]:
     return users
 
 
+def _teams(ids: list[int]) -> list[Team]:
+    teams = list(Team.objects.filter(pk__in=ids))
+    if len(teams) != len(set(ids)):
+        raise HttpError(400, "팀을 찾을 수 없습니다.")
+    return teams
+
+
 @router.get("", response=list[ProjectOut])
-def list_projects(request, team: int | None = None, include_archived: bool = False):
+def list_projects(request, org: int | None = None, include_archived: bool = False):
     qs = _visible(request)
-    if team is not None:
-        qs = qs.filter(team_id=team)
+    if org is not None:
+        qs = qs.filter(org_id=org)
     if not include_archived:
         qs = qs.filter(is_archived=False)
-    return [project_out(p) for p in qs.order_by("team__name", "name")]
+    return [project_out(p) for p in qs.order_by("org__name", "name")]
 
 
 @router.get("/{project_id}", response=ProjectOut)
@@ -52,12 +69,13 @@ def get_project(request, project_id: int):
 
 @router.post("", response={201: ProjectOut, 400: ErrorOut})
 def create_project_ep(request, payload: ProjectCreateIn):
-    team = team_or_404(request, payload.team_id)
+    org = org_or_404(request, payload.org_id)
     p = create_project(
-        team=team,
+        org=org,
         name=payload.name,
         purpose=payload.purpose,
         owners=_owners(payload.owner_ids),
+        teams=_teams(payload.team_ids),
         status=payload.status,
         **ctx(request),
     )
@@ -71,5 +89,24 @@ def patch_project(request, project_id: int, payload: ProjectPatchIn):
     version = data.pop("version")
     if "owner_ids" in data:
         data["owners"] = _owners(data.pop("owner_ids") or [])
+    if "team_ids" in data:
+        data["teams"] = _teams(data.pop("team_ids") or [])
     p = update_project(p, data, expected_version=version, **ctx(request))
     return project_out(p)
+
+
+@router.get("/{project_id}/api-spec", response=dict)
+def get_api_spec(request, project_id: int):
+    p = _project_or_404(request, project_id)
+    obj = getattr(p, "api_spec", None)
+    if obj is None:
+        raise HttpError(404, "등록된 API 문서가 없습니다.")
+    return {"source_url": obj.source_url, "fetched_at": obj.fetched_at, "spec": obj.spec}
+
+
+@router.put("/{project_id}/api-spec", response={200: dict, 400: ErrorOut})
+def put_api_spec(request, project_id: int, payload: ApiSpecIn):
+    p = _project_or_404(request, project_id)
+    spec = parse_spec(json.dumps(payload.spec).encode(), source=payload.source_url or "요청 본문")
+    obj = set_api_spec(p, spec, source_url=payload.source_url, actor=request.auth)
+    return {"ok": True, "fetched_at": obj.fetched_at}

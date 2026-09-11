@@ -9,6 +9,6 @@ from .models import Project
 class ProjectAdmin(ReadOnlyAdmin):
     """조회 전용. 이유는 tasks.admin.ReadOnlyAdmin 참고."""
 
-    list_display = ("name", "team", "status", "is_archived")
-    list_filter = ("team", "status", "is_archived")
-    filter_horizontal = ("owners",)
+    list_display = ("name", "org", "status", "is_archived")
+    list_filter = ("org", "status", "is_archived")
+    filter_horizontal = ("owners", "teams")

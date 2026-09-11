@@ -1,5 +1,8 @@
 # 구현 지시서 04: 배포 (Proxmox + Docker Compose + Cloudflare Tunnel)
 
+
+> **이 문서는 2026-09-10에 끝난 최초 구축의 기록이다.** 지금 할 일은 [GUIDE-V2-00-overview.md](GUIDE-V2-00-overview.md)부터 시작하는 묶음이다. 이 문서에 나오는 `Team`·`teams`·"팀"은 2026-09-11 개명 전 용어로 **조직**을 뜻한다. 대조표는 [GUIDE-V2-01](GUIDE-V2-01-org-teams.md) §1에 있다.
+
 GUIDE-00을 먼저 읽는다. 이 문서는 저장소 루트의 `compose.yml`, `.env.example`, `.env.discord.example`, `README.md`, core의 Dockerfile을 만들고 Proxmox에 올리는 절차다. Discord·MCP의 Dockerfile은 각 GUIDE에서 이미 만들었다.
 
 서버는 어떤 포트도 외부에 열지 않는다. Cloudflare Tunnel(`cloudflared` 컨테이너)이 바깥에서 들어오는 HTTPS를 내부 컨테이너로 넘긴다. TLS는 Cloudflare가 끝낸다.
@@ -245,6 +248,20 @@ docker run --rm hello-world
 ---
 
 ## Step 6. Cloudflare Tunnel
+
+공개하는 방법은 둘 중 하나다. 어느 쪽이든 Django 설정은 같다(`SECURE_PROXY_SSL_HEADER`가 `X-Forwarded-Proto`를 읽는다).
+
+| 방법 | `web` 포트 바인딩 | 쓰는 때 |
+|---|---|---|
+| **Cloudflare Tunnel** (`cloudflared` 컨테이너) | `127.0.0.1:8000:8000` | 서버에서 어떤 포트도 열고 싶지 않을 때. 아래 절차 |
+| **외부 리버스 프록시** (NginxProxyManager 등, 다른 장비) | `8000:8000` | 이미 프록시 장비가 있을 때. 방화벽에서 **프록시 IP만** 8000번을 연다 |
+
+현재 `compose.yml`은 두 번째(`8000:8000`)로 되어 있다. 첫 번째로 가려면 `web`의 `ports`를 `"127.0.0.1:8000:8000"`으로 되돌리고 `CLOUDFLARE_TUNNEL_TOKEN`을 채운 뒤 `--profile tunnel`로 띄운다.
+
+외부 리버스 프록시 쪽 설정(NginxProxyManager 입력값, `.env` 도메인 셋, 방화벽)은 [GITHUB-APP-SETUP.md](GITHUB-APP-SETUP.md) §4에 정리되어 있다. `mcp`를 외부에 공개해야 하면 같은 방식으로 `mcp` 서비스의 포트도 열고 별도 도메인을 붙인다.
+
+아래는 Cloudflare Tunnel 절차다.
+
 
 Cloudflare 대시보드 → Zero Trust → Networks → Tunnels:
 

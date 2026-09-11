@@ -18,7 +18,7 @@ Webhook은 쓰지 않는다 — 발송은 봇 토큰으로 `discord.com/api/v10`
 |---|---|---|---|
 | `CORE_URL` | ✅ | — | core 주소. 예: `http://web:8000` |
 | `CORE_TOKEN` | ✅ | — | core에서 발급한 **`bot` 범위** API 토큰 (`pm_…`) |
-| `TEAM_ID` | ✅ | — | 마감 스캔·주간 보고 대상 팀 id |
+| `ORG_ID` | ✅ | — | 마감 스캔·주간 보고 대상 조직 id |
 | `DISCORD_BOT_TOKEN` | ✅ | — | Developer Portal → Bot → `[Reset Token]`. **이 파일 밖으로 내보내지 않는다** |
 | `DISCORD_CHANNEL_ID` | ✅ | — | 주간 보고와 'DM을 못 보냈다' 통보를 받을 채널 id |
 | `TZ` | | `Asia/Seoul` | 판정·표시 기준 시간대 |
@@ -85,12 +85,12 @@ python -m discord_service status                  # 최근 발송·실행 기록
    ```
    출력된 `pm_…`을 `CORE_TOKEN`에 넣는다. 그 토큰은 `/api/integrations/discord/…` 밖에서는
    쓰기가 403이고, 그 안에서는 **연결된 사용자의 권한으로** 오늘 읽기·완료·연장 세 가지만 한다.
-4. `TEAM_ID`는 `/teams/<id>` 주소의 숫자다.
+4. `ORG_ID`는 `/orgs/<id>` 주소의 숫자다.
 
 ## 로컬 실행
 
 ```bash
-CORE_URL=http://localhost:8000 CORE_TOKEN=pm_xxx TEAM_ID=1 \
+CORE_URL=http://localhost:8000 CORE_TOKEN=pm_xxx ORG_ID=1 \
 DISCORD_BOT_TOKEN=xxx DISCORD_CHANNEL_ID=123456789 \
 DB_PATH=./discord.sqlite \
 uv run python -m discord_service test

@@ -1,11 +1,11 @@
-{% extends "base.html" %}{% block title %}팀 참여{% endblock %}
+{% extends "base.html" %}{% block title %}조직 참여{% endblock %}
 {% block main %}
 <div class="card">
-  <h1 class="t24">팀 참여</h1>
+  <h1 class="t24">조직 참여</h1>
   {% if error %}<p class="error">{{ error }}</p>
   {% else %}
-  <p class="muted">초대 링크로 팀에 참여합니다.</p>
-  <form method="post" class="row">{% csrf_token %}<button class="btn primary">팀에 참여하기</button></form>
+  <p class="muted">초대 링크로 조직에 참여합니다.</p>
+  <form method="post" class="row">{% csrf_token %}<button class="btn primary">조직에 참여하기</button></form>
   {% endif %}
 </div>
 {% endblock %}

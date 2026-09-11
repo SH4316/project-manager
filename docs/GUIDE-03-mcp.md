@@ -1,5 +1,8 @@
 # 구현 지시서 03: mcp_server (별도 프로세스)
 
+
+> **이 문서는 2026-09-10에 끝난 최초 구축의 기록이다.** 지금 할 일은 [GUIDE-V2-00-overview.md](GUIDE-V2-00-overview.md)부터 시작하는 묶음이다. 이 문서에 나오는 `Team`·`teams`·"팀"은 2026-09-11 개명 전 용어로 **조직**을 뜻한다. 대조표는 [GUIDE-V2-01](GUIDE-V2-01-org-teams.md) §1에 있다.
+
 GUIDE-00을 먼저 읽는다. 이 파트도 **core 코드를 import하지 않는다.** core의 HTTP API(GUIDE-01-3)를 호출하는 얇은 껍데기다. 상태 없음. 의존성: `mcp`, `httpx`, `uvicorn`.
 
 지원 클라이언트: Claude Code, Codex CLI(헤더 인증), Claude 앱·claude.ai 커넥터, ChatGPT 커넥터(URL 인증). 네 곳 모두에서 동작해야 한다.

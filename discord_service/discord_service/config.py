@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 class Config:
     core_url: str
     core_token: str
-    team_id: int
+    org_id: int
     bot_token: str
     channel_id: str
     tz: ZoneInfo
@@ -29,7 +29,7 @@ class Config:
         return cls(
             core_url=need("CORE_URL").rstrip("/"),
             core_token=need("CORE_TOKEN"),
-            team_id=int(need("TEAM_ID")),
+            org_id=int(need("ORG_ID")),
             bot_token=need("DISCORD_BOT_TOKEN"),
             channel_id=need("DISCORD_CHANNEL_ID"),
             tz=ZoneInfo(os.environ.get("TZ", "Asia/Seoul")),

@@ -1,0 +1,67 @@
+{% extends "base.html" %}{% block title %}{{ team.name }}{% endblock %}
+{% block main %}
+{% include "orgs/_tabs.html" %}
+<div class="card">
+  <div class="card-head">
+    <div class="stack">
+      <a class="t13" href="{% url 'org_teams' org.pk %}">{{ org.name }}</a>
+      <h1 class="t24">{{ team.name }}</h1>
+      {% if team.purpose %}<p class="muted">{{ team.purpose }}</p>{% endif %}
+    </div>
+    <div class="row">
+      <button type="button" class="btn" hx-get="{% url 'team_edit' team.pk %}" hx-target="#dialog" hx-swap="innerHTML">수정</button>
+      <form method="post" action="{% url 'team_delete' team.pk %}" onsubmit="return confirm('팀을 삭제할까요? 멤버와 프로젝트는 그대로 남습니다. GitHub 팀은 남습니다.')">{% csrf_token %}<button class="btn">삭제</button></form>
+    </div>
+  </div>
+</div>
+{% if github_enabled and gh_install %}
+<section class="card">
+  <h2>GitHub 팀 연결</h2>
+  {% if gh_link %}
+  <p class="row">연결됨 · <span class="badge">@{{ gh_link.slug }}</span></p>
+  <div class="row">
+    <form method="post" action="{% url 'team_github_reconcile' team.pk %}">{% csrf_token %}<button class="btn sm">GitHub에 반영</button></form>
+    <form method="post" action="{% url 'team_github_unlink' team.pk %}">{% csrf_token %}<button class="btn sm">연결 해제</button></form>
+  </div>
+  {% else %}
+  <form method="post" action="{% url 'team_github_link' team.pk %}" class="row">{% csrf_token %}
+    <select name="gh_team" class="select auto">
+      <option value="">GitHub 팀 선택</option>
+      {% for t in gh_teams %}<option value="{{ t.id }}:{{ t.slug }}:{{ t.name }}">{{ t.name }} (@{{ t.slug }})</option>{% endfor %}
+    </select>
+    <button class="btn sm">연결</button>
+  </form>
+  <form method="post" action="{% url 'team_github_create' team.pk %}"><button class="btn sm">GitHub에 새 팀 만들기</button></form>
+  {% endif %}
+</section>
+{% endif %}
+<section class="card">
+  <h2>멤버</h2>
+  <table class="grid">
+    <thead><tr><th>이름</th><th>GitHub</th><th></th></tr></thead>
+    <tbody>
+    {% for u in members %}
+    <tr>
+      <td>{{ u.display_name }}</td>
+      <td>{% if u.github %}@{{ u.github.login }}{% else %}<span class="badge">GitHub 미연결</span>{% endif %}</td>
+      <td><form method="post" action="{% url 'team_member_remove' team.pk u.pk %}">{% csrf_token %}<button class="btn sm">제거</button></form></td>
+    </tr>
+    {% empty %}<tr><td colspan="3" class="muted">멤버가 없습니다.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="{% url 'team_member_add' team.pk %}" class="row">{% csrf_token %}
+    <select name="user" class="select auto">
+      <option value="">멤버 선택</option>
+      {% for u in candidates %}<option value="{{ u.pk }}">{{ u.display_name }}</option>{% endfor %}
+    </select>
+    <button class="btn sm">추가</button>
+  </form>
+</section>
+<section class="card">
+  <h2>담당 프로젝트</h2>
+  <ul class="links">
+    {% for p in projects %}<li><a href="{% url 'project_detail' p.pk %}">{{ p.name }}</a></li>
+    {% empty %}<li class="muted t13">담당 프로젝트가 없습니다.</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

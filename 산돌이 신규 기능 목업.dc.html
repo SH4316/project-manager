@@ -1,0 +1,2706 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  body { margin:0; background:#EEF3F5; font-family:Pretendard,-apple-system,'Apple SD Gothic Neo','Noto Sans KR',sans-serif; color:#191F28; font-size:14px; line-height:20px; word-break:keep-all; }
+  a { color:#1F6F82; }
+  a:hover { color:#155463; }
+  * { box-sizing:border-box; }
+</style>
+</helmet>
+
+<div style="min-height:100%;background:#EEF3F5">
+  <header style="position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-height:64px;padding:8px 24px;background:#fff;border-bottom:1px solid #E5E8EB">
+    <span style="font-size:20px;line-height:28px;font-weight:700;letter-spacing:-0.02em">산돌이 태스크</span>
+    <nav aria-label="주 메뉴" style="display:flex;gap:4px;flex-wrap:wrap">
+      <sc-for list="{{ navTabs }}" as="t" hint-placeholder-count="4">
+        <button onClick="{{ t.go }}" style="display:inline-flex;align-items:center;height:44px;padding:0 14px;border:0;border-radius:8px;font:inherit;cursor:pointer;white-space:nowrap;font-weight:{{ t.weight }};background:{{ t.bg }};color:{{ t.color }}">{{ t.label }}</button>
+      </sc-for>
+    </nav>
+    <span style="flex:1"></span>
+    <button onClick="{{ toggleQuick }}" style="display:inline-flex;align-items:center;height:36px;padding:0 12px;border:0;border-radius:6px;background:#E3F1F4;color:#1F6F82;font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer">빠른 추가</button>
+    <span style="width:36px;height:36px;border-radius:999px;background:#E3F1F4;color:#1F6F82;display:inline-flex;align-items:center;justify-content:center;font-weight:700">김</span>
+  </header>
+  <div style="display:flex;align-items:flex-start;flex-wrap:wrap">
+    <sc-if value="{{ isProject }}" hint-placeholder-val="{{ false }}">
+      <nav aria-label="프로젝트" style="{{ railStyle }}">
+        <sc-if value="{{ railOpen }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;gap:8px;padding:0 6px 6px">
+            <span style="flex:1;min-width:0;font-size:13px;line-height:19px;font-weight:600;color:#636D7A">프로젝트 {{ projectCount }}</span>
+            <span style="font-size:12px;line-height:18px;color:#636D7A">미완료</span>
+            <button onClick="{{ toggleRail }}" aria-expanded="true" aria-label="프로젝트 목록 접기" title="목록 접기" style="width:34px;height:34px;flex:0 0 auto;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:17px;line-height:1;color:#636D7A;cursor:pointer;display:inline-flex;align-items:center;justify-content:center">«</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ railClosed }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ toggleRail }}" aria-expanded="false" aria-label="프로젝트 목록 펼치기" title="프로젝트 목록 펼치기" style="width:40px;height:40px;margin-bottom:6px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;font:inherit;font-size:17px;line-height:1;color:#636D7A;cursor:pointer;display:inline-flex;align-items:center;justify-content:center">»</button>
+        </sc-if>
+        <sc-if value="{{ railOpen }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 248px);min-height:120px;overflow-y:auto;padding-right:2px">
+            <sc-for list="{{ projectNav }}" as="p" hint-placeholder-count="4">
+              <button onClick="{{ p.go }}" style="display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:40px;padding:0 10px;border:0;border-radius:8px;font:inherit;font-size:13px;text-align:left;cursor:pointer;font-weight:{{ p.weight }};background:{{ p.bg }};color:{{ p.color }}"><span style="width:24px;height:24px;border-radius:6px;background:{{ p.iconBg }};display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto">{{ p.icon }}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.label }}</span><span style="font-size:12px;color:#636D7A">{{ p.open }}</span></button>
+            </sc-for>
+          </div>
+          <button style="display:flex;align-items:center;gap:8px;height:40px;margin-top:4px;padding:0 10px;border:0;border-radius:8px;font:inherit;font-size:13px;font-weight:600;color:#1F6F82;background:none;text-align:left;cursor:pointer">＋ 새 프로젝트</button>
+        </sc-if>
+        <sc-if value="{{ railClosed }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 200px);min-height:120px;overflow-y:auto">
+            <sc-for list="{{ projectNav }}" as="p" hint-placeholder-count="4">
+              <button onClick="{{ p.go }}" aria-label="{{ p.label }}" title="{{ p.label }}" style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;border:0;border-radius:8px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;background:{{ p.bg }};color:{{ p.color }}">{{ p.icon }}</button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </nav>
+    </sc-if>
+
+    <div style="flex:9999 1 320px;min-width:0;display:flex;flex-direction:column;gap:16px;padding:24px">
+      <sc-if value="{{ inTeamArea }}" hint-placeholder-val="{{ false }}">
+        <nav aria-label="팀 하위 메뉴" style="display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid #E5E8EB">
+          <sc-for list="{{ teamTabs }}" as="t" hint-placeholder-count="5">
+            <button onClick="{{ t.go }}" style="height:44px;padding:0 14px;border:0;border-bottom:2px solid {{ t.line }};background:none;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap;font-weight:{{ t.weight }};color:{{ t.color }}">{{ t.label }}</button>
+          </sc-for>
+        </nav>
+      </sc-if>
+
+      <sc-if value="{{ isToday }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="오늘" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <div><h1 style="margin:0;font-size:22px;line-height:30px;font-weight:700;letter-spacing:-0.02em">9월 11일 금요일</h1><div style="font-size:13px;line-height:19px;color:#636D7A">오늘 담은 {{ todayCount }}건 · 마감 3일 이내는 자동으로 담깁니다.</div></div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px 24px">
+                <a href="#" style="display:inline-flex;align-items:baseline;gap:6px;text-decoration:none;color:#191F28"><b style="font-size:19px;line-height:26px">{{ doneToday }}</b><span style="font-size:13px;color:#636D7A">오늘 완료</span></a>
+                <a href="#" style="display:inline-flex;align-items:baseline;gap:6px;text-decoration:none;color:#191F28"><b style="font-size:19px;line-height:26px">{{ doneWeek }}</b><span style="font-size:13px;color:#636D7A">지난 7일 완료</span></a>
+                <a href="#" style="display:inline-flex;align-items:baseline;gap:6px;text-decoration:none;color:#191F28"><b style="font-size:19px;line-height:26px">{{ myOpen }}</b><span style="font-size:13px;color:#636D7A">남은 내 태스크</span></a>
+              </div>
+            </div>
+            <section aria-label="지금 할 일" style="display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:13px;line-height:19px;color:#636D7A">지금 할 일 · 중요도 8/10 · 오늘 목록 기준</div>
+              <h2 style="margin:0;font-size:28px;line-height:38px;font-weight:700;letter-spacing:-0.02em;text-wrap:pretty">자동 전환 규칙 테이블 리뷰 요청 보내기</h2>
+              <div style="font-size:13px;line-height:19px;color:#636D7A">TASK-147 · 웹훅 파이프라인 · 9/15 마감 · 상태 전환 서비스</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                <button style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">완료로 표시</button>
+                <button style="height:44px;padding:0 16px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">진행 메모 열기</button>
+                <button onClick="{{ goTaskPanel }}" style="height:44px;padding:0 16px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">자세히 보기</button>
+              </div>
+            </section>
+          </section>
+
+          <sc-if value="{{ quickOpen }}" hint-placeholder-val="{{ false }}">
+            <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+              <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">빠른 추가</h2>
+              <input placeholder="무엇을 할까요?" style="width:100%;height:52px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:16px;color:#191F28">
+              <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">프로젝트<select style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>웹훅 파이프라인</option><option>코어 API</option><option>디스코드 봇</option></select></label>
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">중요도 (1~10)<select style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>8</option><option>5</option></select></label>
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">목표 기한<input type="date" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"></label>
+              </div>
+              <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">기한 미정 사유 (기한이 없을 때만)<input style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"></label>
+              <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                <button style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">추가</button>
+                <span style="font-size:13px;line-height:19px;color:#636D7A">담당자 본인 · 시작 전 · 오늘 목록에 담깁니다</span>
+              </div>
+            </section>
+          </sc-if>
+
+          <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+            <section aria-label="오늘 태스크" style="flex:9999 1 380px;min-width:0;background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+                <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">오늘 태스크 <span style="color:#636D7A">{{ todayCount }}</span></h2>
+                <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                  <span style="font-size:13px;color:#636D7A;white-space:nowrap">중요도순</span>
+                  <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#636D7A;white-space:nowrap">마감 기준 자동 담기<select style="height:36px;padding:0 8px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28"><option>3일 이내</option><option>담지 않음</option></select></label>
+                  <button onClick="{{ toggleSchedule }}" aria-pressed="{{ scheduleOpen }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:{{ schedBg }};color:{{ schedColor }};font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">일정 보기</button>
+                </div>
+              </div>
+              <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">마감 3일 이내 자동 추가 {{ autoCount }}건 · 오늘 제외 1건 · <button style="border:0;background:none;padding:0;font:inherit;font-weight:600;color:#1F6F82;cursor:pointer">제외한 태스크 복원</button></p>
+              <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ todayRows }}" as="t" hint-placeholder-count="3">
+                  <li onClick="{{ t.open }}" style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;min-height:56px;padding:10px 14px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;cursor:pointer">
+                    <div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="font-size:12px;line-height:16px;color:#636D7A">{{ t.project }}</div>
+                      <div style="font-size:16px;line-height:24px;font-weight:600">{{ t.title }}</div>
+                      <div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:13px;line-height:19px;color:#636D7A">
+                        <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;font-size:12px;line-height:18px;white-space:nowrap">중요도 {{ t.priority }}/10</span>
+                        <span>{{ t.note }}</span>
+                      </div>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                      <span style="font-size:13px;line-height:19px;white-space:nowrap;color:{{ t.dueColor }}">{{ t.due }}</span>
+                      <select aria-label="상태" style="height:36px;padding:0 10px;border:0;border-radius:999px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;background:{{ t.pillBg }};color:{{ t.pillColor }}"><option>{{ t.status }}</option></select>
+                      <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:{{ t.todayBg }};color:{{ t.todayColor }};font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ t.todayLabel }}</button>
+                      <button aria-label="바로가기 링크 복사" style="width:36px;height:36px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;cursor:pointer">⧉</button>
+                    </div>
+                  </li>
+                </sc-for>
+              </ul>
+              <details><summary style="cursor:pointer;font-weight:600;color:#636D7A">오늘 완료 ({{ doneToday }})</summary>
+                <ul style="list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px">
+                  <sc-for list="{{ todayDone }}" as="t" hint-placeholder-count="1">
+                    <li onClick="{{ t.open }}" style="display:flex;gap:16px;align-items:center;justify-content:space-between;min-height:56px;padding:10px 14px;border:1px solid #E5E8EB;border-radius:8px;cursor:pointer">
+                      <div style="min-width:0"><div style="font-size:12px;line-height:16px;color:#636D7A">{{ t.project }}</div><div style="font-size:16px;line-height:24px;font-weight:600;text-decoration:line-through">{{ t.title }}</div></div>
+                      <span style="padding:0 10px;border-radius:999px;background:#B9E6CB;color:#0B3D22;font-size:13px;line-height:36px;font-weight:700;white-space:nowrap">완료</span>
+                    </li>
+                  </sc-for>
+                </ul>
+              </details>
+              <p style="margin:0;font-size:13px;line-height:19px">오늘 마감 <a href="#">{{ dueTodayCount }}</a> · 기한 초과 <a href="#">{{ overdueCount }}</a> · 검토 대기 <a href="#">{{ reviewCount }}</a> · 막힘 <a href="#">{{ blockedCount }}</a></p>
+            </section>
+
+            <sc-if value="{{ scheduleOpen }}" hint-placeholder-val="{{ false }}">
+              <section aria-label="일정" style="flex:1 1 280px;max-width:360px;min-width:0;background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+                  <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">일정</h2>
+                  <div style="display:flex;gap:4px;align-items:center">
+                    <button onClick="{{ calPrev }}" aria-label="이전 달" title="이전 달" style="width:32px;height:32px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:15px;line-height:1;color:#636D7A;cursor:pointer;display:inline-flex;align-items:center;justify-content:center">‹</button>
+                    <span style="min-width:96px;text-align:center;font-size:13px;line-height:19px;font-weight:600;color:#191F28;white-space:nowrap">{{ calTitle }}</span>
+                    <button onClick="{{ calNext }}" aria-label="다음 달" title="다음 달" style="width:32px;height:32px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:15px;line-height:1;color:#636D7A;cursor:pointer;display:inline-flex;align-items:center;justify-content:center">›</button>
+                    <sc-if value="{{ calAway }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ calToday }}" style="height:32px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;font-weight:600;color:#636D7A;cursor:pointer;white-space:nowrap">이번 달</button>
+                    </sc-if>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+                    <span style="display:flex;align-items:center;justify-content:center;height:44px;font-size:12px;line-height:16px;color:#636D7A">월</span>
+                    <span style="display:flex;align-items:center;justify-content:center;height:44px;font-size:12px;line-height:16px;color:#636D7A">화</span>
+                    <span style="display:flex;align-items:center;justify-content:center;height:44px;font-size:12px;line-height:16px;color:#636D7A">수</span>
+                    <span style="display:flex;align-items:center;justify-content:center;height:44px;font-size:12px;line-height:16px;color:#636D7A">목</span>
+                    <span style="display:flex;align-items:center;justify-content:center;height:44px;font-size:12px;line-height:16px;color:#636D7A">금</span>
+                    <span style="display:flex;align-items:center;justify-content:center;height:44px;font-size:12px;line-height:16px;color:#636D7A">토</span>
+                    <span style="display:flex;align-items:center;justify-content:center;height:44px;font-size:12px;line-height:16px;color:#636D7A">일</span>
+                    <sc-for list="{{ calCells }}" as="d" hint-placeholder-count="35">
+                      <button onClick="{{ d.pick }}" aria-label="{{ d.aria }}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:44px;border:1px solid {{ d.borderColor }};border-radius:6px;font:inherit;font-size:13px;cursor:{{ d.cursor }};background:{{ d.bg }};color:{{ d.color }}">{{ d.label }}<small style="font-size:10px;color:{{ d.dotColor }}">{{ d.dot }}</small></button>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:13px;line-height:19px;color:#636D7A">{{ dayLabel }}</div>
+                  <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+                    <sc-for list="{{ dayTasks }}" as="t" hint-placeholder-count="2">
+                      <li><button onClick="{{ t.open }}" style="border:0;background:none;padding:0;font:inherit;font-weight:600;color:#1F6F82;cursor:pointer;text-align:left">{{ t.title }}</button></li>
+                    </sc-for>
+                  </ul>
+              </section>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isMe }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="내 태스크" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <div><h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">내 태스크</h1><div style="font-size:13px;line-height:19px;color:#636D7A">미완료 {{ myOpen }}건 · 목록에서는 상태와 오늘 담기만 바꿉니다. 행을 누르면 오른쪽에 상세 패널이 열립니다.</div></div>
+              <select aria-label="팀원" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>나</option><option>팀 전체</option><option>이도현</option></select>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+              <div role="group" aria-label="묶음" style="display:flex;gap:4px;flex-wrap:wrap">
+                <button style="height:44px;padding:0 16px;border:1px solid #E3F1F4;border-radius:8px;background:#E3F1F4;color:#1F6F82;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">프로젝트별</button>
+                <button style="height:44px;padding:0 16px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">기한별</button>
+                <button style="height:44px;padding:0 16px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">상태별</button>
+              </div>
+              <select aria-label="기한" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>모든 기한</option><option>오늘</option><option>기한 초과</option></select>
+              <select aria-label="프로젝트" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>모든 프로젝트</option><option>웹훅 파이프라인</option></select>
+              <select aria-label="상태" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>모든 상태</option><option>검토 대기</option></select>
+              <select aria-label="중요도" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>전체</option><option>8 이상</option></select>
+            </div>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:12px">
+            <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">미완료 <span style="color:#636D7A">{{ myOpen }}</span></h2>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ myGroups }}" as="g" hint-placeholder-count="2">
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+                  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                    <button onClick="{{ g.go }}" style="border:0;background:none;padding:0;font:inherit;font-weight:600;color:#1F6F82;cursor:pointer;white-space:nowrap">{{ g.name }}</button>
+                    <span style="font-size:13px;color:#636D7A;white-space:nowrap">{{ g.label }}</span>
+                    <div role="img" aria-label="{{ g.pctLabel }}" style="flex:1;min-width:80px;height:8px;border-radius:999px;background:#F0F4F6;overflow:hidden"><i style="display:block;height:100%;width:{{ g.pct }};background:#1F6F82"></i></div>
+                  </div>
+                  <ul style="list-style:none;margin:0;padding:0 0 0 12px;border-left:2px solid #E5E8EB;display:flex;flex-direction:column;gap:8px">
+                    <sc-for list="{{ g.rows }}" as="t" hint-placeholder-count="2">
+                      <li onClick="{{ t.open }}" style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;min-height:56px;padding:10px 14px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;cursor:pointer">
+                        <div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:4px">
+                          <div style="font-size:12px;line-height:16px;color:#636D7A">{{ t.project }}</div>
+                          <div style="font-size:16px;line-height:24px;font-weight:600">{{ t.title }}</div>
+                          <div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:13px;line-height:19px;color:#636D7A">
+                            <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;font-size:12px;line-height:18px;white-space:nowrap">중요도 {{ t.priority }}/10</span>
+                            <span>{{ t.note }}</span>
+                          </div>
+                        </div>
+                        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                          <span style="font-size:13px;line-height:19px;white-space:nowrap;color:{{ t.dueColor }}">{{ t.due }}</span>
+                          <select aria-label="상태" style="height:36px;padding:0 10px;border:0;border-radius:999px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;background:{{ t.pillBg }};color:{{ t.pillColor }}"><option>{{ t.status }}</option></select>
+                          <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">오늘 추가</button>
+                        </div>
+                      </li>
+                    </sc-for>
+                  </ul>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isTeam }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="팀 현황" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">산돌이 팀</h1>
+              <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">팀원 관리</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+              <sc-for list="{{ teamTiles }}" as="t" hint-placeholder-count="6">
+                <div style="display:flex;flex-direction:column;gap:4px;padding:16px;background:#fff;border:1px solid #E5E8EB;border-radius:12px"><b style="font-size:26px;line-height:32px;color:{{ t.color }}">{{ t.value }}</b><span style="font-size:13px;color:#636D7A">{{ t.label }}</span></div>
+              </sc-for>
+            </div>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">프로젝트</h2>
+              <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#636D7A;white-space:nowrap"><input type="checkbox"> 보관 포함</label>
+                <button style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">새 프로젝트</button>
+              </div>
+            </div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr style="text-align:left;font-size:13px;color:#636D7A"><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">이름</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">관리자</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">상태</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600;text-align:right">미완료</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600;text-align:right">완료</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ teamProjects }}" as="p" hint-placeholder-count="4">
+                    <tr>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top"><button onClick="{{ p.go }}" style="border:0;background:none;padding:0;font:inherit;font-weight:600;color:#1F6F82;cursor:pointer;text-align:left">{{ p.name }}</button><div style="font-size:13px;color:#636D7A">{{ p.purpose }}</div></td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top;color:{{ p.ownerColor }}">{{ p.owners }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top"><span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;color:#636D7A;font-size:12px;line-height:18px">{{ p.status }}</span></td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;text-align:right">{{ p.open }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;text-align:right">{{ p.done }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">담당자별</h2>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr style="text-align:left;font-size:13px;color:#636D7A"><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">이름</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600;text-align:right">미완료</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600;text-align:right">기한 초과</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600;text-align:right">검토 대기</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600;text-align:right">막힘</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ people }}" as="m" hint-placeholder-count="4">
+                    <tr>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB"><button onClick="{{ m.go }}" style="border:0;background:none;padding:0;font:inherit;font-weight:600;color:#1F6F82;cursor:pointer">{{ m.name }}</button></td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;text-align:right">{{ m.open }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;text-align:right;color:{{ m.overdueColor }}">{{ m.overdue }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;text-align:right">{{ m.review }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;text-align:right;color:{{ m.blockedColor }}">{{ m.blocked }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSearch }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="검색" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">검색</h1>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <input value="{{ query }}" onChange="{{ setQuery }}" aria-label="검색어" placeholder="예: TASK-121, 메뉴, 챗봇" style="width:100%;height:52px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:16px;color:#191F28">
+              <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                <label style="display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:13px;color:#636D7A;white-space:nowrap;cursor:pointer"><input type="checkbox"> 완료·취소 포함</label>
+                <label style="display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:13px;color:#636D7A;white-space:nowrap;cursor:pointer"><input type="checkbox"> 보관 포함</label>
+                <button style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">검색</button>
+              </div>
+            </div>
+          </section>
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">결과 <span style="color:#636D7A">{{ resultCount }}</span></h2>
+            <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ results }}" as="t" hint-placeholder-count="3">
+                <li onClick="{{ t.open }}" style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;min-height:56px;padding:10px 14px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;cursor:pointer">
+                  <div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:4px">
+                    <div style="font-size:12px;line-height:16px;color:#636D7A">{{ t.project }} · {{ t.number }}</div>
+                    <div style="font-size:16px;line-height:24px;font-weight:600">{{ t.title }}</div>
+                    <div style="font-size:13px;line-height:19px;color:#636D7A">{{ t.assignee }} · {{ t.note }}</div>
+                  </div>
+                  <span style="padding:0 10px;border-radius:999px;font-size:13px;line-height:36px;font-weight:700;white-space:nowrap;background:{{ t.pillBg }};color:{{ t.pillColor }}">{{ t.status }}</span>
+                </li>
+              </sc-for>
+            </ul>
+            <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}"><p style="margin:0;color:#636D7A">검색 결과가 없습니다.</p></sc-if>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCapacity }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="부하 현황" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">팀 부하 현황</h1>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select aria-label="기간" style="height:36px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px"><option>이번 주</option><option>이번 달</option></select>
+                <a href="#" style="display:inline-flex;align-items:center;height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;color:#191F28;text-decoration:none;font-size:13px;font-weight:600;white-space:nowrap">팀원 관리</a>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+              <sc-for list="{{ capacityTiles }}" as="t" hint-placeholder-count="5">
+                <div style="display:flex;flex-direction:column;gap:4px;padding:16px;background:#fff;border:1px solid #E5E8EB;border-radius:12px"><b style="font-size:26px;line-height:32px;color:{{ t.color }}">{{ t.value }}</b><span style="font-size:13px;color:#636D7A">{{ t.label }}</span></div>
+              </sc-for>
+            </div>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">담당자별</h2>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ people }}" as="m" hint-placeholder-count="4">
+                <div style="display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;padding:14px 16px;border:1px solid #E5E8EB;border-radius:8px">
+                  <button onClick="{{ m.go }}" style="flex:0 0 140px;border:0;background:none;padding:0;font:inherit;font-size:16px;line-height:24px;font-weight:600;color:#191F28;text-align:left;cursor:pointer">{{ m.name }}</button>
+                  <div style="flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:6px">
+                    <div role="img" aria-label="{{ m.barLabel }}" style="height:8px;border-radius:999px;background:#F0F4F6;overflow:hidden"><i style="display:block;height:100%;width:{{ m.barWidth }};background:{{ m.barColor }}"></i></div>
+                    <span style="font-size:12px;line-height:16px;color:#636D7A">{{ m.summary }}</span>
+                  </div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;flex:0 1 auto">
+                    <sc-for list="{{ m.tags }}" as="tag" hint-placeholder-count="2">
+                      <span style="padding:0 8px;border-radius:999px;background:#F0F4F6;font-size:12px;line-height:22px">{{ tag }}</span>
+                    </sc-for>
+                  </div>
+                  <span style="padding:0 8px;border-radius:4px;border:1px solid {{ m.verdictColor }};color:{{ m.verdictColor }};font-size:12px;line-height:18px;font-weight:{{ m.verdictWeight }}">{{ m.verdict }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">막대는 진행 중 + 검토 대기 개수를 팀 최대치 기준으로 표시합니다. 이름을 누르면 해당 팀원의 태스크 목록으로 이동합니다.</p>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">스킬 태그로 담당자 찾기</h2>
+              <span style="font-size:13px;color:#636D7A">Membership.tags</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ skillChips }}" as="s" hint-placeholder-count="6">
+                <button onClick="{{ s.toggle }}" style="height:44px;padding:0 14px;border-radius:999px;font:inherit;white-space:nowrap;cursor:pointer;border:1px solid {{ s.border }};background:{{ s.bg }};color:{{ s.color }}">{{ s.label }}</button>
+              </sc-for>
+            </div>
+            <p style="margin:0;font-size:15px;line-height:22px">{{ skillResult }}</p>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isRoadmap }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="로드맵" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">로드맵</h1>
+              <button style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">새 마일스톤</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;gap:12px;align-items:center">
+                <span style="flex:0 0 220px"></span>
+                <div style="flex:1;min-width:0;display:grid;grid-template-columns:repeat(3,1fr);font-size:12px;line-height:18px;color:#636D7A;border-bottom:1px solid #E5E8EB;padding-bottom:6px">
+                  <span>10월</span><span>11월</span><span>12월</span>
+                </div>
+              </div>
+              <sc-for list="{{ milestones }}" as="ms" hint-placeholder-count="4">
+                <div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #E5E8EB">
+                  <div style="flex:0 0 220px;display:flex;flex-direction:column;gap:2px">
+                    <span style="font-size:16px;line-height:24px;font-weight:600">{{ ms.name }}</span>
+                    <span style="font-size:12px;line-height:16px;color:#636D7A">{{ ms.meta }}</span>
+                  </div>
+                  <div style="flex:1;min-width:0;position:relative;height:28px">
+                    <div style="position:absolute;left:{{ ms.left }};width:{{ ms.width }};top:4px;height:20px;border-radius:6px;background:{{ ms.trackBg }};border:{{ ms.trackBorder }};overflow:hidden"><i style="display:block;height:100%;width:{{ ms.pct }};background:#1F6F82"></i></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">점선은 준비 중, 채워진 막대는 진행률입니다. 여러 프로젝트의 마일스톤을 한 타임라인에 겹쳐 봅니다.</p>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">프로젝트 의존성</h2>
+              <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">의존성 추가</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:12px 16px;border:1px solid #E5E8EB;border-radius:8px">
+                <span style="font-size:15px;line-height:22px;font-weight:600">웹훅 파이프라인</span>
+                <span aria-hidden="true" style="color:#636D7A">→</span>
+                <span style="font-size:15px;line-height:22px;font-weight:600">코어 API</span>
+                <span style="flex:1 1 200px;min-width:0;font-size:13px;line-height:19px;color:#636D7A">웹훅 수신 엔드포인트가 먼저 배포되어야 함</span>
+                <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;color:#636D7A;font-size:12px;line-height:18px">차단 없음</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:12px 16px;border:1px solid #E5E8EB;border-radius:8px">
+                <span style="font-size:15px;line-height:22px;font-weight:600">웹훅 파이프라인</span>
+                <span aria-hidden="true" style="color:#636D7A">→</span>
+                <span style="font-size:15px;line-height:22px;font-weight:600">원격 저장소 채택</span>
+                <span style="flex:1 1 200px;min-width:0;font-size:13px;line-height:19px;color:#636D7A">현재 로컬 git만 사용 중 · 결정 대기</span>
+                <span style="padding:0 6px;border-radius:4px;border:1px solid #C92A37;color:#C92A37;font-size:12px;line-height:18px;font-weight:700">차단</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:12px 16px;border:1px solid #E5E8EB;border-radius:8px">
+                <span style="font-size:15px;line-height:22px;font-weight:600">MCP 서버</span>
+                <span aria-hidden="true" style="color:#636D7A">→</span>
+                <span style="font-size:15px;line-height:22px;font-weight:600">코어 API</span>
+                <span style="flex:1 1 200px;min-width:0;font-size:13px;line-height:19px;color:#636D7A">토큰 스코프 확정 후 도구 노출</span>
+                <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;color:#636D7A;font-size:12px;line-height:18px">차단 없음</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isNotes }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="회의록" style="display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+          <section style="flex:1 1 320px;min-width:0;background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">회의록</h1>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <label style="display:inline-flex;align-items:center;height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">.md 올리기<input type="file" accept=".md,.markdown" onChange="{{ onUpload }}" style="display:none"></label>
+                <button onClick="{{ newNote }}" style="height:36px;padding:0 12px;border:0;border-radius:6px;background:#1F6F82;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">새 회의록</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ scopeChips }}" as="c" hint-placeholder-count="4">
+                <button onClick="{{ c.go }}" style="height:36px;padding:0 12px;border-radius:999px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;border:1px solid {{ c.border }};background:{{ c.bg }};color:{{ c.color }}">{{ c.label }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <sc-for list="{{ noteGroups }}" as="g" hint-placeholder-count="3">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between">
+                    <span style="font-size:15px;line-height:22px;font-weight:700;letter-spacing:-0.02em">{{ g.title }}</span>
+                    <span style="font-size:12px;line-height:18px;color:#636D7A">{{ g.hint }}</span>
+                  </div>
+                  <sc-for list="{{ g.notes }}" as="n" hint-placeholder-count="2">
+                    <button onClick="{{ n.open }}" style="text-align:left;font:inherit;display:flex;flex-direction:column;gap:4px;padding:14px 16px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;cursor:pointer;box-shadow:{{ n.shadow }}">
+                      <span style="font-size:16px;line-height:24px;font-weight:600">{{ n.title }}</span>
+                      <span style="font-size:13px;line-height:19px;color:#636D7A">{{ n.meta }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">회의록은 프로젝트에 붙일 수도 있고 팀 공통으로 남길 수도 있습니다. 올린 .md는 본문 텍스트만 읽어 저장합니다. 파일 자체와 이미지 첨부는 저장되지 않습니다.</p>
+          </section>
+
+          <section style="flex:9999 1 420px;min-width:0;background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:12px">
+            <input value="{{ noteTitle }}" onChange="{{ setTitle }}" aria-label="제목" style="width:100%;padding:0;border:0;border-bottom:1px solid transparent;background:none;font:inherit;font-size:20px;line-height:28px;font-weight:600">
+            <div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px;color:#636D7A">
+              <select value="{{ noteProject }}" onChange="{{ setProject }}" aria-label="프로젝트" style="height:28px;padding:0 6px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;color:#191F28">
+                <option value="">팀 공통 (프로젝트 없음)</option>
+                <option value="웹훅 파이프라인">웹훅 파이프라인</option>
+                <option value="코어 API">코어 API</option>
+                <option value="디스코드 봇">디스코드 봇</option>
+              </select>
+              <span>김산돌</span><span aria-hidden="true">·</span><label style="display:inline-flex;align-items:center;gap:4px">생성일<input type="date" value="{{ noteCreated }}" onChange="{{ setNoteCreated }}" aria-label="생성일" style="height:28px;padding:0 6px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;color:#191F28"></label><span aria-hidden="true">·</span><span>{{ savedLabel }}</span>
+              <sc-if value="{{ uploaded }}" hint-placeholder-val="{{ false }}"><span style="padding:0 6px;border-radius:4px;background:#EDF9F2;color:#12793F;font-size:12px;line-height:18px;font-weight:700">{{ uploadName }} 불러옴</span></sc-if>
+            </div>
+
+            <div onClick="{{ docClick }}" style="display:flex;flex-direction:column;min-height:360px;padding:8px 0;cursor:text">
+              <sc-for list="{{ docBlocks }}" as="b" hint-placeholder-count="8">
+                <div style="padding:{{ b.pad }}">
+                  <sc-if value="{{ b.editing }}" hint-placeholder-val="{{ false }}">
+                    <textarea value="{{ b.raw }}" ref="{{ b.ref }}" onChange="{{ b.onChange }}" onKeyDown="{{ b.onKey }}" rows="{{ b.rows }}" aria-label="본문 입력" style="display:block;width:100%;padding:2px 6px;border:0;border-radius:4px;background:#F5F8F9;outline:none;font:inherit;font-size:{{ b.size }};line-height:{{ b.line }};font-weight:{{ b.weight }};color:#191F28;resize:none;overflow:hidden"></textarea>
+                  </sc-if>
+                  <sc-if value="{{ b.showBullet }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ b.edit }}" style="display:flex;gap:8px;padding:2px 6px;font-size:15px;line-height:24px">
+                      <span aria-hidden="true" style="color:#636D7A;flex:0 0 auto">{{ b.marker }}</span>
+                      <span style="flex:1;min-width:0"><sc-for list="{{ b.parts }}" as="p" hint-placeholder-count="1"><span style="font-weight:{{ p.weight }};font-style:{{ p.style }};font-family:{{ p.family }};background:{{ p.bg }};padding:{{ p.pad }};border-radius:4px;text-decoration:{{ p.deco }}">{{ p.text }}</span></sc-for></span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ b.showTodo }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;gap:8px;padding:2px 6px;font-size:15px;line-height:24px;align-items:baseline">
+                      <input type="checkbox" checked="{{ b.checked }}" onChange="{{ b.toggleTodo }}" aria-label="{{ b.text }}" style="margin:0;flex:0 0 auto">
+                      <span onClick="{{ b.edit }}" style="flex:1;min-width:0;color:{{ b.color }};text-decoration:{{ b.strike }}"><sc-for list="{{ b.parts }}" as="p" hint-placeholder-count="1"><span style="font-weight:{{ p.weight }};font-style:{{ p.style }};font-family:{{ p.family }};background:{{ p.bg }};padding:{{ p.pad }};border-radius:4px">{{ p.text }}</span></sc-for></span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ b.showQuote }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ b.edit }}" style="padding:2px 6px 2px 12px;border-left:3px solid #E5E8EB;font-size:15px;line-height:24px;color:#636D7A"><sc-for list="{{ b.parts }}" as="p" hint-placeholder-count="1"><span style="font-weight:{{ p.weight }};font-style:{{ p.style }};font-family:{{ p.family }}">{{ p.text }}</span></sc-for></div>
+                  </sc-if>
+                  <sc-if value="{{ b.showRule }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ b.edit }}" style="padding:8px 6px"><span style="display:block;height:1px;background:#E5E8EB"></span></div>
+                  </sc-if>
+                  <sc-if value="{{ b.showText }}" hint-placeholder-val="{{ true }}">
+                    <div onClick="{{ b.edit }}" style="padding:2px 6px;font-size:{{ b.size }};line-height:{{ b.line }};font-weight:{{ b.weight }};letter-spacing:{{ b.tracking }};color:{{ b.color }};min-height:{{ b.line }}"><sc-for list="{{ b.parts }}" as="p" hint-placeholder-count="1"><span style="font-weight:{{ p.weight }};font-style:{{ p.style }};font-family:{{ p.family }};background:{{ p.bg }};padding:{{ p.pad }};border-radius:4px;text-decoration:{{ p.deco }}">{{ p.text }}</span></sc-for>{{ b.placeholder }}</div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:8px;border-top:1px solid #E5E8EB">
+              <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">버전 이력</button>
+              <span style="font-size:13px;line-height:19px;color:#636D7A">아무 곳이나 눌러 바로 씁니다. # 제목, - 목록, - [ ] 체크, &gt; 인용, --- 구분선, **굵게**, *기울임*, `코드`. Enter 새 줄, Backspace 합치기, 화살표로 이동. 자동 저장됩니다.</span>
+            </div>
+          </section>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isKeys }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="연동 키" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">연동 키</h1>
+                <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">조직 전체에 쓰는 키와 저장소별 배포 키를 여기서 관리합니다. 값은 저장 후 다시 보이지 않습니다.</p>
+              </div>
+              <button onClick="{{ toggleKeyForm }}" style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">{{ keyFormLabel }}</button>
+            </div>
+
+            <sc-if value="{{ keyFormOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:#F5F8F9;border:1px solid #E5E8EB;border-radius:12px">
+                <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">조직 키 추가</h2>
+                <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-end">
+                  <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">종류
+                    <select value="{{ keyDraftKind }}" onChange="{{ setKeyDraftKind }}" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28">
+                      <option value="GitHub App">GitHub App 설치 토큰</option>
+                      <option value="PAT">개인 액세스 토큰 (PAT)</option>
+                      <option value="OAuth">OAuth 앱</option>
+                    </select>
+                  </label>
+                  <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A;flex:1 1 180px;min-width:0">이름
+                    <input value="{{ keyDraftName }}" onChange="{{ setKeyDraftName }}" placeholder="예: sandori-org 읽기" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28">
+                  </label>
+                  <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A;flex:1 1 220px;min-width:0">값
+                    <input value="{{ keyDraftValue }}" onChange="{{ setKeyDraftValue }}" type="password" placeholder="ghp_… / 설치 토큰" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#191F28">
+                  </label>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <span style="font-size:13px;font-weight:600;color:#636D7A">권한</span>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <sc-for list="{{ scopeChoices }}" as="sc" hint-placeholder-count="4">
+                      <button onClick="{{ sc.toggle }}" aria-pressed="{{ sc.on }}" style="height:36px;padding:0 12px;border-radius:999px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;border:1px solid {{ sc.border }};background:{{ sc.bg }};color:{{ sc.color }}">{{ sc.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                  <button onClick="{{ addKey }}" style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">저장</button>
+                  <button onClick="{{ toggleKeyForm }}" style="height:44px;padding:0 16px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">취소</button>
+                  <span style="font-size:13px;line-height:19px;color:#636D7A">값은 서버에서 암호화해 저장하고, 화면에는 마지막 4자만 보여 줍니다.</span>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr style="text-align:left;font-size:13px;color:#636D7A"><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">이름</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">종류</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">권한</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">마지막 사용</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">상태</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600"></th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ orgKeys }}" as="k" hint-placeholder-count="2">
+                    <tr>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top">
+                        <div style="font-size:15px;line-height:22px;font-weight:600">{{ k.name }}</div>
+                        <div style="font-size:12px;line-height:18px;color:#636D7A;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ k.masked }}</div>
+                      </td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top">{{ k.kind }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top;font-size:13px;color:#636D7A">{{ k.scopes }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top;font-size:13px;color:#636D7A">{{ k.lastUsed }}</td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top"><span style="padding:0 6px;border-radius:4px;border:1px solid {{ k.stateColor }};color:{{ k.stateColor }};font-size:12px;line-height:18px;font-weight:{{ k.stateWeight }};white-space:nowrap">{{ k.state }}</span></td>
+                      <td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;vertical-align:top">
+                        <div style="display:flex;gap:6px;flex-wrap:wrap">
+                          <button style="height:32px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">교체</button>
+                          <button onClick="{{ k.revoke }}" style="height:32px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;font-weight:600;color:#C92A37;cursor:pointer;white-space:nowrap">폐기</button>
+                        </div>
+                      </td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <sc-if value="{{ noOrgKeys }}" hint-placeholder-val="{{ false }}"><p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">조직 키가 없습니다. 저장소별 배포 키만 쓰는 것도 됩니다.</p></sc-if>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">저장소별 배포 키</h2>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ deployKeys }}" as="d" hint-placeholder-count="4">
+                <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:14px 16px;border:1px solid #E5E8EB;border-radius:8px">
+                  <div style="flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:2px">
+                    <span style="font-size:15px;line-height:22px;font-weight:600">{{ d.project }}</span>
+                    <span style="font-size:12px;line-height:18px;color:#636D7A;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ d.detail }}</span>
+                  </div>
+                  <span style="padding:0 8px;border-radius:4px;border:1px solid {{ d.stateColor }};color:{{ d.stateColor }};font-size:12px;line-height:18px;font-weight:{{ d.stateWeight }};white-space:nowrap">{{ d.state }}</span>
+                  <button onClick="{{ d.go }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">저장소 설정</button>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">배포 키는 저장소 하나에만 쓰입니다. 조직 키가 있으면 저장소마다 키를 만들지 않아도 됩니다.</p>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isProject }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="프로젝트 상세" style="display:flex;flex-direction:column;gap:16px">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px">
+              <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                <button onClick="{{ goTeam }}" style="align-self:flex-start;border:0;background:none;padding:0;font:inherit;font-size:13px;font-weight:600;color:#1F6F82;cursor:pointer">산돌이 팀</button>
+                <h1 style="margin:0;font-size:24px;line-height:33px;font-weight:700;letter-spacing:-0.02em">{{ proj.name }}</h1>
+                <p style="margin:0;font-size:14px;line-height:20px;color:#636D7A">{{ proj.purpose }}</p>
+                <div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px;line-height:19px">
+                  <span>관리자 {{ proj.owners }}</span>
+                  <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;color:#636D7A;font-size:12px;line-height:18px">{{ proj.status }}</span>
+                </div>
+                <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">{{ proj.statusDesc }}</p>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">프로젝트 수정</button>
+                <button onClick="{{ toggleTaskForm }}" style="height:36px;padding:0 12px;border:0;border-radius:6px;background:#1F6F82;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ taskFormLabel }}</button>
+              </div>
+            </div>
+
+            <sc-if value="{{ taskFormOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:#F5F8F9;border:1px solid #E5E8EB;border-radius:12px">
+                <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">{{ proj.name }}에 태스크 만들기</h2>
+                <input placeholder="해야 할 일" style="width:100%;height:52px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:16px;color:#191F28">
+                <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                  <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">담당자 (1명)<select style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>나 (김산돌)</option><option>이도현</option><option>박서연</option><option>최민우</option></select></label>
+                  <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">중요도 (1~10)<select style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>5</option><option>8</option></select></label>
+                  <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">목표 기한<input type="date" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"></label>
+                </div>
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">기한 미정 사유 (기한이 없을 때만)<input style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"></label>
+                <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                  <button style="height:44px;padding:0 16px;border:0;border-radius:8px;background:#1F6F82;color:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">태스크 만들기</button>
+                  <button onClick="{{ toggleTaskForm }}" style="height:44px;padding:0 16px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap">취소</button>
+                  <span style="font-size:13px;line-height:19px;color:#636D7A">상태는 시작 전으로 저장돼요. 담당자는 한 명만 정할 수 있어요.</span>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+              <sc-for list="{{ proj.tiles }}" as="t" hint-placeholder-count="5">
+                <div style="display:flex;flex-direction:column;gap:4px;padding:16px;background:#fff;border:1px solid #E5E8EB;border-radius:12px"><b style="font-size:26px;line-height:32px;color:{{ t.color }}">{{ t.value }}</b><span style="font-size:13px;color:#636D7A">{{ t.label }}</span></div>
+              </sc-for>
+            </div>
+          </section>
+
+          <nav aria-label="프로젝트 하위 메뉴" style="display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid #E5E8EB">
+            <sc-for list="{{ projTabs }}" as="t" hint-placeholder-count="3">
+              <button onClick="{{ t.go }}" style="height:44px;padding:0 14px;border:0;border-bottom:2px solid {{ t.line }};background:none;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap;font-weight:{{ t.weight }};color:{{ t.color }}">{{ t.label }}</button>
+            </sc-for>
+          </nav>
+          <sc-if value="{{ isProjTasks }}" hint-placeholder-val="{{ true }}">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <div role="group" aria-label="보기" style="display:flex;gap:4px;flex-wrap:wrap">
+                <sc-for list="{{ projViews }}" as="v" hint-placeholder-count="2">
+                  <button onClick="{{ v.go }}" aria-pressed="{{ v.on }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;background:{{ v.bg }};color:{{ v.color }}">{{ v.label }}</button>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center">
+                <label style="display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:13px;color:#636D7A;white-space:nowrap;cursor:pointer"><input type="checkbox"> 완료·취소 포함</label>
+                <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">보관</button>
+              </div>
+            </div>
+            <sc-if value="{{ isProjList }}" hint-placeholder-val="{{ true }}">
+              <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ projRows }}" as="t" hint-placeholder-count="3">
+                  <li onClick="{{ t.open }}" style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;min-height:56px;padding:10px 14px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;cursor:pointer">
+                    <div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="font-size:16px;line-height:24px;font-weight:600">{{ t.title }}</div>
+                      <div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:13px;line-height:19px;color:#636D7A">
+                        <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;font-size:12px;line-height:18px;white-space:nowrap">중요도 {{ t.priority }}/10</span>
+                        <span>{{ t.assignee }}</span>
+                        <span>{{ t.note }}</span>
+                      </div>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                      <span style="font-size:13px;line-height:19px;white-space:nowrap;color:{{ t.dueColor }}">{{ t.due }}</span>
+                      <select aria-label="상태" style="height:36px;padding:0 10px;border:0;border-radius:999px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;background:{{ t.pillBg }};color:{{ t.pillColor }}"><option>{{ t.status }}</option></select>
+                      <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">오늘 추가</button>
+                    </div>
+                  </li>
+                </sc-for>
+              </ul>
+            </sc-if>
+            <sc-if value="{{ isProjBoard }}" hint-placeholder-val="{{ false }}">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+                <sc-for list="{{ projBoard }}" as="col" hint-placeholder-count="4">
+                  <div onDragOver="{{ col.onDragOver }}" onDragLeave="{{ col.onDragLeave }}" onDrop="{{ col.onDrop }}" style="display:flex;flex-direction:column;gap:8px;min-height:120px;padding:8px;border:1px dashed {{ col.border }};border-radius:8px;background:{{ col.bg }}">
+                    <h3 style="margin:0;font-size:14px;line-height:20px;font-weight:700">{{ col.label }} <span style="color:#636D7A">{{ col.count }}</span></h3>
+                    <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+                      <sc-for list="{{ col.rows }}" as="t" hint-placeholder-count="2">
+                        <li draggable="true" onDragStart="{{ t.onDragStart }}" onDragEnd="{{ t.onDragEnd }}" onClick="{{ t.open }}" style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;cursor:grab;opacity:{{ t.opacity }}">
+                          <span style="font-size:14px;line-height:20px;font-weight:600">{{ t.title }}</span>
+                          <span style="font-size:12px;line-height:18px;color:#636D7A">{{ t.assignee }} · {{ t.due }}</span>
+                        </li>
+                      </sc-for>
+                    </ul>
+                    <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;line-height:18px;color:#B0B8C1">여기로 끌어다 놓기</span></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </section>
+
+          </sc-if>
+
+          <sc-if value="{{ isProjRepo }}" hint-placeholder-val="{{ false }}">
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+              <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">저장소 연결</h2>
+              <span style="padding:0 8px;border-radius:4px;font-size:12px;line-height:22px;font-weight:700;background:{{ proj.repoBg }};color:{{ proj.repoColor }}">{{ proj.repoState }}</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;padding:14px 16px;border:1px solid #E5E8EB;border-radius:8px;background:#F5F8F9">
+              <div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="font-size:16px;line-height:24px;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ proj.repo }}</span>
+                <span style="font-size:13px;line-height:19px;color:#636D7A">{{ proj.repoHint }}</span>
+              </div>
+              <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ proj.repoAction }}</button>
+              <sc-if value="{{ proj.connected }}" hint-placeholder-val="{{ false }}">
+                <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;color:#C92A37;cursor:pointer;white-space:nowrap">연결 해제</button>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ proj.connected }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="font-size:13px;font-weight:600;color:#636D7A">인증 방식</span>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <sc-for list="{{ authModes }}" as="a" hint-placeholder-count="2">
+                    <button onClick="{{ a.go }}" aria-pressed="{{ a.on }}" style="flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:2px;align-items:flex-start;padding:12px 14px;border:1px solid {{ a.border }};border-radius:8px;background:{{ a.bg }};font:inherit;cursor:pointer;text-align:left">
+                      <span style="font-size:14px;line-height:20px;font-weight:600;color:{{ a.color }}">{{ a.label }}</span>
+                      <span style="font-size:12px;line-height:18px;color:#636D7A">{{ a.desc }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ useOrgKey }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:12px 14px;border:1px solid #E5E8EB;border-radius:8px;background:#fff">
+                    <select value="{{ projectKeyId }}" onChange="{{ setProjectKey }}" aria-label="조직 키" style="flex:1 1 200px;min-width:0;height:36px;padding:0 8px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28">
+                      <sc-for list="{{ orgKeyOptions }}" as="o" hint-placeholder-count="2">
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      </sc-for>
+                    </select>
+                    <button onClick="{{ goKeys }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">연동 키 관리</button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ useDeployKey }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid #E5E8EB;border-radius:8px;background:#fff">
+                    <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between">
+                      <span style="font-size:13px;line-height:19px;color:#636D7A">{{ deployKeyMeta }}</span>
+                      <label style="display:inline-flex;align-items:center;gap:6px;min-height:36px;font-size:13px;color:#636D7A;white-space:nowrap;cursor:pointer"><input type="checkbox" checked="{{ deployWrite }}" onChange="{{ toggleDeployWrite }}"> 쓰기 권한 허용</label>
+                    </div>
+                    <pre style="margin:0;padding:10px 12px;border:1px solid #E5E8EB;border-radius:6px;background:#F5F8F9;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;color:#191F28">{{ deployPublicKey }}</pre>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                      <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">공개키 복사</button>
+                      <button onClick="{{ rotateDeployKey }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">새로 만들기</button>
+                      <span style="font-size:13px;line-height:19px;color:#636D7A">GitHub 저장소 Settings → Deploy keys에 이 공개키를 등록하세요.</span>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between">
+                  <span style="font-size:13px;font-weight:600;color:#636D7A">이슈 가져오기</span>
+                  <label style="display:inline-flex;align-items:center;gap:6px;min-height:36px;font-size:13px;color:#636D7A;white-space:nowrap;cursor:pointer"><input type="checkbox" checked="{{ autoImport }}" onChange="{{ toggleAutoImport }}"> 새 이슈를 자동으로 태스크로 (지금은 직접 고릅니다)</label>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                  <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#636D7A">라벨<select style="height:36px;padding:0 8px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28"><option>task</option><option>전체</option><option>bug</option></select></label>
+                  <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#636D7A">담당자 기본값<select style="height:36px;padding:0 8px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28"><option>이슈 assignee</option><option>비워 두기</option></select></label>
+                </div>
+                <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+                  <sc-for list="{{ openIssues }}" as="iss" hint-placeholder-count="3">
+                    <li style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:12px 14px;border:1px solid #E5E8EB;border-radius:8px;background:#fff">
+                      <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#636D7A;white-space:nowrap">{{ iss.number }}</span>
+                      <div style="flex:1 1 200px;min-width:0;display:flex;flex-direction:column;gap:2px">
+                        <span style="font-size:15px;line-height:22px;font-weight:600">{{ iss.title }}</span>
+                        <span style="font-size:12px;line-height:18px;color:#636D7A">{{ iss.meta }}</span>
+                      </div>
+                      <sc-if value="{{ iss.imported }}" hint-placeholder-val="{{ false }}">
+                        <span style="padding:0 8px;border-radius:4px;background:#EDF9F2;color:#12793F;font-size:12px;line-height:22px;font-weight:700;white-space:nowrap">{{ iss.taskNumber }}로 가져옴</span>
+                      </sc-if>
+                      <sc-if value="{{ iss.pending }}" hint-placeholder-val="{{ true }}">
+                        <button onClick="{{ iss.importIt }}" style="height:36px;padding:0 12px;border:0;border-radius:6px;background:#1F6F82;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">태스크로 가져오기</button>
+                      </sc-if>
+                    </li>
+                  </sc-for>
+                </ul>
+                <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">가져온 태스크는 이슈와 계속 붙어 있습니다. 태스크가 완료되면 이슈도 닫고, 이슈가 닫히면 태스크도 완료로 맞춥니다.</p>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="font-size:13px;font-weight:600;color:#636D7A">이 프로젝트의 자동 전환</span>
+                <sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+                  <div style="display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;padding:14px 16px;border:1px solid #E5E8EB;border-radius:8px">
+                    <div style="flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:2px">
+                      <span style="font-size:15px;line-height:22px;font-weight:600">{{ r.title }}</span>
+                      <span style="font-size:13px;line-height:19px;color:#636D7A">{{ r.desc }}</span>
+                    </div>
+                    <button onClick="{{ r.toggle }}" aria-pressed="{{ r.on }}" style="height:36px;padding:0 12px;border-radius:999px;border:0;font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;background:{{ r.bg }};color:{{ r.color }}">{{ r.state }}</button>
+                  </div>
+                </sc-for>
+                <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">네 단계는 모두 선택입니다. 이슈 없이 태스크에서 시작해도, 이슈만 가져와 두어도, git과 무관한 태스크로 남겨 두어도 됩니다.</p>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px">
+                  <span style="font-size:13px;font-weight:600;color:#636D7A">최근 이벤트</span>
+                  <a href="#" style="font-size:13px;font-weight:600">전체 보기</a>
+                </div>
+                <div style="overflow-x:auto">
+                  <table style="width:100%;border-collapse:collapse">
+                    <thead><tr style="text-align:left;font-size:13px;color:#636D7A"><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">시각</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">이벤트</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">태스크</th><th style="padding:10px 8px;border-bottom:1px solid #E5E8EB;font-weight:600">결과</th></tr></thead>
+                    <tbody>
+                      <tr><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;color:#636D7A">14:18</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB">PR #128 머지</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB"><a href="#">TASK-142 웹훅 수신 엔드포인트</a></td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB"><span style="padding:0 8px;border-radius:999px;background:#B9E6CB;color:#0B3D22;font-size:12px;line-height:22px;font-weight:700">완료</span></td></tr>
+                      <tr><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;color:#636D7A">13:02</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB">PR #131 오픈</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB"><a href="#">TASK-147 상태 전환 서비스</a></td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB"><span style="padding:0 8px;border-radius:999px;background:#CFE3F7;color:#0B3A66;font-size:12px;line-height:22px;font-weight:700">검토 대기</span></td></tr>
+                      <tr><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;color:#636D7A">11:44</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB">커밋 3건 push</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB"><a href="#">TASK-147 상태 전환 서비스</a></td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;color:#636D7A">체크리스트 3건 체크</td></tr>
+                      <tr><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;color:#636D7A">10:31</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB">커밋 1건 push</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB;color:#636D7A">연결 안 됨</td><td style="padding:10px 8px;border-bottom:1px solid #E5E8EB"><button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">태스크에 연결</button></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </sc-if>
+          </section>
+
+          <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+            <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">참고 자료</h2>
+            <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px">
+              <li style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;color:#636D7A;font-size:12px;line-height:18px">외부 문서</span><a href="#">자동 전환 규칙 표 (Notion)</a></li>
+              <li style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;color:#636D7A;font-size:12px;line-height:18px">회의록</span><a href="#">웹훅 스펙 리뷰</a></li>
+            </ul>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+              <select aria-label="종류" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"><option>외부 문서</option><option>이슈</option><option>대시보드</option></select>
+              <input placeholder="제목" style="flex:1 1 160px;min-width:0;height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28">
+              <input type="url" placeholder="https://" style="flex:2 1 200px;min-width:0;height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28">
+              <button style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">추가</button>
+            </div>
+          </section>
+          </sc-if>
+
+          <sc-if value="{{ isProjApi }}" hint-placeholder-val="{{ false }}">
+            <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px">
+                <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                  <h2 style="margin:0;font-size:20px;line-height:28px;font-weight:700;letter-spacing:-0.02em">{{ api.title }}</h2>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px;line-height:19px;color:#636D7A">
+                    <span style="padding:0 6px;border-radius:4px;background:#F0F4F6;font-size:12px;line-height:18px;font-weight:700">{{ api.version }}</span>
+                    <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px">{{ api.server }}</span>
+                    <span>OpenAPI {{ api.openapi }}</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;flex:0 1 360px;min-width:0">
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    <input value="{{ specUrl }}" onChange="{{ setSpecUrl }}" onKeyDown="{{ specUrlKey }}" aria-label="OpenAPI JSON 주소" placeholder="http://localhost:8000/api/openapi.json" style="flex:1 1 200px;min-width:0;height:36px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28">
+                    <button onClick="{{ fetchSpec }}" style="height:36px;padding:0 12px;border:0;border-radius:6px;background:#1F6F82;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ fetchLabel }}</button>
+                    <label style="display:inline-flex;align-items:center;height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">파일<input type="file" accept=".json,application/json" onChange="{{ onSpecUpload }}" style="display:none"></label>
+                  </div>
+                  <span style="font-size:12px;line-height:18px;color:#636D7A">{{ api.source }}</span>
+                </div>
+              </div>
+              <sc-if value="{{ api.hasError }}" hint-placeholder-val="{{ false }}">
+                <p style="margin:0;padding:10px 12px;border:1px solid #F6C9C4;border-radius:6px;background:#FDF2F1;font-size:13px;line-height:19px;color:#6B1410">{{ api.error }}</p>
+              </sc-if>
+              <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">{{ api.desc }}</p>
+            </section>
+
+            <section style="background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between">
+                <h2 style="margin:0;font-size:17px;line-height:26px;font-weight:700;letter-spacing:-0.02em">엔드포인트 <span style="color:#636D7A">{{ api.count }}</span></h2>
+                <input value="{{ apiFilter }}" onChange="{{ setApiFilter }}" aria-label="엔드포인트 검색" placeholder="경로·요약 검색" style="flex:0 1 240px;min-width:0;height:36px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28">
+              </div>
+              <sc-for list="{{ api.groups }}" as="g" hint-placeholder-count="3">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;padding-bottom:4px;border-bottom:1px solid #E5E8EB">
+                    <span style="font-size:15px;line-height:22px;font-weight:700;letter-spacing:-0.02em">{{ g.tag }}</span>
+                    <span style="font-size:12px;line-height:18px;color:#636D7A">{{ g.desc }}</span>
+                  </div>
+                  <sc-for list="{{ g.ops }}" as="op" hint-placeholder-count="3">
+                    <div style="border:1px solid {{ op.border }};border-radius:8px;background:{{ op.bg }};overflow:hidden">
+                      <button onClick="{{ op.toggle }}" style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;width:100%;min-height:48px;padding:8px 12px;border:0;background:none;font:inherit;text-align:left;cursor:pointer">
+                        <span style="flex:0 0 auto;min-width:64px;padding:0 8px;border-radius:4px;background:{{ op.methodBg }};color:#fff;font-size:12px;line-height:24px;font-weight:700;text-align:center;letter-spacing:0.02em">{{ op.method }}</span>
+                        <span style="flex:0 1 auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;font-weight:600;color:#191F28">{{ op.path }}</span>
+                        <span style="flex:1 1 160px;min-width:0;font-size:13px;line-height:19px;color:#636D7A">{{ op.summary }}</span>
+                        <sc-if value="{{ op.auth }}" hint-placeholder-val="{{ false }}"><span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;font-size:11px;line-height:18px;color:#636D7A;white-space:nowrap">인증</span></sc-if>
+                        <span aria-hidden="true" style="color:#636D7A;font-size:12px">{{ op.chevron }}</span>
+                      </button>
+                      <sc-if value="{{ op.open }}" hint-placeholder-val="{{ false }}">
+                        <div style="display:flex;flex-direction:column;gap:12px;padding:0 12px 12px 12px">
+                          <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">{{ op.desc }}</p>
+                          <sc-if value="{{ op.hasParams }}" hint-placeholder-val="{{ false }}">
+                            <div style="display:flex;flex-direction:column;gap:6px">
+                              <span style="font-size:12px;line-height:18px;font-weight:700;color:#636D7A">파라미터</span>
+                              <sc-for list="{{ op.params }}" as="pa" hint-placeholder-count="2">
+                                <div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;padding:6px 8px;border-radius:6px;background:#fff;border:1px solid #E5E8EB">
+                                  <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700">{{ pa.name }}</span>
+                                  <span style="font-size:11px;line-height:18px;color:#636D7A">{{ pa.meta }}</span>
+                                  <span style="flex:1 1 140px;min-width:0;font-size:12px;line-height:18px;color:#636D7A">{{ pa.desc }}</span>
+                                </div>
+                              </sc-for>
+                            </div>
+                          </sc-if>
+                          <sc-if value="{{ op.hasBody }}" hint-placeholder-val="{{ false }}">
+                            <div style="display:flex;flex-direction:column;gap:6px">
+                              <span style="font-size:12px;line-height:18px;font-weight:700;color:#636D7A">요청 본문 · {{ op.bodyType }}</span>
+                              <pre style="margin:0;padding:10px 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;color:#191F28">{{ op.bodyExample }}</pre>
+                            </div>
+                          </sc-if>
+                          <div style="display:flex;flex-direction:column;gap:6px">
+                            <span style="font-size:12px;line-height:18px;font-weight:700;color:#636D7A">응답</span>
+                            <sc-for list="{{ op.responses }}" as="rs" hint-placeholder-count="2">
+                              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline">
+                                <span style="padding:0 6px;border-radius:4px;background:{{ rs.bg }};color:{{ rs.color }};font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:20px;font-weight:700">{{ rs.code }}</span>
+                                <span style="flex:1 1 160px;min-width:0;font-size:13px;line-height:19px;color:#636D7A">{{ rs.desc }}</span>
+                              </div>
+                            </sc-for>
+                          </div>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+              <sc-if value="{{ api.empty }}" hint-placeholder-val="{{ false }}">
+                <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">조건에 맞는 엔드포인트가 없습니다.</p>
+              </sc-if>
+            </section>
+          </sc-if>
+        </div>
+      </sc-if>
+
+    </div>
+
+    <sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ false }}">
+      <aside aria-label="태스크 상세" style="{{ panelWrap }}">
+        <section style="{{ panelCard }}">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span aria-live="polite" style="flex:1;font-size:13px;color:#636D7A">{{ panelSaved }}</span>
+            <button aria-label="링크 복사" style="width:36px;height:36px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;cursor:pointer">⧉</button>
+            <button onClick="{{ toggleFull }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ fullLabel }}</button>
+            <button onClick="{{ closePanel }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">닫기</button>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:13px;line-height:19px;color:#636D7A">{{ panelNumber }}</div>
+            <input value="{{ panelTitle }}" onChange="{{ setPanelTitle }}" aria-label="제목" style="width:100%;padding:0;border:0;border-bottom:1px solid transparent;background:none;font:inherit;font-size:20px;line-height:28px;font-weight:600;color:#191F28">
+            <div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px;color:#636D7A">
+              <a href="#">{{ panelProject }}</a>
+              <span>{{ panelAssignee }}</span>
+              <select value="{{ panelStatus }}" onChange="{{ setPanelStatus }}" aria-label="상태" style="height:24px;padding:0 6px;border:0;border-radius:999px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;background:{{ statusBg }};color:{{ statusColor }}">
+                <sc-for list="{{ statusOptions }}" as="o" hint-placeholder-count="7">
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+              <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;font-size:12px;line-height:18px;white-space:nowrap;color:{{ dueColor }}">{{ dueLabel }}</span>
+              <span style="display:flex;align-items:center;gap:4px">
+                <select value="{{ panelPriority }}" onChange="{{ setPanelPriority }}" aria-label="중요도" style="height:24px;padding:0 4px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;color:#191F28">
+                  <sc-for list="{{ priorityOptions }}" as="o" hint-placeholder-count="10">
+                    <option value="{{ o.value }}">{{ o.label }}</option>
+                  </sc-for>
+                </select><span>/10</span>
+              </span>
+            </div>
+            <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">{{ statusHint }}</p>
+          </div>
+
+          <sc-if value="{{ stopOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:8px;padding:12px;background:#F5F8F9;border:1px solid #E5E8EB;border-radius:8px">
+              <div style="font-size:13px;font-weight:600;color:#636D7A">{{ stopLabel }}</div>
+              <textarea value="{{ stopReason }}" onChange="{{ setStopReason }}" rows="2" placeholder="무엇 때문에 막혔나요? (필수)" style="width:100%;padding:10px 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:14px;line-height:20px;color:#191F28;resize:vertical"></textarea>
+              <button style="height:36px;padding:0 12px;border:0;border-radius:6px;background:#1F6F82;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;align-self:flex-start">사유 저장</button>
+            </div>
+          </sc-if>
+
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">설명
+            <textarea value="{{ panelDesc }}" onChange="{{ setPanelDesc }}" rows="3" style="width:100%;padding:10px 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:14px;line-height:20px;color:#191F28;resize:vertical"></textarea>
+          </label>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:13px;font-weight:600;color:#636D7A">목표일</div>
+            <div style="font-size:17px;line-height:26px;font-weight:600;color:{{ dueColor }}">{{ dueFull }}</div>
+            <button onClick="{{ toggleExtend }}" style="align-self:flex-start;border:0;background:none;padding:0;font:inherit;font-weight:600;color:#1F6F82;cursor:pointer">{{ extendLabel }}</button>
+            <sc-if value="{{ extendOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:8px;padding:12px;background:#F5F8F9;border:1px solid #E5E8EB;border-radius:8px">
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">새 목표일<input type="date" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"></label>
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">연장 사유<input placeholder="왜 미루나요? (필수)" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28"></label>
+                <button style="height:36px;padding:0 12px;border:0;border-radius:6px;background:#1F6F82;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;align-self:flex-start">저장</button>
+              </div>
+            </sc-if>
+          </div>
+
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">완료 조건
+            <textarea value="{{ panelDoneWhen }}" onChange="{{ setDoneWhen }}" rows="2" style="width:100%;padding:10px 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:14px;line-height:20px;color:#191F28;resize:vertical"></textarea>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">다음 행동
+            <input value="{{ panelNextAction }}" onChange="{{ setNextAction }}" placeholder="멈출 때 한 줄로 고쳐 씁니다" style="height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28">
+          </label>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+              <span style="font-size:13px;font-weight:600;color:#636D7A">체크리스트</span>
+              <span style="font-size:13px;color:#636D7A">{{ checkLabel }}</span>
+            </div>
+            <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ checkItems }}" as="c" hint-placeholder-count="4">
+                <li style="display:flex;gap:8px;align-items:center">
+                  <input type="checkbox" checked="{{ c.done }}" onChange="{{ c.toggle }}" aria-label="{{ c.text }}">
+                  <span style="flex:1;min-width:0;font-size:14px;line-height:20px;text-decoration:{{ c.deco }};color:{{ c.color }}">{{ c.text }}</span>
+                  <sc-if value="{{ c.hasCommit }}" hint-placeholder-val="{{ false }}"><span style="padding:0 6px;border-radius:4px;background:#F0F4F6;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:18px;color:#636D7A;white-space:nowrap">{{ c.commit }}</span></sc-if>
+                  <button onClick="{{ c.remove }}" aria-label="삭제" style="width:30px;height:30px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;cursor:pointer">✕</button>
+                </li>
+              </sc-for>
+            </ul>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input value="{{ checkDraft }}" onChange="{{ setCheckDraft }}" placeholder="항목 추가" style="flex:1;min-width:0;height:44px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;color:#191F28">
+              <button onClick="{{ addCheck }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">추가</button>
+            </div>
+            <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">커밋 메시지에 항목 번호를 적으면 그 항목이 자동으로 체크됩니다.</p>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid #E5E8EB;border-radius:8px;background:#F5F8F9">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+              <span style="font-size:13px;font-weight:600;color:#636D7A">GitHub</span>
+              <span style="font-size:12px;line-height:18px;color:#636D7A;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ panelRepo }}</span>
+            </div>
+            <ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ lifecycle }}" as="st" hint-placeholder-count="4">
+                <li style="display:flex;gap:10px;align-items:flex-start">
+                  <span aria-hidden="true" style="flex:0 0 20px;width:20px;height:20px;margin-top:2px;border-radius:999px;border:1px solid {{ st.dotBorder }};background:{{ st.dotBg }};color:{{ st.dotColor }};display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">{{ st.mark }}</span>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline">
+                      <span style="font-size:13px;line-height:19px;font-weight:600;color:{{ st.titleColor }}">{{ st.label }}</span>
+                      <span style="font-size:12px;line-height:18px;color:#636D7A;font-family:{{ st.family }}">{{ st.value }}</span>
+                    </div>
+                    <span style="font-size:12px;line-height:18px;color:#636D7A">{{ st.hint }}</span>
+                  </div>
+                  <sc-if value="{{ st.hasAction }}" hint-placeholder-val="{{ false }}">
+                    <button style="height:28px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">{{ st.action }}</button>
+                  </sc-if>
+                </li>
+              </sc-for>
+            </ol>
+            <sc-if value="{{ hasGithub }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid #E5E8EB;font-size:13px;line-height:19px">
+                <sc-for list="{{ commits }}" as="cm" hint-placeholder-count="3">
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline">
+                    <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#636D7A">{{ cm.sha }}</span>
+                    <span style="flex:1 1 160px;min-width:0">{{ cm.msg }}</span>
+                    <span style="font-size:12px;line-height:18px;color:#636D7A">{{ cm.item }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#636D7A">진행 메모
+            <textarea value="{{ panelNotes }}" onChange="{{ setPanelNotes }}" placeholder="지금까지 한 일, 막힌 점, 다음에 할 일" style="width:100%;min-height:120px;padding:10px 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:14px;line-height:20px;color:#191F28;resize:vertical"></textarea>
+            <span style="font-size:13px;line-height:19px;color:#636D7A">내용을 수정하면 자동 저장됩니다.</span>
+          </label>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:13px;font-weight:600;color:#636D7A">참고 자료</span>
+            <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ panelRefs }}" as="r" hint-placeholder-count="2">
+                <li style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                  <span style="padding:0 6px;border-radius:4px;border:1px solid #E5E8EB;color:#636D7A;font-size:12px;line-height:18px;white-space:nowrap">{{ r.kind }}</span>
+                  <button onClick="{{ r.go }}" style="flex:1 1 160px;min-width:0;border:0;background:none;padding:0;font:inherit;font-weight:600;color:#1F6F82;cursor:pointer;text-align:left">{{ r.title }}</button>
+                  <button onClick="{{ r.remove }}" aria-label="연결 해제" style="width:28px;height:28px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:12px;cursor:pointer">✕</button>
+                </li>
+              </sc-for>
+            </ul>
+            <sc-if value="{{ noPanelRefs }}" hint-placeholder-val="{{ false }}"><p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">연결된 자료 없음</p></sc-if>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+              <select value="{{ refDraftNote }}" onChange="{{ setRefDraftNote }}" aria-label="회의록 연결" style="flex:1 1 180px;min-width:0;height:36px;padding:0 8px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28">
+                <option value="">회의록에서 고르기…</option>
+                <sc-for list="{{ noteOptions }}" as="o" hint-placeholder-count="4">
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+              <button onClick="{{ addNoteRef }}" style="height:36px;padding:0 12px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">연결</button>
+            </div>
+            <sc-if value="{{ linkOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                <input value="{{ refDraftTitle }}" onChange="{{ setRefDraftTitle }}" placeholder="제목" style="flex:1 1 140px;min-width:0;height:36px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28">
+                <input value="{{ refDraftUrl }}" onChange="{{ setRefDraftUrl }}" type="url" placeholder="https://" style="flex:2 1 180px;min-width:0;height:36px;padding:0 10px;border:1px solid #E5E8EB;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#191F28">
+                <button onClick="{{ addUrlRef }}" style="height:36px;padding:0 12px;border:0;border-radius:6px;background:#1F6F82;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">추가</button>
+              </div>
+            </sc-if>
+            <button onClick="{{ toggleLink }}" style="align-self:flex-start;border:0;background:none;padding:0;font:inherit;font-size:13px;font-weight:600;color:#1F6F82;cursor:pointer">{{ linkLabel }}</button>
+            <p style="margin:0;font-size:13px;line-height:19px;color:#636D7A">PR·커밋은 저장소 연결이 자동으로 붙입니다. 여기에는 앱 안의 회의록이나 앱이 모르는 외부 주소만 연결합니다.</p>
+          </div>
+
+          <details><summary style="cursor:pointer;font-weight:600;color:#636D7A">변경 이력 {{ historyCount }}</summary>
+            <ul style="list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:19px">
+              <sc-for list="{{ panelHistory }}" as="h" hint-placeholder-count="3">
+                <li><span style="color:#636D7A">{{ h.when }}</span> {{ h.what }}</li>
+              </sc-for>
+            </ul>
+            <sc-if value="{{ noHistory }}" hint-placeholder-val="{{ false }}"><p style="margin:8px 0 0;font-size:13px;line-height:19px;color:#636D7A">기록 없음</p></sc-if>
+          </details>
+          <details><summary style="cursor:pointer;font-weight:600;color:#636D7A">더보기</summary>
+            <p style="margin:8px 0 0;font-size:13px;line-height:19px;color:#636D7A">일시정지: 개인 사유 또는 다른 작업 · 막힘: 외부 요인으로 진행 불가</p>
+            <p style="margin:4px 0 0;font-size:13px;line-height:19px">담당자·프로젝트·기한 미정 사유를 바꾸려면 <a href="#">수정 화면</a>에서 합니다.</p>
+          </details>
+        </section>
+      </aside>
+    </sc-if>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#1F6F82&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#1F6F82&quot;,&quot;#2F6FBF&quot;,&quot;#7A4FBF&quot;,&quot;#12793F&quot;]}}">
+const DEFAULT_MD = `## 논의 사항
+- GitHub 연동 범위: PR 오픈 → 검토 대기, 머지 → 완료
+- 커밋 메시지의 TASK-123 파싱은 변경 이력에만 기록
+
+## 결정
+회의록은 앱 안에서 관리한다. Notion은 외부 공유용으로만 남긴다.
+
+## 후속
+- 원격 저장소 채택 결정 (담당: 최민우, 10/2)
+- MeetingNote 모델 + markdown/bleach 렌더링 추가 (담당: 김산돌)`;
+
+const SCREENS = [
+  ["capacity", "부하 현황"],
+  ["roadmap", "로드맵"],
+  ["notes", "회의록"],
+  ["keys", "연동 키"],
+];
+
+const SCOPE_CHOICES = ["repo:read", "repo:write", "issues", "pull_requests", "webhooks"];
+
+const ORG_KEYS = [
+  { id: "k1", name: "sandori-org 설치 토큰", kind: "GitHub App", masked: "ghs_••••4f21", scopes: ["repo:read", "issues", "pull_requests", "webhooks"], lastUsed: "2분 전", state: "정상" },
+  { id: "k2", name: "백업용 PAT (최민우)", kind: "PAT", masked: "ghp_••••9ac0", scopes: ["repo:read"], lastUsed: "9/2", state: "만료 12일 후" },
+];
+
+const TASK_DETAILS = {
+  "상태 전환 서비스": {
+    links: [{ kind: "회의록", title: "개발업무 통합 방향 논의", noteId: "n1" }, { kind: "외부 문서", title: "자동 전환 규칙 표 (Notion)" }],
+    history: [
+      { when: "13:02 GitHub 연동", what: "진행 중 → 검토 대기 (PR #131 오픈)" },
+      { when: "11:44 GitHub 연동", what: '커밋 7d40e18 · 체크리스트 "자동 전환 케이스 테스트" 완료' },
+      { when: "9/10 GitHub 연동", what: "브랜치 feat/status-service 연결 · 시작 전 → 진행 중" },
+      { when: "9/9 김산돌", what: "목표일 9/12 → 9/15 연장 (리뷰 대기 겹침)" },
+    ],
+    number: "TASK-147", dueFull: "9월 15일 (화)",
+    repo: "sandori/core", branch: "feat/status-service", pr: "#131 feat: 상태 전환 서비스 분리", prState: "Open", reviews: "리뷰 1/2 승인",
+    desc: "PR/커밋 이벤트를 받아 태스크 상태를 바꾸는 서비스 계층을 분리한다.",
+    doneWhen: "자동 전환 4개 규칙이 테스트를 통과하고, 되돌리기가 이력에 남는다.",
+    nextAction: "리뷰 코멘트 2건 반영 후 재요청",
+    notes: "규칙 테이블은 core/tasks/services.py로 옮겼다. 되돌리기 시 이력이 두 번 남는 문제는 3b8ff05에서 수정.",
+    checks: [
+      { text: "규칙 테이블 정의", done: true, commit: "a1c93f2" },
+      { text: "자동 전환 케이스 테스트", done: true, commit: "7d40e18" },
+      { text: "되돌리기 시 이력 중복 제거", done: true, commit: "3b8ff05" },
+      { text: "리뷰 코멘트 반영", done: false, commit: "" },
+      { text: "운영 로그 확인", done: false, commit: "" },
+    ],
+    commits: [
+      { sha: "a1c93f2", msg: "feat: 상태 전환 규칙 테이블 추가", item: "항목 1 체크" },
+      { sha: "7d40e18", msg: "test: 자동 전환 케이스 보강", item: "항목 2 체크" },
+      { sha: "3b8ff05", msg: "fix: 되돌리기 시 이력 중복 제거", item: "항목 3 체크" },
+    ],
+  },
+  "웹훅 수신 엔드포인트": {
+    links: [{ kind: "회의록", title: "웹훅 스펙 리뷰", noteId: "n2" }],
+    history: [
+      { when: "9/5 GitHub 연동", what: "PR #128 머지 · 검토 대기 → 완료" },
+      { when: "9/3 김산돌", what: "시작 전 → 진행 중" },
+    ],
+    number: "TASK-142", dueFull: "9월 5일 (금)",
+    repo: "sandori/core", branch: "feat/webhook-endpoint", pr: "#128 feat: 웹훅 수신 엔드포인트", prState: "Merged", reviews: "리뷰 2/2 승인",
+    desc: "GitHub 웹훅을 받는 엔드포인트를 추가한다.",
+    doneWhen: "서명 검증을 통과한 이벤트만 처리되고, 재시도가 기록된다.",
+    nextAction: "",
+    notes: "머지 완료. 재시도 정책은 별도 태스크로 분리했다.",
+    checks: [
+      { text: "엔드포인트 추가", done: true, commit: "5f21ab0" },
+      { text: "서명 검증", done: true, commit: "9c04de7" },
+    ],
+    commits: [
+      { sha: "5f21ab0", msg: "feat: 웹훅 수신 엔드포인트", item: "항목 1 체크" },
+      { sha: "9c04de7", msg: "feat: 서명 검증 추가", item: "항목 2 체크" },
+    ],
+  },
+  "커밋 메시지 파서": {
+    links: [{ kind: "외부 문서", title: "커밋 메시지 규칙 초안" }],
+    history: [
+      { when: "9/11 GitHub 연동", what: '커밋 b71c8e4 · 체크리스트 "패턴 정의" 완료' },
+      { when: "9/10 김산돌", what: "시작 전 → 진행 중" },
+    ],
+    number: "TASK-149", dueFull: "9월 22일 (월)",
+    repo: "sandori/core", branch: "feat/commit-parser", pr: "", prState: "", reviews: "",
+    desc: "커밋 메시지에서 태스크·체크리스트 항목을 찾는다.",
+    doneWhen: "항목을 못 찾으면 이력에만 남는다.",
+    nextAction: "정규식 케이스 정리",
+    notes: "",
+    checks: [
+      { text: "패턴 정의", done: true, commit: "b71c8e4" },
+      { text: "항목 매칭", done: false, commit: "" },
+      { text: "미매칭 이력 기록", done: false, commit: "" },
+      { text: "테스트", done: false, commit: "" },
+    ],
+    commits: [{ sha: "b71c8e4", msg: "feat: 커밋 메시지 패턴 정의", item: "항목 1 체크" }],
+  },
+  "원격 저장소 채택 결정": {
+    links: [{ kind: "외부 문서", title: "원격 저장소 비교표" }],
+    history: [
+      { when: "9/9 최민우", what: "진행 중 → 막힘 (비용 승인 대기)" },
+      { when: "9/8 김산돌", what: "담당자 최민우로 변경" },
+    ],
+    number: "TASK-150", dueFull: "9월 12일 (토)",
+    desc: "GitHub를 원격 저장소로 채택할지 결정한다.",
+    doneWhen: "결정과 근거가 회의록에 남는다.",
+    nextAction: "9/12 회의 안건으로 올리기",
+    notes: "현재 로컬 git만 사용 중. 비용·권한 검토가 필요하다.",
+    checks: [
+      { text: "비용 검토", done: true, commit: "" },
+      { text: "권한 정책 확인", done: false, commit: "" },
+      { text: "회의 결정", done: false, commit: "" },
+    ],
+  },
+  "토큰 스코프 확정": {
+    links: [],
+    history: [
+      { when: "9/10 최민우", what: "시작 전 → 막힘 (코어 API 토큰 모델 미확정)" },
+    ],
+    number: "TASK-161", dueFull: "9월 30일 (수)",
+    desc: "MCP가 노출할 도구 범위와 토큰 스코프를 정한다.",
+    doneWhen: "스코프 표가 문서에 올라간다.",
+    nextAction: "코어 API 토큰 모델 확인",
+    notes: "코어 API 쪽 결정이 먼저 필요하다.",
+    checks: [
+      { text: "도구 목록 초안", done: true, commit: "" },
+      { text: "스코프 표", done: false, commit: "" },
+    ],
+  },
+};
+
+const PROJECTS = [
+  {
+    id: "core", name: "코어 API", icon: "코", purpose: "태스크·프로젝트 도메인과 HTTP API",
+    owners: "김산돌", status: "진행 중", statusDesc: "활발히 작업 중입니다.",
+    repo: "sandori/core", repoHint: "웹훅 수신 2분 전 · pull_request, push", connected: true,
+    tasks: [
+      { title: "태스크 이력 API 스키마 정리", assignee: "김산돌", priority: 7, note: "", due: "오늘", status: "진행 중" },
+      { title: "회의록 모델 추가", assignee: "김산돌", priority: 8, note: "markdown + bleach", due: "9/16", status: "진행 중" },
+      { title: "마일스톤 목표일 마이그레이션", assignee: "박서연", priority: 5, note: "", due: "9/9", status: "시작 전", overdue: true },
+      { title: "웹훅 수신 엔드포인트", assignee: "김산돌", priority: 8, note: "PR #128 머지", due: "9/5", status: "완료" },
+    ],
+  },
+  {
+    id: "webhook", name: "웹훅 파이프라인", icon: "웹", purpose: "PR·커밋 이벤트로 태스크 상태 자동 전환",
+    owners: "김산돌, 최민우", status: "진행 중", statusDesc: "원격 저장소 채택 결정 대기 중입니다.",
+    repo: "sandori/core", repoHint: "코어 API와 같은 저장소 · 경로 core/github_service", connected: true,
+    tasks: [
+      { title: "상태 전환 서비스", assignee: "김산돌", priority: 8, note: "체크리스트 3/5", due: "9/15", status: "검토 대기" },
+      { title: "원격 저장소 채택 결정", assignee: "최민우", priority: 9, note: "결정 대기 중", due: "9/12", status: "막힘" },
+      { title: "웹훅 서명 검증", assignee: "김산돌", priority: 7, note: "", due: "9/18", status: "시작 전" },
+      { title: "커밋 메시지 파서", assignee: "김산돌", priority: 6, note: "체크리스트 1/4", due: "9/22", status: "진행 중" },
+    ],
+  },
+  {
+    id: "discord", name: "디스코드 봇", icon: "디", purpose: "알림·주간 요약·슬래시 커맨드",
+    owners: "이도현", status: "준비 중", statusDesc: "아직 시작하지 않았습니다.",
+    repo: "sandori/discord-bot", repoHint: "별도 저장소 · 웹훅 수신 1일 전", connected: true,
+    tasks: [
+      { title: "알림 문구 정리", assignee: "이도현", priority: 6, note: "", due: "9/25", status: "시작 전" },
+      { title: "주간 요약 스케줄러", assignee: "이도현", priority: 5, note: "", due: "10/2", status: "시작 전" },
+    ],
+  },
+  {
+    id: "mcp", name: "MCP 서버", icon: "M", purpose: "도구 노출과 토큰 스코프",
+    owners: "미지정", status: "준비 중", statusDesc: "관리자를 정해야 합니다.",
+    repo: "저장소 없음", repoHint: "연결하면 PR·커밋이 태스크에 붙습니다", connected: false,
+    tasks: [
+      { title: "토큰 스코프 확정", assignee: "최민우", priority: 7, note: "코어 API 의존", due: "9/30", status: "막힘" },
+      { title: "도구 목록 설계", assignee: "박서연", priority: 5, note: "", due: "10/6", status: "시작 전" },
+    ],
+  },
+];
+
+const SCREEN_ICONS = { capacity: "부", roadmap: "로", notes: "회", github: "저" };
+
+const BASE_SCREENS = [
+  ["today", "오늘"],
+  ["me", "내 태스크"],
+  ["project", "프로젝트"],
+  ["team", "팀"],
+  ["search", "검색"],
+];
+
+const PILL = {
+  "시작 전": ["#F0F4F6", "#191F28"],
+  "진행 중": ["#F5A623", "#1F1400"],
+  "검토 대기": ["#CFE3F7", "#0B3A66"],
+  "막힘": ["#F6C9C4", "#6B1410"],
+  "완료": ["#B9E6CB", "#0B3D22"],
+  "일시정지": ["#F0F4F6", "#636D7A"],
+};
+
+const TASK_NUMBERS = {
+  "상태 전환 서비스": "TASK-147",
+  "웹훅 수신 엔드포인트": "TASK-142",
+  "커밋 메시지 파서": "TASK-149",
+  "원격 저장소 채택 결정": "TASK-150",
+  "토큰 스코프 확정": "TASK-161",
+  "태스크 이력 API 스키마 정리": "TASK-138",
+  "회의록 모델 추가": "TASK-151",
+  "마일스톤 목표일 마이그레이션": "TASK-153",
+  "웹훅 서명 검증": "TASK-148",
+  "알림 문구 정리": "TASK-155",
+  "주간 요약 스케줄러": "TASK-156",
+  "도구 목록 설계": "TASK-162",
+};
+
+const taskNumber = (title) => TASK_NUMBERS[title] || "TASK-000";
+
+// 태스크와 git의 관계는 네 단계 모두 선택적이다.
+const GIT_LINKS = {
+  "상태 전환 서비스": { issue: "#84", issueTitle: "상태 전환 로직 분리 필요", branch: "feat/status-service", pr: "#131", merged: false },
+  "웹훅 수신 엔드포인트": { issue: "#79", issueTitle: "GitHub 웹훅 수신", branch: "feat/webhook-endpoint", pr: "#128", merged: true },
+  "커밋 메시지 파서": { branch: "feat/commit-parser" },
+  "토큰 스코프 확정": { issue: "#12", issueTitle: "MCP 토큰 스코프 정의" },
+};
+
+const SAMPLE_SPEC = {
+  openapi: "3.0.3",
+  info: { title: "산돌이 코어 API", version: "1.0.0", description: "태스크·프로젝트·회의록을 다루는 HTTP API. 토큰은 Bearer 헤더로 보냅니다." },
+  servers: [{ url: "https://api.sandori.dev/v1" }],
+  tags: [
+    { name: "tasks", description: "태스크 생성·조회·상태 전환" },
+    { name: "projects", description: "프로젝트와 저장소 연결" },
+    { name: "notes", description: "회의록" },
+  ],
+  paths: {
+    "/tasks": {
+      get: {
+        tags: ["tasks"], summary: "태스크 목록", description: "담당자·상태·프로젝트로 걸러 목록을 돌려줍니다.",
+        security: [{ bearer: [] }],
+        parameters: [
+          { name: "assignee", in: "query", schema: { type: "string" }, description: "담당자 id" },
+          { name: "status", in: "query", schema: { type: "string", enum: ["todo", "doing", "review", "blocked", "done"] }, description: "상태 코드" },
+          { name: "limit", in: "query", schema: { type: "integer", default: 50 }, description: "최대 개수" },
+        ],
+        responses: { "200": { description: "태스크 배열" }, "401": { description: "토큰 없음" } },
+      },
+      post: {
+        tags: ["tasks"], summary: "태스크 만들기", description: "담당자는 한 명만 지정합니다. 기한이 없으면 사유가 필요합니다.",
+        security: [{ bearer: [] }],
+        requestBody: { required: true, content: { "application/json": { example: { title: "상태 전환 서비스", project_id: 2, assignee_id: 1, priority: 8, due_date: "2026-09-15" } } } },
+        responses: { "201": { description: "생성된 태스크" }, "422": { description: "기한 미정 사유 누락" } },
+      },
+    },
+    "/tasks/{id}/status": {
+      patch: {
+        tags: ["tasks"], summary: "상태 전환", description: "막힘·일시정지로 보낼 때는 reason이 필수입니다.",
+        security: [{ bearer: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" }, description: "태스크 id" }],
+        requestBody: { required: true, content: { "application/json": { example: { status: "blocked", reason: "비용 승인 대기" } } } },
+        responses: { "200": { description: "바뀐 태스크" }, "409": { description: "허용되지 않는 전환" } },
+      },
+    },
+    "/projects": {
+      get: { tags: ["projects"], summary: "프로젝트 목록", description: "보관된 프로젝트는 기본으로 제외합니다.", parameters: [{ name: "include_archived", in: "query", schema: { type: "boolean", default: false }, description: "보관 포함" }], responses: { "200": { description: "프로젝트 배열" } } },
+    },
+    "/projects/{id}/repository": {
+      put: {
+        tags: ["projects"], summary: "저장소 연결", description: "이슈 가져오기와 자동 전환이 이 연결을 씁니다.",
+        security: [{ bearer: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" }, description: "프로젝트 id" }],
+        requestBody: { required: true, content: { "application/json": { example: { repo: "sandori/core", import_label: "task" } } } },
+        responses: { "200": { description: "연결 결과" }, "404": { description: "저장소 접근 불가" } },
+      },
+    },
+    "/notes": {
+      get: { tags: ["notes"], summary: "회의록 목록", description: "프로젝트가 없는 팀 공통 회의록도 함께 돌려줍니다.", parameters: [{ name: "project_id", in: "query", schema: { type: "integer" }, description: "비우면 전체" }], responses: { "200": { description: "회의록 배열" } } },
+      post: { tags: ["notes"], summary: "회의록 만들기", description: "본문은 마크다운 문자열입니다.", requestBody: { required: true, content: { "application/json": { example: { title: "주간 스탠드업", project_id: null, body_md: "## 공유\n- ...", created_at: "2026-09-11" } } } }, responses: { "201": { description: "생성된 회의록" } } },
+    },
+  },
+};
+
+const METHOD_COLOR = { get: "#1F6F82", post: "#12793F", patch: "#A85B00", put: "#2F6FBF", delete: "#C92A37" };
+
+const ISSUES = [
+  { number: "#84", title: "상태 전환 로직 분리 필요", meta: "label task · 열림 · 김산돌", task: "상태 전환 서비스" },
+  { number: "#91", title: "웹훅 재시도 정책 정하기", meta: "label task · 열림 · 담당 없음", task: null },
+  { number: "#93", title: "PR 템플릿에 태스크 번호 칸 추가", meta: "label task · 열림 · 최민우", task: null },
+];
+
+const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+
+const formatDue = (due) => {
+  if (!due) return "기한 미정";
+  if (due === "오늘") return "9월 11일 (금)";
+  const m = due.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return due;
+  const d = new Date(2026, Number(m[1]) - 1, Number(m[2]));
+  return `${m[1]}월 ${m[2]}일 (${WEEKDAY[d.getDay()]})`;
+};
+
+const STATUS_HINTS = {
+  "시작 전": "아직 시작하지 않았습니다. 브랜치를 연결하면 진행 중으로 바뀝니다.",
+  "진행 중": "작업 중입니다.",
+  "검토 대기": "PR #131이 열려 있습니다. 머지되면 완료로 바뀝니다.",
+  "일시정지": "잠시 멈춘 상태입니다. 사유를 남겨 두세요.",
+  "막힘": "외부 요인으로 진행할 수 없습니다. 사유는 필수입니다.",
+  "완료": "완료했습니다. 되돌리면 이력에 남습니다.",
+  "취소": "더 하지 않기로 했습니다.",
+};
+
+const BOARD_COLUMNS = ["시작 전", "진행 중", "검토 대기", "막힘", "일시정지", "완료"];
+
+const pill = (status) => ({ pillBg: (PILL[status] || PILL["시작 전"])[0], pillColor: (PILL[status] || PILL["시작 전"])[1], status });
+
+const TODAY_ROWS = [
+  { project: "웹훅 파이프라인", title: "상태 전환 서비스", priority: 8, note: "체크리스트 2/5", due: "9/15", status: "검토 대기", today: "in" },
+  { project: "코어 API", title: "태스크 이력 API 스키마 정리", priority: 7, note: "", due: "오늘", status: "진행 중", today: "in" },
+  { project: "웹훅 파이프라인", title: "원격 저장소 채택 결정", priority: 9, note: "결정 대기 중", due: "9/12", status: "막힘", today: "auto" },
+];
+
+const ME_ROWS_A = [
+  { project: "웹훅 파이프라인", title: "웹훅 서명 검증", priority: 7, note: "", due: "9/18", status: "시작 전" },
+  { project: "웹훅 파이프라인", title: "커밋 메시지 파서", priority: 6, note: "체크리스트 1/4", due: "9/22", status: "진행 중" },
+];
+
+const ME_ROWS_B = [
+  { project: "코어 API", title: "회의록 모델 추가", priority: 8, note: "markdown + bleach", due: "9/16", status: "진행 중" },
+  { project: "코어 API", title: "마일스톤 목표일 마이그레이션", priority: 5, note: "", due: "9/9", status: "시작 전", overdue: true },
+];
+
+const SEARCH_ROWS = [
+  { number: "TASK-147", project: "웹훅 파이프라인", title: "상태 전환 서비스", assignee: "김산돌", note: "PR #131 검토 중", status: "검토 대기" },
+  { number: "TASK-142", project: "코어 API", title: "웹훅 수신 엔드포인트", assignee: "김산돌", note: "PR #128 머지", status: "완료" },
+  { number: "TASK-150", project: "웹훅 파이프라인", title: "원격 저장소 채택 결정", assignee: "최민우", note: "결정 대기", status: "막힘" },
+  { number: "TASK-151", project: "코어 API", title: "회의록 렌더링 검증", assignee: "박서연", note: "QA 시나리오 작성", status: "시작 전" },
+];
+
+const SKILLS = ["백엔드", "프론트", "인프라", "기획", "QA", "Django"];
+const SKILL_OWNERS = {
+  "백엔드": ["김산돌"], "프론트": ["이도현"], "인프라": ["최민우"],
+  "기획": ["박서연"], "QA": ["박서연"], "Django": ["김산돌"],
+};
+
+const NOTES = [
+  { id: "n1", created: "2026-09-11", title: "개발업무 통합 방향 논의", project: "웹훅 파이프라인", author: "김산돌", version: 3, updated: "9/11 14:20", body: DEFAULT_MD + "\n\n## 후속 확인\n- [x] 브랜치 연결 방식 정리\n- [ ] 회의록 버전 이력 화면\n- [ ] 부하 계산에 **중요도 가중치** 적용 여부\n\n> Notion은 외부 공유용으로만 남긴다.\n\n---\n1. 저장소 연결은 프로젝트 설정에서\n2. 자동 전환은 연결된 브랜치만" },
+  { id: "n2", created: "2026-09-09", title: "웹훅 스펙 리뷰", project: "웹훅 파이프라인", author: "최민우", version: 1, updated: "9/9 16:40", body: "## 확인\n- 서명 검증은 core에서 처리\n- 재시도는 5분 간격 3회" },
+  { id: "n3", created: "2026-09-08", title: "v1.0 배포 범위 확정", project: "코어 API", author: "박서연", version: 2, updated: "9/8 10:05", body: "## 범위\n- 오늘·내 태스크·팀 현황만 포함\n- 회의록은 다음 배포" },
+  { id: "n4", created: "2026-09-01", title: "주간 스탠드업 9/1", project: null, author: "이도현", version: 1, updated: "9/1 09:30", body: "## 공유\n- 디스코드 알림 문구 정리 중\n- MCP 토큰 스코프 논의 필요" },
+  { id: "n5", created: "2026-08-29", title: "회고: 8월", project: null, author: "박서연", version: 4, updated: "8/29 17:10", body: "## 잘된 것\n- 태스크 상태 단순화\n\n## 아쉬운 것\n- 기한 미정 사유가 비어 있는 태스크가 많음" },
+];
+
+const NOTE_SCOPES = [
+  ["all", "전체"],
+  ["team", "팀 공통"],
+  ["웹훅 파이프라인", "웹훅 파이프라인"],
+  ["코어 API", "코어 API"],
+];
+
+class Component extends DCLogic {
+  state = {
+    screen: "today",
+    quickOpen: false,
+    panelOpen: false,
+    projectId: "webhook",
+    tasksByProject: PROJECTS.reduce((acc, p) => ({ ...acc, [p.id]: p.tasks.map((t) => ({ ...t })) }), {}),
+    dragTitle: "",
+    dragOverCol: "",
+    projView: "list",
+    taskFormOpen: false,
+    scheduleOpen: true,
+    calYear: 2026,
+    calMonth: 9,
+    calSel: "2026-9-15",
+    query: "",
+    noteId: "n1",
+    noteScope: "all",
+    notes: NOTES.reduce((acc, n) => ({ ...acc, [n.id]: { title: n.title, project: n.project, author: n.author, body: n.body, version: n.version, updated: n.updated, created: n.created } }), {}),
+    editIndex: -1,
+    caret: null,
+    savedLabel: "v3 · 9/11 14:20 자동 저장됨",
+    uploadName: "",
+    skills: ["백엔드"],
+    rules: { issue: true, branch: true, commit: true, pr: true, merge: true },
+    selected: {
+      title: "상태 전환 서비스", project: "웹훅 파이프라인", assignee: "김산돌",
+      number: "TASK-147", due: "9/15", dueFull: "9월 15일 (화)",
+      repo: "sandori/core", branch: "feat/status-service", pr: "#131 feat: 상태 전환 서비스 분리", prState: "Open", reviews: "리뷰 1/2 승인",
+      commits: TASK_DETAILS["상태 전환 서비스"].commits,
+      links: TASK_DETAILS["상태 전환 서비스"].links,
+      history: TASK_DETAILS["상태 전환 서비스"].history,
+    },
+    panel: {
+      title: "상태 전환 서비스",
+      status: "검토 대기",
+      priority: "8",
+      desc: TASK_DETAILS["상태 전환 서비스"].desc,
+      doneWhen: TASK_DETAILS["상태 전환 서비스"].doneWhen,
+      nextAction: TASK_DETAILS["상태 전환 서비스"].nextAction,
+      notes: TASK_DETAILS["상태 전환 서비스"].notes,
+      stopReason: "",
+    },
+    checks: TASK_DETAILS["상태 전환 서비스"].checks.map((c) => ({ ...c })),
+    checkDraft: "",
+    extendOpen: false,
+    linkOpen: false,
+    refs: {},
+    autoImport: false,
+    importedIssues: {},
+    taskNumbers: {},
+    gitLinks: {},
+    panelFull: false,
+    projTab: "tasks",
+    railOpen: true,
+    keys: ORG_KEYS,
+    keyFormOpen: false,
+    keyDraft: { kind: "GitHub App", name: "", value: "", scopes: ["repo:read", "issues", "pull_requests"] },
+    authByProject: { webhook: "deploy" },
+    keyByProject: {},
+    deployWrite: {},
+    spec: SAMPLE_SPEC,
+    specName: "샘플 스펙 (openapi.json 올리면 교체)",
+    specError: "",
+    specUrl: "",
+    specLoading: false,
+    openOps: { "post /tasks": true },
+    apiFilter: "",
+    refDraftNote: "",
+    refDraftTitle: "",
+    refDraftUrl: "",
+    panelSaved: "",
+  };
+
+  tab(active) {
+    return active
+      ? { bg: "#E3F1F4", color: "#1F6F82", weight: "700" }
+      : { bg: "transparent", color: "#636D7A", weight: "500" };
+  }
+
+  // 브라우저에서 스펙 주소를 직접 받아, 파싱한 뒤 서버(core API)에 저장한다.
+  async loadSpecFromUrl(rawUrl) {
+    const url = (rawUrl || "").trim();
+    if (!url) {
+      this.setState({ specError: "주소를 입력하세요. 로컬 개발 서버 주소도 됩니다." });
+      return;
+    }
+    this.setState({ specLoading: true, specError: "", specUrl: url });
+    try {
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const parsed = await res.json();
+      if (!parsed.paths) throw new Error("openapi 문서가 아닙니다 (paths 없음)");
+      this.setState({
+        spec: parsed,
+        specName: `${url} · 방금 불러옴`,
+        specError: "",
+        specLoading: false,
+        openOps: {},
+      });
+      this.saveSpecToServer(parsed, url);
+    } catch (err) {
+      const cors = /Failed to fetch|NetworkError|CORS/i.test(err.message);
+      this.setState({
+        specLoading: false,
+        specError: cors
+          ? `${url}에 직접 요청할 수 없습니다 (CORS 또는 서버 미동작). 개발 서버에서 CORS를 허용하거나 파일로 올리세요.`
+          : `${url}을 읽지 못했습니다: ${err.message}`,
+      });
+    }
+  }
+
+  // 받아온 스펙을 프로젝트에 붙여 저장한다. 목업이라 실패는 무시한다.
+  async saveSpecToServer(spec, sourceUrl) {
+    const projectId = this.state.projectId;
+    try {
+      await fetch(`/api/projects/${projectId}/api-spec`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_url: sourceUrl, spec }),
+      });
+      this.setState({ specName: `${sourceUrl} · 프로젝트에 저장됨` });
+    } catch (err) {
+      this.setState({ specName: `${sourceUrl} · 화면에만 적용 (저장 실패)` });
+    }
+  }
+
+  renderVals() {
+    const s = this.state;
+    const accent = this.props.accent ?? "#1F6F82";
+
+    const note = s.notes[s.noteId];
+    const lines = note.body.split("\n");
+
+    const setLines = (next, editIndex) => this.setState((p) => ({
+      notes: { ...p.notes, [p.noteId]: { ...p.notes[p.noteId], body: next.join("\n") } },
+      editIndex: editIndex === undefined ? p.editIndex : editIndex,
+      savedLabel: `v${p.notes[p.noteId].version} · 방금 자동 저장됨`,
+    }));
+
+    const focusAt = (caret) => (el) => {
+      if (!el || this._focused === el) return;
+      this._focused = el;
+      el.focus();
+      const pos = caret == null ? el.value.length : Math.min(caret, el.value.length);
+      el.setSelectionRange(pos, pos);
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    };
+
+    const goTo = (index, caret) => {
+      this._focused = null;
+      this.setState({ editIndex: index, caret });
+    };
+
+    const inline = (text) => {
+      const parts = [];
+      const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|~~[^~]+~~)/g;
+      let last = 0, m;
+      while ((m = re.exec(text))) {
+        if (m.index > last) parts.push({ text: text.slice(last, m.index) });
+        const tok = m[0];
+        if (tok.startsWith("**")) parts.push({ text: tok.slice(2, -2), weight: "700" });
+        else if (tok.startsWith("~~")) parts.push({ text: tok.slice(2, -2), deco: "line-through" });
+        else if (tok.startsWith("`")) parts.push({ text: tok.slice(1, -1), family: "ui-monospace,SFMono-Regular,Menlo,monospace", bg: "#F0F4F6", pad: "1px 4px" });
+        else parts.push({ text: tok.slice(1, -1), style: "italic" });
+        last = m.index + tok.length;
+      }
+      if (last < text.length) parts.push({ text: text.slice(last) });
+      return parts.map((p) => ({
+        text: p.text,
+        weight: p.weight || "inherit",
+        style: p.style || "normal",
+        family: p.family || "inherit",
+        bg: p.bg || "transparent",
+        pad: p.pad || "0",
+        deco: p.deco || "none",
+      }));
+    };
+
+    const HEAD = { 1: ["26px", "34px", "-0.02em"], 2: ["20px", "28px", "-0.02em"], 3: ["17px", "26px", "-0.02em"] };
+
+    const docBlocks = lines.map((raw, i) => {
+      const t = raw.trim();
+      const editing = s.editIndex === i;
+      const hm = t.match(/^(#{1,3})\s+(.*)$/);
+      const todo = t.match(/^-\s+\[( |x|X)\]\s*(.*)$/);
+      const bullet = !todo && /^[-*]\s+/.test(t);
+      const ordered = t.match(/^(\d+)\.\s+(.*)$/);
+      const quote = t.startsWith("> ");
+      const rule = /^(---|\*\*\*)$/.test(t);
+      const level = hm ? hm[1].length : 0;
+      const [size, line, tracking] = hm ? HEAD[level] : ["15px", "24px", "normal"];
+      const text = hm ? hm[2] : todo ? todo[2] : bullet ? t.replace(/^[-*]\s+/, "") : ordered ? ordered[2] : quote ? t.slice(2) : t;
+
+      return {
+        raw,
+        editing,
+        ref: editing ? focusAt(s.caret) : null,
+        rows: 1,
+        pad: hm ? (level === 1 ? "12px 0 2px" : "8px 0 2px") : "0",
+        size, line, tracking,
+        weight: hm ? "700" : "400",
+        text,
+        parts: inline(text),
+        marker: ordered ? `${ordered[1]}.` : "•",
+        checked: !!todo && todo[1].toLowerCase() === "x",
+        strike: todo && todo[1].toLowerCase() === "x" ? "line-through" : "none",
+        color: todo && todo[1].toLowerCase() === "x" ? "#636D7A" : "#191F28",
+        placeholder: !editing && !t ? "" : "",
+        showBullet: !editing && (bullet || !!ordered),
+        showTodo: !editing && !!todo,
+        showQuote: !editing && quote,
+        showRule: !editing && rule,
+        showText: !editing && !bullet && !ordered && !todo && !quote && !rule,
+        edit: () => goTo(i, null),
+        toggleTodo: () => {
+          const next = lines.map((l, j) => (j === i
+            ? (todo[1].toLowerCase() === "x" ? l.replace(/\[[xX]\]/, "[ ]") : l.replace(/\[ \]/, "[x]"))
+            : l));
+          setLines(next);
+        },
+        onChange: (e) => {
+          const el = e.target;
+          el.style.height = "auto";
+          el.style.height = `${el.scrollHeight}px`;
+          setLines(lines.map((l, j) => (j === i ? el.value : l)));
+        },
+        onKey: (e) => {
+          const el = e.target;
+          const at = el.selectionStart;
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            const head = el.value.slice(0, at);
+            const tail = el.value.slice(at);
+            const cont = head.match(/^(\s*(?:[-*]\s\[[ xX]\]|[-*]|\d+\.)\s)/);
+            const prefix = cont && tail === "" && head.trim() !== cont[1].trim() ? cont[1] : "";
+            const next = [...lines];
+            next.splice(i, 1, head, prefix + tail);
+            this._focused = null;
+            setLines(next, i + 1);
+            this.setState({ caret: prefix.length });
+          } else if (e.key === "Backspace" && at === 0 && i > 0) {
+            e.preventDefault();
+            const prev = lines[i - 1];
+            const next = [...lines];
+            next.splice(i - 1, 2, prev + el.value);
+            this._focused = null;
+            setLines(next, i - 1);
+            this.setState({ caret: prev.length });
+          } else if (e.key === "ArrowUp" && at === 0 && i > 0) {
+            e.preventDefault();
+            goTo(i - 1, null);
+          } else if (e.key === "ArrowDown" && at === el.value.length && i < lines.length - 1) {
+            e.preventDefault();
+            goTo(i + 1, 0);
+          } else if (e.key === "Escape") {
+            this._focused = null;
+            this.setState({ editIndex: -1 });
+          }
+        },
+      };
+    });
+
+    const scopeChips = NOTE_SCOPES.map(([id, label]) => {
+      const on = s.noteScope === id;
+      return {
+        label,
+        bg: on ? "#E3F1F4" : "#fff",
+        color: on ? accent : "#191F28",
+        border: on ? accent : "#E5E8EB",
+        go: () => this.setState({ noteScope: id }),
+      };
+    });
+
+    const visibleNotes = Object.entries(s.notes).filter(([, n]) =>
+      s.noteScope === "all" ? true : s.noteScope === "team" ? !n.project : n.project === s.noteScope
+    );
+
+    const groupKeys = [...new Set(visibleNotes.map(([, n]) => n.project || ""))];
+    const noteGroups = groupKeys.map((key) => {
+      const items = visibleNotes.filter(([, n]) => (n.project || "") === key);
+      return {
+        title: key || "팀 공통",
+        hint: key ? `프로젝트 회의록 ${items.length}건` : `프로젝트 없음 ${items.length}건`,
+        notes: items.map(([id, n]) => ({
+          title: n.title,
+          meta: `${n.author} · v${n.version} · ${n.updated}`,
+          shadow: id === s.noteId ? `inset 3px 0 0 ${accent}` : "none",
+          open: () => this.setState({ noteId: id, editIndex: -1, uploadName: "", savedLabel: `v${n.version} · ${n.updated} 자동 저장됨` }),
+        })),
+      };
+    });
+
+    const picked = s.skills;
+    const owners = [...new Set(picked.flatMap((k) => SKILL_OWNERS[k] || []))];
+    const skillResult = picked.length
+      ? `${picked.join(" · ")} → ${owners.join(", ")} (${owners.length}명)`
+      : "태그를 골라 담당 후보를 확인하세요.";
+
+    const ruleDefs = [
+      ["issue", "이슈 → 태스크", "라벨이 맞는 새 이슈를 태스크로 가져옵니다. 이슈 없이 태스크만 만들어도 됩니다."],
+      ["branch", "브랜치 연결 → 진행 중", "브랜치 이름은 자유입니다. 태스크에 연결된 브랜치에만 적용합니다."],
+      ["commit", "커밋 → 체크리스트 항목", "커밋 메시지에서 항목을 찾으면 체크하고, 못 찾으면 이력에만 남깁니다."],
+      ["pr", "PR 오픈 → 검토 대기", "PR 제목·본문의 태스크 번호로 붙이고, 없으면 연결 후보로 제안합니다."],
+      ["merge", "머지 → 완료 · 이슈 닫기", "머지된 PR의 태스크를 완료로 바꾸고, 연결된 이슈가 있으면 함께 닫습니다."],
+    ];
+
+    const live = (t) => {
+      for (const list of Object.values(s.tasksByProject)) {
+        const hit = list.find((x) => x.title === t.title);
+        if (hit) return { ...t, status: hit.status };
+      }
+      return t;
+    };
+
+    const row = (raw) => {
+      const t = live(raw);
+      return {
+      ...t, ...pill(t.status),
+      note: noteFor(t.title),
+      open: openTask(t),
+      dueColor: t.overdue || t.due === "오늘" ? "#C92A37" : "#636D7A",
+      todayLabel: t.today === "auto" ? "자동 추가 · 오늘 제외" : "오늘 제외",
+      todayBg: t.today === "auto" ? "#E3F1F4" : "#F0F4F6",
+      todayColor: t.today === "auto" ? accent : "#636D7A",
+      };
+    };
+
+    const sel = s.selected;
+    const selProject = PROJECTS.find((p) => p.name === sel.project) || project;
+    const selConnected = !!selProject.connected;
+
+    const setPanel = (key) => (e) => {
+      const value = e.target.value;
+      this.setState((p) => {
+        const next = { panel: { ...p.panel, [key]: value }, panelSaved: "저장됨" };
+        if (key === "status") {
+          next.tasksByProject = Object.fromEntries(Object.entries(p.tasksByProject).map(([id, list]) => [
+            id, list.map((t) => (t.title === p.selected.title ? { ...t, status: value } : t)),
+          ]));
+        }
+        return next;
+      });
+    };
+
+    const project = PROJECTS.find((p) => p.id === s.projectId) || PROJECTS[0];
+    const projTasks = s.tasksByProject[project.id] || project.tasks;
+
+    const countBy = (list) => ({
+      total: list.length,
+      done: list.filter((t) => t.status === "완료").length,
+      open: list.filter((t) => t.status !== "완료" && t.status !== "취소").length,
+      overdue: list.filter((t) => t.overdue && t.status !== "완료" && t.status !== "취소").length,
+      review: list.filter((t) => t.status === "검토 대기").length,
+      blocked: list.filter((t) => t.status === "막힘").length,
+      running: list.filter((t) => t.status === "진행 중").length,
+    });
+
+    const projCount = countBy(projTasks);
+    const allTasks = PROJECTS.flatMap((p) => s.tasksByProject[p.id] || p.tasks);
+    const teamCount = countBy(allTasks);
+    const warn = (n) => (n > 0 ? "#C92A37" : "#191F28");
+
+    const MEMBER_TAGS = {
+      "김산돌": ["백엔드", "Django"],
+      "이도현": ["프론트", "htmx"],
+      "박서연": ["기획", "QA"],
+      "최민우": ["인프라", "Docker"],
+    };
+    const memberNames = Object.keys(MEMBER_TAGS);
+    const rawPeople = memberNames.map((name) => {
+      const mine = allTasks.filter((t) => t.assignee === name);
+      const c = countBy(mine);
+      return { name, load: c.running + c.review, ...c };
+    });
+    const maxLoad = Math.max(1, ...rawPeople.map((p) => p.load));
+    const people = rawPeople.map((p) => {
+      const heavy = p.load >= 4 || p.overdue >= 2;
+      const light = p.load <= 1;
+      return {
+        name: p.name,
+        open: p.open,
+        overdue: p.overdue,
+        overdueColor: warn(p.overdue),
+        review: p.review,
+        blocked: p.blocked,
+        blockedColor: warn(p.blocked),
+        tags: MEMBER_TAGS[p.name],
+        barWidth: `${Math.round((p.load / maxLoad) * 100)}%`,
+        barColor: heavy ? "#C92A37" : accent,
+        barLabel: `진행 중과 검토 대기 ${p.load}건`,
+        summary: `진행 중 ${p.running} · 검토 대기 ${p.review} · 막힘 ${p.blocked} · 기한 초과 ${p.overdue}`,
+        verdict: heavy ? "과부하" : light ? "여유" : "적정",
+        verdictColor: heavy ? "#C92A37" : "#636D7A",
+        verdictWeight: heavy ? "700" : "400",
+        go: () => this.setState({ screen: "me" }),
+      };
+    });
+    const avgLoad = (rawPeople.reduce((a, p) => a + p.running, 0) / memberNames.length).toFixed(1);
+
+    const countFor = (id) => countBy(s.tasksByProject[id] || (PROJECTS.find((p) => p.id === id) || {}).tasks || []);
+
+    const group = (id) => {
+      const p = PROJECTS.find((x) => x.id === id);
+      const c = countFor(id);
+      const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+      return {
+        name: p.name,
+        label: `${c.done}/${c.total} 완료`,
+        pct: `${pct}%`,
+        pctLabel: `${pct}% 완료`,
+        go: () => this.setState({ screen: "project", projectId: id }),
+      };
+    };
+
+    const MILESTONES = [
+      { name: "v1.0 사내 배포", id: "core", date: "10/15", left: "2%", width: "42%", ready: true },
+      { name: "웹훅 자동 전환", id: "webhook", date: "11/28", left: "36%", width: "44%", ready: true },
+      { name: "Discord 알림 고도화", id: "discord", date: "11/07", left: "44%", width: "22%", ready: false },
+      { name: "MCP 공개 베타", id: "mcp", date: "12/19", left: "74%", width: "24%", ready: false },
+    ];
+    const milestones = MILESTONES.map((m) => {
+      const c = countFor(m.id);
+      const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+      const proj = PROJECTS.find((p) => p.id === m.id);
+      return {
+        name: m.name,
+        meta: `${proj.name} · ${m.date} · ${c.done}/${c.total}`,
+        pct: `${pct}%`,
+        left: m.left,
+        width: m.width,
+        trackBg: m.ready ? "#E3F1F4" : "#F0F4F6",
+        trackBorder: m.ready ? "0" : "1px dashed #B0B8C1",
+      };
+    });
+
+    const noteFor = (title) => {
+      const checks = s.selected.title === title ? s.checks : (TASK_DETAILS[title] || {}).checks;
+      if (checks && checks.length) return `체크리스트 ${checks.filter((c) => c.done).length}/${checks.length}`;
+      const lit = [...TODAY_ROWS, ...ME_ROWS_A, ...ME_ROWS_B].find((t) => t.title === title);
+      return lit && !/체크리스트/.test(lit.note) ? lit.note : "";
+    };
+
+    const myGroups = PROJECTS.map((p) => {
+      const list = s.tasksByProject[p.id] || p.tasks;
+      const mine = list.filter((t) => t.assignee === "김산돌" && t.status !== "완료" && t.status !== "취소");
+      if (!mine.length) return null;
+      const g = group(p.id);
+      return {
+        ...g,
+        rows: mine.map((t) => ({
+          ...t, ...pill(t.status),
+          project: p.name,
+          note: noteFor(t.title),
+          dueColor: t.overdue || t.due === "오늘" ? "#C92A37" : "#636D7A",
+          open: openTask(t, p.name),
+        })),
+      };
+    }).filter(Boolean);
+
+    const myTasks = allTasks.filter((t) => t.assignee === "김산돌");
+    const myCount = countBy(myTasks);
+    const todayTitles = TODAY_ROWS.map((t) => t.title);
+    const todayLive = allTasks.filter((t) => todayTitles.includes(t.title));
+    const openToday = todayLive.filter((t) => t.status !== "완료" && t.status !== "취소");
+
+    const self = this;
+    function openTask(t, fallbackProject) {
+      return () => {
+      const d = TASK_DETAILS[t.title] || {};
+      self.setState({
+        panelOpen: true,
+        selected: {
+          title: t.title,
+          project: t.project || fallbackProject || "",
+          assignee: t.assignee || "김산돌",
+          number: d.number || self.state.taskNumbers[t.title] || taskNumber(t.title),
+          due: t.due || "",
+          dueFull: d.dueFull || formatDue(t.due),
+          repo: d.repo || "",
+          branch: d.branch || "",
+          pr: d.pr || "",
+          prState: d.prState || "",
+          reviews: d.reviews || "",
+          commits: d.commits || [],
+          links: d.links || [],
+          history: d.history || [],
+        },
+        panel: {
+          title: t.title,
+          status: t.status || "시작 전",
+          priority: String(t.priority || 5),
+          desc: d.desc || "",
+          doneWhen: d.doneWhen || "",
+          nextAction: d.nextAction || "",
+          notes: d.notes || "",
+          stopReason: "",
+        },
+        checks: (d.checks || []).map((c) => ({ ...c })),
+        checkDraft: "",
+        extendOpen: false,
+        linkOpen: false,
+        panelSaved: "",
+      });
+      };
+    }
+
+    const q = s.query.trim().toLowerCase();
+    const results = SEARCH_ROWS.filter((t) =>
+      !q || (t.title + t.number + t.project + t.assignee).toLowerCase().includes(q)
+    ).map(live).map((t) => ({ ...t, ...pill(t.status), open: openTask(t) }));
+
+    const TODAY = { year: 2026, month: 9, day: 11 };
+    const calYear = s.calYear;
+    const calMonth = s.calMonth;
+
+    // 마감 건수는 태스크의 due(M/D, "오늘")에서 센다. 2026년 기준.
+    const dueTasksOn = (year, month, day) => allTasks.filter((t) => {
+      if (t.status === "완료" || t.status === "취소") return false;
+      if (t.due === "오늘") return year === TODAY.year && month === TODAY.month && day === TODAY.day;
+      const m = (t.due || "").match(/^(\d{1,2})\/(\d{1,2})$/);
+      return !!m && year === 2026 && Number(m[1]) === month && Number(m[2]) === day;
+    });
+    const due = {};
+    allTasks.forEach((t) => {
+      if (t.status === "완료" || t.status === "취소") return;
+      if (t.due === "오늘") {
+        if (calYear === TODAY.year && calMonth === TODAY.month) due[TODAY.day] = (due[TODAY.day] || 0) + 1;
+        return;
+      }
+      const m = (t.due || "").match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (m && calYear === 2026 && Number(m[1]) === calMonth) due[Number(m[2])] = (due[Number(m[2])] || 0) + 1;
+    });
+    const first = new Date(calYear, calMonth - 1, 1);
+    const lead = (first.getDay() + 6) % 7; // 월요일 시작
+    const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+    const cellCount = Math.ceil((lead + daysInMonth) / 7) * 7;
+    const calCells = Array.from({ length: cellCount }, (_, i) => {
+      const day = i - lead + 1;
+      const inMonth = day >= 1 && day <= daysInMonth;
+      const isToday = inMonth && calYear === TODAY.year && calMonth === TODAY.month && day === TODAY.day;
+      const isSel = inMonth && s.calSel === `${calYear}-${calMonth}-${day}`;
+      const n = inMonth ? due[day] : 0;
+      return {
+        label: inMonth ? String(day) : "",
+        aria: inMonth ? `${calMonth}월 ${day}일${n ? ` 마감 ${n}건` : ""}` : "",
+        cursor: inMonth ? "pointer" : "default",
+        pick: inMonth ? () => this.setState({ calSel: `${calYear}-${calMonth}-${day}` }) : null,
+        bg: isToday ? accent : isSel ? "#E3F1F4" : "transparent",
+        borderColor: isSel && !isToday ? accent : "transparent",
+        color: isToday ? "#fff" : inMonth ? "#191F28" : "#B0B8C1",
+        dot: n ? `●${n}` : "",
+        dotColor: isToday ? "#fff" : accent,
+      };
+    });
+
+    const selParts = (s.calSel || "").split("-").map(Number);
+    const selInMonth = selParts.length === 3 && selParts[0] === calYear && selParts[1] === calMonth;
+    const selDayTasks = selInMonth ? dueTasksOn(selParts[0], selParts[1], selParts[2]) : [];
+
+
+
+    return {
+      accent,
+      navTabs: BASE_SCREENS.map(([id, label]) => ({
+        label,
+        ...this.tab(s.screen === id || (id === "team" && SCREENS.some(([sid]) => sid === s.screen))),
+        go: () => this.setState({ screen: id }),
+      })),
+      isToday: s.screen === "today",
+      isMe: s.screen === "me",
+      isTeam: s.screen === "team",
+      isSearch: s.screen === "search",
+      quickOpen: s.quickOpen,
+      toggleQuick: () => this.setState((p) => ({ quickOpen: !p.quickOpen, screen: "today" })),
+      scheduleOpen: s.scheduleOpen,
+      schedBg: s.scheduleOpen ? "#E3F1F4" : "#fff",
+      schedColor: s.scheduleOpen ? accent : "#191F28",
+      toggleSchedule: () => this.setState((p) => ({ scheduleOpen: !p.scheduleOpen })),
+      todayRows: TODAY_ROWS.map(row),
+      meRowsA: ME_ROWS_A.map(row),
+      meRowsB: ME_ROWS_B.map(row),
+      calCells,
+      calTitle: `${calYear}년 ${calMonth}월`,
+      calAway: !(calYear === TODAY.year && calMonth === TODAY.month),
+      calPrev: () => this.setState((p) => (p.calMonth === 1 ? { calYear: p.calYear - 1, calMonth: 12 } : { calMonth: p.calMonth - 1 })),
+      calNext: () => this.setState((p) => (p.calMonth === 12 ? { calYear: p.calYear + 1, calMonth: 1 } : { calMonth: p.calMonth + 1 })),
+      calToday: () => this.setState({ calYear: TODAY.year, calMonth: TODAY.month }),
+      dayLabel: selInMonth
+        ? (selDayTasks.length ? `${selParts[1]}월 ${selParts[2]}일 마감 ${selDayTasks.length}건` : `${selParts[1]}월 ${selParts[2]}일 마감 없음`)
+        : "날짜를 누르면 그날 마감이 보입니다",
+      dayTasks: selDayTasks.map((t) => {
+        const owner = PROJECTS.find((p) => (s.tasksByProject[p.id] || p.tasks).some((x) => x.title === t.title));
+        return { title: t.title, open: openTask(t, owner ? owner.name : "") };
+      }),
+      query: s.query,
+      setQuery: (e) => this.setState({ query: e.target.value }),
+      results,
+      noResults: results.length === 0,
+      resultCount: results.length,
+      panelOpen: s.panelOpen && ["today", "me", "search", "project"].includes(s.screen),
+      panelWrap: s.panelFull
+        ? "position:fixed;inset:64px 0 0 0;z-index:20;overflow:auto;padding:24px;background:rgba(25,31,40,0.28);max-width:none"
+        : "flex:1 1 340px;max-width:480px;min-width:0;position:sticky;top:88px;max-height:calc(100vh - 112px);overflow:auto;padding:24px 24px 24px 0",
+      panelCard: s.panelFull
+        ? "max-width:820px;margin:0 auto;background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:32px;display:flex;flex-direction:column;gap:20px"
+        : "min-width:0;background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px",
+      fullLabel: s.panelFull ? "작게 보기" : "크게 보기",
+      toggleFull: () => this.setState((p) => ({ panelFull: !p.panelFull })),
+      projTabs: [["tasks", "태스크"], ["repo", "저장소 연결"], ["api", "API 문서"]].map(([id, label]) => {
+        const on = s.projTab === id;
+        return {
+          label,
+          weight: on ? "700" : "500",
+          color: on ? accent : "#636D7A",
+          line: on ? accent : "transparent",
+          go: () => this.setState({ projTab: id }),
+        };
+      }),
+      isProjTasks: s.projTab === "tasks",
+      isProjRepo: s.projTab === "repo",
+      isProjApi: s.projTab === "api",
+      apiFilter: s.apiFilter,
+      setApiFilter: (e) => this.setState({ apiFilter: e.target.value }),
+      specUrl: s.specUrl,
+      setSpecUrl: (e) => this.setState({ specUrl: e.target.value }),
+      specUrlKey: (e) => { if (e.key === "Enter") this.loadSpecFromUrl(s.specUrl); },
+      fetchLabel: s.specLoading ? "불러오는 중" : "주소에서 불러오기",
+      fetchSpec: () => this.loadSpecFromUrl(s.specUrl),
+      onSpecUpload: (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const parsed = JSON.parse(String(reader.result || ""));
+            if (!parsed.paths) throw new Error("paths가 없습니다");
+            this.setState({ spec: parsed, specName: `${file.name} · 파일에서 불러옴`, specError: "", openOps: {} });
+            this.saveSpecToServer(parsed, file.name);
+          } catch (err) {
+            this.setState({ specError: `${file.name}을 읽지 못했습니다: ${err.message}` });
+          }
+        };
+        reader.readAsText(file);
+      },
+      api: (() => {
+        const spec = s.spec;
+        const q = s.apiFilter.trim().toLowerCase();
+        const tagMeta = {};
+        (spec.tags || []).forEach((t) => { tagMeta[t.name] = t.description || ""; });
+        const byTag = {};
+        Object.entries(spec.paths || {}).forEach(([path, ops]) => {
+          Object.entries(ops).forEach(([method, op]) => {
+            if (!METHOD_COLOR[method]) return;
+            const tag = (op.tags && op.tags[0]) || "기타";
+            const summary = op.summary || "";
+            if (q && !(`${path} ${summary} ${method}`.toLowerCase().includes(q))) return;
+            const key = `${method} ${path}`;
+            const body = op.requestBody && op.requestBody.content && Object.entries(op.requestBody.content)[0];
+            (byTag[tag] = byTag[tag] || []).push({
+              method: method.toUpperCase(),
+              methodBg: METHOD_COLOR[method],
+              path,
+              summary,
+              desc: op.description || "",
+              auth: !!op.security,
+              open: !!s.openOps[key],
+              chevron: s.openOps[key] ? "▲" : "▼",
+              border: s.openOps[key] ? accent : "#E5E8EB",
+              bg: s.openOps[key] ? "#F5F8F9" : "#fff",
+              toggle: () => this.setState((p) => ({ openOps: { ...p.openOps, [key]: !p.openOps[key] } })),
+              hasParams: !!(op.parameters && op.parameters.length),
+              params: (op.parameters || []).map((pa) => {
+                const sc = pa.schema || {};
+                const bits = [pa.in, sc.type || "string"];
+                if (pa.required) bits.push("필수");
+                if (sc.enum) bits.push(sc.enum.join(" | "));
+                if (sc.default !== undefined) bits.push(`기본 ${sc.default}`);
+                return { name: pa.name, meta: bits.join(" · "), desc: pa.description || "" };
+              }),
+              hasBody: !!body,
+              bodyType: body ? body[0] : "",
+              bodyExample: body && body[1].example ? JSON.stringify(body[1].example, null, 2) : "",
+              responses: Object.entries(op.responses || {}).map(([code, r]) => ({
+                code,
+                desc: r.description || "",
+                bg: code.startsWith("2") ? "#B9E6CB" : code.startsWith("4") ? "#F6C9C4" : "#F0F4F6",
+                color: code.startsWith("2") ? "#0B3D22" : code.startsWith("4") ? "#6B1410" : "#636D7A",
+              })),
+            });
+          });
+        });
+        const groups = Object.entries(byTag).map(([tag, ops]) => ({ tag, desc: tagMeta[tag] || "", ops }));
+        return {
+          title: (spec.info && spec.info.title) || "제목 없는 API",
+          version: (spec.info && spec.info.version) ? `v${spec.info.version}` : "버전 없음",
+          openapi: spec.openapi || spec.swagger || "—",
+          server: (spec.servers && spec.servers[0] && spec.servers[0].url) || "서버 정보 없음",
+          desc: (spec.info && spec.info.description) || "",
+          source: s.specName,
+          hasError: !!s.specError,
+          error: s.specError,
+          count: groups.reduce((a, g) => a + g.ops.length, 0),
+          groups,
+          empty: groups.length === 0,
+        };
+      })(),
+      goTaskPanel: openTask({ title: "상태 전환 서비스", project: "웹훅 파이프라인", assignee: "김산돌", status: "검토 대기", priority: 8, due: "9/15" }),
+      panelNumber: sel.number,
+      panelProject: sel.project,
+      panelAssignee: sel.assignee,
+      panelRepo: selConnected ? selProject.repo : "미연결",
+      panelBranch: sel.branch,
+      panelPr: sel.pr,
+      hasPr: !!sel.pr,
+      noPr: !sel.pr,
+      prState: sel.prState,
+      prBg: sel.prState === "Merged" ? "#E7DBF7" : "#CFE3F7",
+      prColor: sel.prState === "Merged" ? "#3B1A66" : "#0B3A66",
+      prReviews: sel.reviews,
+      commitCount: `커밋 ${sel.commits.length}건`,
+      panelRefs: (s.refs[sel.title] || sel.links).map((r, i) => ({
+        kind: r.kind,
+        title: r.title,
+        go: () => (r.noteId ? this.setState({ screen: "notes", noteId: r.noteId, panelOpen: false }) : null),
+        remove: () => this.setState((p) => {
+          const cur = p.refs[sel.title] || sel.links;
+          return { refs: { ...p.refs, [sel.title]: cur.filter((_, j) => j !== i) }, panelSaved: "저장됨" };
+        }),
+      })),
+      noPanelRefs: (s.refs[sel.title] || sel.links).length === 0,
+      noteOptions: Object.entries(s.notes).map(([id, n]) => ({ value: id, label: `${n.title} · ${n.project || "팀 공통"}` })),
+      refDraftNote: s.refDraftNote,
+      setRefDraftNote: (e) => this.setState({ refDraftNote: e.target.value }),
+      addNoteRef: () => this.setState((p) => {
+        const note = p.notes[p.refDraftNote];
+        if (!note) return {};
+        const cur = p.refs[sel.title] || sel.links;
+        return {
+          refs: { ...p.refs, [sel.title]: [...cur, { kind: "회의록", title: note.title, noteId: p.refDraftNote }] },
+          refDraftNote: "",
+          panelSaved: "저장됨",
+        };
+      }),
+      refDraftTitle: s.refDraftTitle,
+      refDraftUrl: s.refDraftUrl,
+      setRefDraftTitle: (e) => this.setState({ refDraftTitle: e.target.value }),
+      setRefDraftUrl: (e) => this.setState({ refDraftUrl: e.target.value }),
+      addUrlRef: () => this.setState((p) => {
+        if (!p.refDraftTitle.trim()) return {};
+        const cur = p.refs[sel.title] || sel.links;
+        return {
+          refs: { ...p.refs, [sel.title]: [...cur, { kind: "외부 문서", title: p.refDraftTitle.trim() }] },
+          refDraftTitle: "", refDraftUrl: "", linkOpen: false, panelSaved: "저장됨",
+        };
+      }),
+      panelHistory: sel.history,
+      historyCount: sel.history.length,
+      noHistory: sel.history.length === 0,
+      hasGithub: !!sel.branch,
+      lifecycle: (() => {
+        const g = selConnected ? (s.gitLinks[sel.title] || GIT_LINKS[sel.title] || {}) : {};
+        if (!selConnected) {
+          return [{
+            label: "저장소 미연결", value: "", hint: `${sel.project}에 저장소를 연결하면 이슈·PR과 이어집니다`,
+            mark: "", dotBg: "#fff", dotBorder: "#E5E8EB", dotColor: accent,
+            titleColor: "#636D7A", family: "inherit", hasAction: true, action: "저장소 연결",
+          }];
+        }
+        const step = (label, value, hint, state, action) => ({
+          label, value, hint,
+          mark: state === "done" ? "✓" : state === "active" ? "•" : "",
+          dotBg: state === "done" ? accent : state === "active" ? "#E3F1F4" : "#fff",
+          dotBorder: state === "none" ? "#E5E8EB" : accent,
+          dotColor: state === "done" ? "#fff" : accent,
+          titleColor: state === "none" ? "#636D7A" : "#191F28",
+          family: value && value.startsWith("feat/") ? "ui-monospace,SFMono-Regular,Menlo,monospace" : "inherit",
+          hasAction: !!action,
+          action: action || "",
+        });
+        const merged = !!g.merged;
+        return [
+          g.issue
+            ? step("이슈", `${g.issue} ${g.issueTitle}`, merged ? "머지와 함께 닫혔습니다" : "이 태스크로 가져온 이슈", "done")
+            : step("이슈", "없음", "이슈 없이 만든 태스크입니다", "none", "이슈 연결"),
+          g.branch
+            ? step("브랜치", g.branch, "태스크에 연결된 브랜치", "done")
+            : step("브랜치", "없음", "브랜치를 연결하면 진행 중으로 바뀝니다", "none", "브랜치 연결"),
+          g.pr
+            ? step("PR", `${g.pr} ${merged ? "머지됨" : "열림 · 리뷰 1/2"}`, merged ? "" : "머지되면 완료로 바뀝니다", "done")
+            : step("PR", "없음", g.branch ? "PR을 열면 검토 대기로 바뀝니다" : "브랜치를 먼저 연결하세요", "none", g.branch ? "PR 열기" : ""),
+          merged
+            ? step("머지", "완료", "태스크와 이슈가 함께 닫혔습니다", "done")
+            : step("머지", "대기", g.pr ? "리뷰가 끝나면 자동으로 완료됩니다" : "", g.pr ? "active" : "none"),
+        ];
+      })(),
+      autoImport: s.autoImport,
+      toggleAutoImport: () => this.setState((p) => ({ autoImport: !p.autoImport })),
+      openIssues: ISSUES.map((iss) => {
+        const importedTitle = s.importedIssues[iss.number] || iss.task;
+        const num = importedTitle ? (s.taskNumbers[importedTitle] || taskNumber(importedTitle)) : "";
+        return {
+          number: iss.number,
+          title: iss.title,
+          meta: iss.meta,
+          imported: !!importedTitle,
+          pending: !importedTitle,
+          taskNumber: num,
+          importIt: () => this.setState((p) => {
+            const newNumber = `TASK-${170 + Object.keys(p.taskNumbers).length}`;
+            return {
+              importedIssues: { ...p.importedIssues, [iss.number]: iss.title },
+              taskNumbers: { ...p.taskNumbers, [iss.title]: newNumber },
+              gitLinks: { ...p.gitLinks, [iss.title]: { issue: iss.number, issueTitle: iss.title } },
+              tasksByProject: {
+                ...p.tasksByProject,
+                [project.id]: [...(p.tasksByProject[project.id] || project.tasks), {
+                  title: iss.title, assignee: "김산돌", priority: 5, note: "", due: "", status: "시작 전",
+                }],
+              },
+            };
+          }),
+        };
+      }),
+      dueFull: sel.dueFull,
+      closePanel: () => this.setState({ panelOpen: false }),
+      panelSaved: s.panelSaved,
+      panelTitle: s.panel.title,
+      panelStatus: s.panel.status,
+      panelPriority: s.panel.priority,
+      statusOptions: ["시작 전", "진행 중", "검토 대기", "일시정지", "막힘", "완료", "취소"].map((v) => ({ value: v, label: v })),
+      priorityOptions: Array.from({ length: 10 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) })),
+      panelDesc: s.panel.desc,
+      panelDoneWhen: s.panel.doneWhen,
+      panelNextAction: s.panel.nextAction,
+      panelNotes: s.panel.notes,
+      stopReason: s.panel.stopReason,
+      statusBg: pill(s.panel.status).pillBg,
+      statusColor: pill(s.panel.status).pillColor,
+      statusHint: s.panel.status === "진행 중" && sel.branch
+        ? `연결된 브랜치 ${sel.branch}에서 작업 중입니다.`
+        : s.panel.status === "검토 대기" && !sel.pr
+          ? "검토를 기다리는 중입니다."
+          : STATUS_HINTS[s.panel.status] || "",
+      stopOpen: s.panel.status === "막힘" || s.panel.status === "일시정지",
+      stopLabel: s.panel.status === "막힘" ? "막힌 이유" : "멈춘 이유",
+      dueLabel: sel.due ? `${sel.due} 마감` : "기한 미정",
+      dueColor: "#191F28",
+      setPanelTitle: setPanel("title"),
+      setPanelStatus: setPanel("status"),
+      setPanelPriority: setPanel("priority"),
+      setPanelDesc: setPanel("desc"),
+      setDoneWhen: setPanel("doneWhen"),
+      setNextAction: setPanel("nextAction"),
+      setPanelNotes: setPanel("notes"),
+      setStopReason: setPanel("stopReason"),
+      extendOpen: s.extendOpen,
+      extendLabel: s.extendOpen ? "취소" : "목표일 연장하기",
+      toggleExtend: () => this.setState((p) => ({ extendOpen: !p.extendOpen })),
+      linkOpen: s.linkOpen,
+      linkLabel: s.linkOpen ? "취소" : "＋ 외부 주소 추가",
+      toggleLink: () => this.setState((p) => ({ linkOpen: !p.linkOpen })),
+      checkItems: s.checks.map((c, i) => ({
+        text: c.text,
+        done: c.done,
+        commit: c.commit,
+        hasCommit: !!c.commit,
+        deco: c.done ? "line-through" : "none",
+        color: c.done ? "#636D7A" : "#191F28",
+        toggle: () => this.setState((p) => ({
+          checks: p.checks.map((x, j) => (j === i ? { ...x, done: !x.done } : x)),
+          panelSaved: "저장됨",
+        })),
+        remove: () => this.setState((p) => ({ checks: p.checks.filter((_, j) => j !== i), panelSaved: "저장됨" })),
+      })),
+      checkLabel: `${s.checks.filter((c) => c.done).length}/${s.checks.length} 완료`,
+      checkDraft: s.checkDraft,
+      setCheckDraft: (e) => this.setState({ checkDraft: e.target.value }),
+      addCheck: () => this.setState((p) => (p.checkDraft.trim()
+        ? { checks: [...p.checks, { text: p.checkDraft.trim(), done: false, commit: "" }], checkDraft: "", panelSaved: "저장됨" }
+        : {})),
+      commits: sel.commits,
+      goTeam: () => this.setState({ screen: "team" }),
+      goCapacity: () => this.setState({ screen: "capacity" }),
+      goRoadmap: () => this.setState({ screen: "roadmap" }),
+      goNotes: () => this.setState({ screen: "notes" }),
+      isCapacity: s.screen === "capacity",
+      isRoadmap: s.screen === "roadmap",
+      isNotes: s.screen === "notes",
+
+      isProject: s.screen === "project",
+      isKeys: s.screen === "keys",
+      goKeys: () => this.setState({ screen: "keys" }),
+      keyFormOpen: s.keyFormOpen,
+      keyFormLabel: s.keyFormOpen ? "닫기" : "조직 키 추가",
+      toggleKeyForm: () => this.setState((p) => ({ keyFormOpen: !p.keyFormOpen })),
+      keyDraftKind: s.keyDraft.kind,
+      keyDraftName: s.keyDraft.name,
+      keyDraftValue: s.keyDraft.value,
+      setKeyDraftKind: (e) => { const v = e.target.value; this.setState((p) => ({ keyDraft: { ...p.keyDraft, kind: v } })); },
+      setKeyDraftName: (e) => { const v = e.target.value; this.setState((p) => ({ keyDraft: { ...p.keyDraft, name: v } })); },
+      setKeyDraftValue: (e) => { const v = e.target.value; this.setState((p) => ({ keyDraft: { ...p.keyDraft, value: v } })); },
+      scopeChoices: SCOPE_CHOICES.map((label) => {
+        const on = s.keyDraft.scopes.includes(label);
+        return {
+          label,
+          bg: on ? "#E3F1F4" : "#fff",
+          color: on ? accent : "#191F28",
+          border: on ? accent : "#E5E8EB",
+          on,
+          toggle: () => this.setState((p) => ({
+            keyDraft: {
+              ...p.keyDraft,
+              scopes: p.keyDraft.scopes.includes(label)
+                ? p.keyDraft.scopes.filter((x) => x !== label)
+                : [...p.keyDraft.scopes, label],
+            },
+          })),
+        };
+      }),
+      addKey: () => this.setState((p) => {
+        const name = p.keyDraft.name.trim();
+        const value = p.keyDraft.value.trim();
+        if (!name || !value) return {};
+        const tail = value.slice(-4);
+        const prefix = p.keyDraft.kind === "GitHub App" ? "ghs" : p.keyDraft.kind === "PAT" ? "ghp" : "oauth";
+        return {
+          keys: [...p.keys, {
+            id: `k${Date.now()}`, name, kind: p.keyDraft.kind,
+            masked: `${prefix}_••••${tail}`,
+            scopes: p.keyDraft.scopes.length ? p.keyDraft.scopes : ["repo:read"],
+            lastUsed: "사용 전", state: "정상",
+          }],
+          keyDraft: { kind: "GitHub App", name: "", value: "", scopes: ["repo:read", "issues", "pull_requests"] },
+          keyFormOpen: false,
+        };
+      }),
+      orgKeys: s.keys.map((k) => ({
+        name: k.name,
+        kind: k.kind,
+        masked: k.masked,
+        scopes: k.scopes.join(" · "),
+        lastUsed: k.lastUsed,
+        state: k.state,
+        stateColor: /만료|폐기/.test(k.state) ? "#A85B00" : "#636D7A",
+        stateWeight: /만료|폐기/.test(k.state) ? "700" : "400",
+        revoke: () => this.setState((p) => ({ keys: p.keys.filter((x) => x.id !== k.id) })),
+      })),
+      noOrgKeys: s.keys.length === 0,
+      orgKeyOptions: s.keys.map((k) => ({ value: k.id, label: `${k.name} · ${k.masked}` })),
+      deployKeys: PROJECTS.map((p) => {
+        const mode = s.authByProject[p.id] || (p.connected ? "org" : "none");
+        const deploy = mode === "deploy";
+        return {
+          project: p.name,
+          detail: p.connected ? `${p.repo} · ${deploy ? "SHA256:9f2c…a41d" : "조직 키 사용"}` : "저장소 미연결",
+          state: !p.connected ? "미연결" : deploy ? "배포 키" : "조직 키",
+          stateColor: !p.connected ? "#A85B00" : "#636D7A",
+          stateWeight: !p.connected ? "700" : "400",
+          go: () => this.setState({ screen: "project", projectId: p.id, projTab: "repo" }),
+        };
+      }),
+      authModes: [
+        ["org", "조직 키 사용", "팀에 등록한 키를 그대로 씁니다"],
+        ["deploy", "이 저장소 전용 배포 키", "저장소 하나에만 통하는 키를 만듭니다"],
+      ].map(([id, label, desc]) => {
+        const on = (s.authByProject[project.id] || "org") === id;
+        return {
+          label, desc, on,
+          bg: on ? "#E3F1F4" : "#fff",
+          border: on ? accent : "#E5E8EB",
+          color: on ? accent : "#191F28",
+          go: () => this.setState((p) => ({ authByProject: { ...p.authByProject, [project.id]: id } })),
+        };
+      }),
+      useOrgKey: (s.authByProject[project.id] || "org") === "org",
+      useDeployKey: (s.authByProject[project.id] || "org") === "deploy",
+      projectKeyId: s.keyByProject[project.id] || (s.keys[0] && s.keys[0].id) || "",
+      setProjectKey: (e) => { const v = e.target.value; this.setState((p) => ({ keyByProject: { ...p.keyByProject, [project.id]: v } })); },
+      deployWrite: !!s.deployWrite[project.id],
+      toggleDeployWrite: () => this.setState((p) => ({ deployWrite: { ...p.deployWrite, [project.id]: !p.deployWrite[project.id] } })),
+      deployKeyMeta: `ed25519 · 지문 SHA256:9f2c…a41d · ${s.deployWrite[project.id] ? "읽기·쓰기" : "읽기 전용"} · 마지막 사용 2분 전`,
+      deployPublicKey: `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI${project.id}9f2cQ0oR7mKpXvT4sandori-task@${project.repo}`,
+      rotateDeployKey: () => this.setState((p) => ({ panelSaved: "", deployWrite: { ...p.deployWrite } })),
+      people,
+      milestones,
+      myGroups,
+      todayDone: todayLive.filter((t) => t.status === "완료").map((t) => {
+        const owner = PROJECTS.find((p) => (s.tasksByProject[p.id] || p.tasks).some((x) => x.title === t.title));
+        return { ...t, project: owner ? owner.name : "", open: openTask(t, owner ? owner.name : "") };
+      }),
+      myOpen: myCount.open,
+      todayCount: openToday.length,
+      autoCount: TODAY_ROWS.filter((t) => t.today === "auto").length,
+      doneToday: todayLive.filter((t) => t.status === "완료").length,
+      doneWeek: teamCount.done,
+      dueTodayCount: openToday.filter((t) => t.due === "오늘").length,
+      overdueCount: myCount.overdue,
+      reviewCount: myCount.review,
+      blockedCount: myCount.blocked,
+      capacityTiles: [
+        { value: String(teamCount.running), label: "진행 중", color: "#191F28" },
+        { value: String(teamCount.review), label: "검토 대기", color: "#191F28" },
+        { value: String(teamCount.blocked), label: "막힘", color: warn(teamCount.blocked) },
+        { value: String(teamCount.overdue), label: "기한 초과", color: warn(teamCount.overdue) },
+        { value: avgLoad, label: "1인 평균 진행", color: "#191F28" },
+      ],
+      teamTiles: [
+        { value: String(teamCount.open), label: "미완료", color: "#191F28" },
+        { value: String(teamCount.running), label: "진행 중", color: "#191F28" },
+        { value: String(teamCount.review), label: "검토 대기", color: "#191F28" },
+        { value: String(teamCount.overdue), label: "기한 초과", color: warn(teamCount.overdue) },
+        { value: String(teamCount.blocked), label: "막힘", color: warn(teamCount.blocked) },
+        { value: String(teamCount.done), label: "완료", color: "#191F28" },
+      ],
+      proj: {
+        ...project,
+        tiles: [
+          { value: `${projCount.done}/${projCount.total}`, label: "완료", color: "#191F28" },
+          { value: String(projCount.open), label: "미완료", color: "#191F28" },
+          { value: String(projCount.overdue), label: "기한 초과", color: warn(projCount.overdue) },
+          { value: String(projCount.review), label: "검토 대기", color: "#191F28" },
+          { value: String(projCount.blocked), label: "막힘", color: warn(projCount.blocked) },
+        ],
+        repoState: project.connected ? "연결됨" : "미연결",
+        repoBg: project.connected ? "#EDF9F2" : "#F0F4F6",
+        repoColor: project.connected ? "#12793F" : "#636D7A",
+        repoAction: project.connected ? "저장소 변경" : "저장소 연결",
+      },
+      projRows: projTasks.map((t) => ({
+        ...t, ...pill(t.status),
+        dueColor: t.overdue || t.due === "오늘" ? "#C92A37" : "#636D7A",
+        note: noteFor(t.title),
+        open: openTask(t, project.name),
+      })),
+      projBoard: BOARD_COLUMNS.map((label) => {
+        const rows = projTasks.filter((t) => t.status === label).map((t) => ({
+          ...t,
+          open: openTask(t, project.name),
+          opacity: s.dragTitle === t.title ? "0.4" : "1",
+          onDragStart: (e) => {
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+            this.setState({ dragTitle: t.title });
+          },
+          onDragEnd: () => this.setState({ dragTitle: "", dragOverCol: "" }),
+        }));
+        const over = s.dragOverCol === label && s.dragTitle;
+        return {
+          label, rows, count: rows.length, empty: rows.length === 0,
+          bg: over ? "#E3F1F4" : "transparent",
+          border: over ? accent : "#E5E8EB",
+          onDragOver: (e) => {
+            e.preventDefault();
+            if (s.dragOverCol !== label) this.setState({ dragOverCol: label });
+          },
+          onDragLeave: () => this.setState((p) => (p.dragOverCol === label ? { dragOverCol: "" } : {})),
+          onDrop: (e) => {
+            e.preventDefault();
+            this.setState((p) => {
+              if (!p.dragTitle) return { dragOverCol: "" };
+              const list = (p.tasksByProject[project.id] || []).map((t) =>
+                t.title === p.dragTitle ? { ...t, status: label } : t
+              );
+              return {
+                tasksByProject: { ...p.tasksByProject, [project.id]: list },
+                dragTitle: "",
+                dragOverCol: "",
+                panel: p.selected.title === p.dragTitle ? { ...p.panel, status: label } : p.panel,
+              };
+            });
+          },
+        };
+      }),
+      projViews: [["list", "목록"], ["board", "보드"]].map(([id, label]) => {
+        const on = s.projView === id;
+        return { label, on, bg: on ? "#E3F1F4" : "#fff", color: on ? accent : "#191F28", go: () => this.setState({ projView: id }) };
+      }),
+      isProjList: s.projView === "list",
+      isProjBoard: s.projView === "board",
+      taskFormOpen: s.taskFormOpen,
+      taskFormLabel: s.taskFormOpen ? "닫기" : "태스크 만들기",
+      toggleTaskForm: () => this.setState((p) => ({ taskFormOpen: !p.taskFormOpen })),
+      teamProjects: PROJECTS.map((p) => {
+        const list = s.tasksByProject[p.id] || p.tasks;
+        const open = list.filter((t) => t.status !== "완료" && t.status !== "취소").length;
+        return {
+          name: p.name,
+          purpose: p.purpose,
+          owners: p.owners,
+          ownerColor: p.owners === "미지정" ? "#A85B00" : "#191F28",
+          status: p.status,
+          open,
+          done: `${list.filter((t) => t.status === "완료").length}/${list.length}`,
+          go: () => this.setState({ screen: "project", projectId: p.id }),
+        };
+      }),
+      railOpen: s.railOpen,
+      railClosed: !s.railOpen,
+      projectCount: PROJECTS.length,
+      railStyle: s.railOpen
+        ? "flex:0 0 200px;display:flex;flex-direction:column;gap:2px;padding:24px 8px;position:sticky;top:88px"
+        : "flex:0 0 56px;display:flex;flex-direction:column;gap:2px;padding:24px 8px;position:sticky;top:88px",
+      toggleRail: () => this.setState((p) => ({ railOpen: !p.railOpen })),
+      projectNav: PROJECTS.map((p) => {
+        const on = s.screen === "project" && s.projectId === p.id;
+        return {
+          label: p.name,
+          icon: p.icon,
+          open: String((s.tasksByProject[p.id] || p.tasks).filter((t) => t.status !== "완료" && t.status !== "취소").length),
+          weight: on ? "700" : "500",
+          bg: on ? "#E3F1F4" : "transparent",
+          color: on ? accent : "#191F28",
+          iconBg: on ? "#fff" : "#F0F4F6",
+          go: () => this.setState({ screen: "project", projectId: p.id }),
+        };
+      }),
+      inTeamArea: s.screen === "team" || SCREENS.some(([id]) => id === s.screen),
+      teamTabs: [["team", "개요"], ...SCREENS].map(([id, label]) => {
+        const on = s.screen === id;
+        return {
+          label,
+          weight: on ? "700" : "500",
+          color: on ? accent : "#636D7A",
+          line: on ? accent : "transparent",
+          go: () => this.setState({ screen: id }),
+        };
+      }),
+      skillChips: SKILLS.map((label) => {
+        const on = picked.includes(label);
+        return {
+          label,
+          bg: on ? "#E3F1F4" : "#fff",
+          color: on ? accent : "#191F28",
+          border: on ? accent : "#E5E8EB",
+          toggle: () => this.setState((p) => ({
+            skills: p.skills.includes(label) ? p.skills.filter((x) => x !== label) : [...p.skills, label],
+          })),
+        };
+      }),
+      skillResult,
+      rules: ruleDefs.map(([key, title, desc]) => {
+        const on = s.rules[key];
+        return {
+          title, desc, on,
+          state: on ? "켜짐" : "꺼짐",
+          bg: on ? accent : "#F0F4F6",
+          color: on ? "#fff" : "#636D7A",
+          toggle: () => this.setState((p) => ({ rules: { ...p.rules, [key]: !p.rules[key] } })),
+        };
+      }),
+      goMe: () => this.setState({ screen: "me" }),
+      scopeChips,
+      noteGroups,
+      docBlocks,
+      docClick: (e) => {
+        if (e.target !== e.currentTarget) return;
+        this._focused = null;
+        if (lines[lines.length - 1].trim() === "") {
+          this.setState({ editIndex: lines.length - 1, caret: null });
+        } else {
+          setLines([...lines, ""], lines.length);
+          this.setState({ caret: 0 });
+        }
+      },
+      noteTitle: note.title,
+      noteProject: note.project || "",
+      savedLabel: s.savedLabel,
+      noteCreated: note.created || "2026-09-11",
+      setNoteCreated: (e) => {
+        const created = e.target.value;
+        this.setState((p) => ({
+          notes: { ...p.notes, [p.noteId]: { ...p.notes[p.noteId], created } },
+          savedLabel: "방금 자동 저장됨",
+        }));
+      },
+      uploaded: !!s.uploadName,
+      uploadName: s.uploadName,
+      setTitle: (e) => {
+        const title = e.target.value;
+        this.setState((p) => ({ notes: { ...p.notes, [p.noteId]: { ...p.notes[p.noteId], title } }, savedLabel: "방금 자동 저장됨" }));
+      },
+      setProject: (e) => {
+        const project = e.target.value || null;
+        this.setState((p) => ({ notes: { ...p.notes, [p.noteId]: { ...p.notes[p.noteId], project } }, savedLabel: "방금 자동 저장됨" }));
+      },
+      newNote: () => {
+        const id = `n${Date.now()}`;
+        this.setState((p) => ({
+          notes: { ...p.notes, [id]: { title: "제목 없는 회의록", project: p.noteScope === "all" || p.noteScope === "team" ? null : p.noteScope, author: "김산돌", body: "", version: 1, updated: "방금", created: "2026-09-11" } },
+          noteId: id, editIndex: 0, uploadName: "", savedLabel: "v1 · 방금 자동 저장됨",
+        }));
+      },
+      onUpload: (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => this.setState((p) => ({
+          notes: { ...p.notes, [p.noteId]: { ...p.notes[p.noteId], body: String(reader.result || ""), title: file.name.replace(/\.(md|markdown)$/i, "") } },
+          uploadName: file.name,
+          editIndex: -1,
+          savedLabel: "방금 자동 저장됨",
+        }));
+        reader.readAsText(file);
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

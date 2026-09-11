@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 
 from accounts.models import User
+from orgs.models import Team
 from projects.models import Project
 from tasks.models import Link
 
@@ -15,13 +16,21 @@ class SignupForm(UserCreationForm):
         labels = {"username": "아이디", "display_name": "표시 이름"}
 
 
-class TeamForm(forms.Form):
-    name = forms.CharField(label="팀 이름", max_length=100)
+class OrgForm(forms.Form):
+    name = forms.CharField(label="조직 이름", max_length=100)
     purpose = forms.CharField(label="목적 한 줄", max_length=200, required=False)
 
 
 class InviteForm(forms.Form):
     days = forms.IntegerField(label="만료(일)", min_value=1, max_value=90, initial=7)
+    gh_invite = forms.BooleanField(label="GitHub 조직에도 초대", required=False)
+    gh_login = forms.CharField(label="GitHub 로그인", max_length=100, required=False)
+
+
+class TeamForm(forms.Form):
+    # 빈 이름 검사는 services.create_team/update_team이 한다(업무 규칙은 services에만).
+    name = forms.CharField(label="이름", max_length=100, required=False)
+    purpose = forms.CharField(label="목적", max_length=200, required=False)
 
 
 class ProjectForm(forms.Form):
@@ -35,14 +44,16 @@ class ProjectForm(forms.Form):
     owners = forms.ModelMultipleChoiceField(
         label="관리자", queryset=User.objects.none(), required=False
     )
+    teams = forms.ModelMultipleChoiceField(
+        label="담당 팀", queryset=Team.objects.none(), required=False
+    )
     status = forms.ChoiceField(label="상태", choices=Project.STATUSES, initial="preparing")
     version = forms.IntegerField(widget=forms.HiddenInput, required=False)
 
-    def __init__(self, *args, team, **kwargs):
+    def __init__(self, *args, org, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["owners"].queryset = team.members.filter(is_active=True).order_by(
-            "display_name"
-        )
+        self.fields["owners"].queryset = org.members.filter(is_active=True).order_by("display_name")
+        self.fields["teams"].queryset = org.teams.all()
 
 
 class TaskForm(forms.Form):
@@ -65,12 +76,12 @@ class TaskForm(forms.Form):
     next_action = forms.CharField(label="다음 행동", max_length=200, required=False)
     version = forms.IntegerField(widget=forms.HiddenInput)
 
-    def __init__(self, *args, team, **kwargs):
+    def __init__(self, *args, org, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["project"].queryset = Project.objects.filter(
-            team=team, is_archived=False
+            org=org, is_archived=False
         ).order_by("name")
-        self.fields["assignee"].queryset = team.members.filter(is_active=True).order_by(
+        self.fields["assignee"].queryset = org.members.filter(is_active=True).order_by(
             "display_name"
         )
 
@@ -86,9 +97,9 @@ class TaskInlineForm(forms.Form):
     # IdempotencyKey.key는 varchar(100)이다. 클라이언트가 보내는 값이므로 폼에서 막는다.
     idem = forms.CharField(widget=forms.HiddenInput, required=False, max_length=100)
 
-    def __init__(self, *args, team, **kwargs):
+    def __init__(self, *args, org, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["assignee"].queryset = team.members.filter(is_active=True).order_by(
+        self.fields["assignee"].queryset = org.members.filter(is_active=True).order_by(
             "display_name"
         )
 
@@ -106,19 +117,23 @@ class QuickTaskForm(forms.Form):
 
     def __init__(self, *args, user, **kwargs):
         super().__init__(*args, **kwargs)
-        from teams.services import teams_of
+        from orgs.services import orgs_of
 
         self.fields["project"].queryset = (
-            Project.objects.filter(team__in=teams_of(user), is_archived=False)
-            .select_related("team")
-            .order_by("team__name", "name")
+            Project.objects.filter(org__in=orgs_of(user), is_archived=False)
+            .select_related("org")
+            .order_by("org__name", "name")
         )
 
 
 class LinkForm(forms.Form):
     title = forms.CharField(label="제목", max_length=100)
     url = forms.URLField(label="URL", max_length=500)
-    kind = forms.ChoiceField(label="종류", choices=Link.KINDS, initial="doc")
+    kind = forms.ChoiceField(
+        label="종류",
+        choices=[(c, label) for c, label in Link.KINDS if c in ("doc", "issue", "dash", "other")],
+        initial="doc",
+    )
 
 
 class ProfileForm(forms.Form):

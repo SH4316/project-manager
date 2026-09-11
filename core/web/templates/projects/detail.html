@@ -1,9 +1,10 @@
 {% extends "base.html" %}{% load rows %}{% block title %}{{ project.name }}{% endblock %}
 {% block main %}
+{% include "projects/_tabs.html" %}
 <div class="card">
   <div class="card-head">
     <div class="stack">
-      <a class="t13" href="{% url 'team_detail' project.team_id %}">{{ project.team.name }}</a>
+      <a class="t13" href="{% url 'org_detail' project.org_id %}">{{ project.org.name }}</a>
       <h1 class="t24">{{ project.name }}</h1>
       {% if project.purpose %}<p class="muted">{{ project.purpose }}</p>{% endif %}
       <div class="row t13">
@@ -23,9 +24,9 @@
   <div class="tiles five">
     <div class="tile"><b>{{ stats.done }}/{{ stats.total }}</b><span>완료</span></div>
     <div class="tile"><b>{{ stats.open }}</b><span>미완료</span></div>
-    <div class="tile"><b>{{ stats.overdue }}</b><span>기한 초과</span></div>
+    <div class="tile"><b{% if stats.overdue %} class="danger"{% endif %}>{{ stats.overdue }}</b><span>기한 초과</span></div>
     <div class="tile"><b>{{ stats.review }}</b><span>검토 대기</span></div>
-    <div class="tile"><b>{{ stats.blocked }}</b><span>막힘</span></div>
+    <div class="tile"><b{% if stats.blocked %} class="danger"{% endif %}>{{ stats.blocked }}</b><span>막힘</span></div>
   </div>
 </div>
 <section class="card">
@@ -48,9 +49,7 @@
     </div>
   </div>
   {% if view == 'board' %}
-  <div class="board">
-    {% for code, label, col in columns %}<div class="col"><h3>{{ label }} <span class="muted">{{ col|length }}</span></h3><ul class="tasks">{% for r in col %}{% task_row r %}{% endfor %}</ul></div>{% endfor %}
-  </div>
+  {% include "projects/_board.html" %}
   {% else %}
   <ul class="tasks">{% for r in rows %}{% task_row r %}{% empty %}<li class="muted">태스크가 없습니다.</li>{% endfor %}</ul>
   {% endif %}

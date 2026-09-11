@@ -10,11 +10,11 @@ from django.utils import timezone
 from accounts.models import User
 from common.dates import fmt_md, today_kst
 from common.errors import ServiceError
+from orgs.models import Organization
+from orgs.services import is_admin, is_member, orgs_of
 from projects.models import Project
 from tasks.models import Task
 from tasks.services import get_visible_task, today_flag, today_membership
-from teams.models import Team
-from teams.services import is_admin, is_member, teams_of
 
 CONFLICT_MSG = "다른 사람이 먼저 수정했습니다. 최신 내용을 다시 확인하세요."
 
@@ -38,35 +38,35 @@ def _pk_or_404(value) -> int:
         raise Http404 from None
 
 
-def team_or_404(user, team_id):
-    team = Team.objects.filter(pk=_pk_or_404(team_id)).first()
-    if team is None or not is_member(user, team):
+def org_or_404(user, org_id):
+    org = Organization.objects.filter(pk=_pk_or_404(org_id)).first()
+    if org is None or not is_member(user, org):
         raise Http404
-    return team
+    return org
 
 
 def project_or_404(user, project_id):
     p = (
         Project.objects.filter(pk=_pk_or_404(project_id))
-        .select_related("team")
+        .select_related("org")
         .prefetch_related("owners")
         .first()
     )
-    if p is None or not is_member(user, p.team):
+    if p is None or not is_member(user, p.org):
         raise Http404
     return p
 
 
-def current_team(request):
-    """세션의 team_id가 내 팀이면 그 팀, 아니면 이름순 첫 팀. 팀이 없으면 None."""
-    teams = list(teams_of(request.user).order_by("name"))
-    if not teams:
+def current_org(request):
+    """세션의 org_id가 내 조직이면 그 조직, 아니면 이름순 첫 조직. 조직이 없으면 None."""
+    orgs = list(orgs_of(request.user).order_by("name"))
+    if not orgs:
         return None
-    tid = request.session.get("team_id")
-    for t in teams:
-        if t.pk == tid:
-            return t
-    return teams[0]
+    oid = request.session.get("org_id")
+    for o in orgs:
+        if o.pk == oid:
+            return o
+    return orgs[0]
 
 
 def apply_service_error(form, exc: ServiceError):
@@ -79,8 +79,8 @@ def new_idem() -> str:
     return uuid.uuid4().hex
 
 
-def can_admin(user, team) -> bool:
-    return is_admin(user, team)
+def can_admin(user, org) -> bool:
+    return is_admin(user, org)
 
 
 def hx_redirect(request, url: str):
@@ -183,13 +183,14 @@ def history_rows(logs) -> list[dict]:
 
 # ---------- 태스크 행 ----------
 
-ROW_OPTS = ("next", "move", "noassignee", "notoday", "ro", "today")
+ROW_OPTS = ("next", "move", "noassignee", "notoday", "ro", "today", "board")
 
 
 def row_ctx(user, task, opts: str = "", membership: dict | None = None, selected_id=None) -> dict:
     """tasks/_row.html 렌더링 context.
     opts: 쉼표 구분. next(다음 행동 표시) move(↑↓) noassignee(담당자 숨김) notoday(오늘 버튼 숨김)
-          ro(상태 select 비활성) today(오늘 화면 안: 목록 전체를 갱신, 자기 갱신 없음)."""
+          ro(상태 select 비활성) today(오늘 화면 안: 목록 전체를 갱신, 자기 갱신 없음)
+          board(칸반 드래그, 자기 갱신 없음)."""
     o = {x for x in opts.split(",") if x in ROW_OPTS}
     m = membership or today_membership(user)
     flag = today_flag(task, m)
@@ -205,6 +206,7 @@ def row_ctx(user, task, opts: str = "", membership: dict | None = None, selected
         "hide_today": "notoday" in o,
         "read_only": "ro" in o,
         "in_today_page": "today" in o,
+        "in_board": "board" in o,
         "row_target": "#today-list" if "today" in o else f"#task-{task.pk}",
         "in_today": flag != "",
         "auto_pulled": flag == "auto",

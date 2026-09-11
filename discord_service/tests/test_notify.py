@@ -19,7 +19,7 @@ def _cfg(tmp_path):
     return Config(
         core_url="http://core",
         core_token="pm_test",
-        team_id=1,
+        org_id=1,
         bot_token="botsecret",
         channel_id=CHANNEL,
         tz=KST,

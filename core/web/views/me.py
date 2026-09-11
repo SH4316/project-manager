@@ -3,10 +3,10 @@ from django.http import Http404
 from django.shortcuts import render
 
 from accounts.models import User
+from orgs.services import orgs_of
 from projects.models import Project
 from tasks import services as ts
 from tasks.services import today_membership
-from teams.services import teams_of
 
 from .common import project_or_404, row_ctx
 
@@ -21,7 +21,7 @@ def me(request):
     elif raw.isdecimal() and int(raw) != request.user.pk:
         member = (
             User.objects.filter(
-                pk=int(raw), is_active=True, memberships__team__in=teams_of(request.user)
+                pk=int(raw), is_active=True, org_memberships__org__in=orgs_of(request.user)
             )
             .distinct()
             .first()
@@ -66,12 +66,12 @@ def me(request):
             "has_filter": any(f.values()),
             "member_id": member_id,
             "members": User.objects.filter(
-                is_active=True, memberships__team__in=teams_of(request.user)
+                is_active=True, org_memberships__org__in=orgs_of(request.user)
             )
             .distinct()
             .order_by("display_name"),
             "projects": Project.objects.filter(
-                team__in=teams_of(request.user), is_archived=False
+                org__in=orgs_of(request.user), is_archived=False
             ).order_by("name"),
             "due_options": ts.DUE_FILTERS,
             "status_options": ts.STATUS_FILTERS,

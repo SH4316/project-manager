@@ -5,6 +5,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from accounts.models import User
+from orgs.services import orgs_of
 from projects.models import Project
 from tasks.brief import task_brief
 from tasks.models import ChangeLog, Task
@@ -16,7 +17,6 @@ from tasks.services import (
     update_task,
     visible_tasks,
 )
-from teams.services import teams_of
 
 from ..context import clamp_page, ctx, idem_key, task_or_404
 from ..schemas import (
@@ -38,7 +38,7 @@ router = Router(tags=["tasks"])
 @router.get("", response=TaskListOut)
 def list_tasks(
     request,
-    team: int | None = None,
+    org: int | None = None,
     project: int | None = None,
     assignee: int | None = None,
     status: str | None = None,
@@ -50,8 +50,8 @@ def list_tasks(
     offset: int = 0,
 ):
     qs = visible_tasks(request.auth)
-    if team is not None:
-        qs = qs.filter(project__team_id=team)
+    if org is not None:
+        qs = qs.filter(project__org_id=org)
     if project is not None:
         qs = qs.filter(project_id=project)
     if assignee is not None:
@@ -96,7 +96,7 @@ def history(request, task_id: int):
 
 @router.post("", response={201: TaskOut, 400: ErrorOut})
 def create_task_ep(request, payload: TaskCreateIn):
-    project = Project.objects.filter(pk=payload.project_id, team__in=teams_of(request.auth)).first()
+    project = Project.objects.filter(pk=payload.project_id, org__in=orgs_of(request.auth)).first()
     if project is None:
         raise HttpError(404, "프로젝트를 찾을 수 없습니다.")
     assignee = None
@@ -135,7 +135,7 @@ def patch_task(request, task_id: int, payload: TaskPatchIn):
         data["assignee"] = User.objects.filter(pk=aid).first() if aid else None
     if "project_id" in data:
         pid = data.pop("project_id")
-        data["project"] = Project.objects.filter(pk=pid, team__in=teams_of(request.auth)).first()
+        data["project"] = Project.objects.filter(pk=pid, org__in=orgs_of(request.auth)).first()
         if data["project"] is None:
             raise HttpError(404, "프로젝트를 찾을 수 없습니다.")
     if data:

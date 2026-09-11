@@ -24,7 +24,10 @@ class Project(models.Model):
         "eol": "프로젝트가 더 이상 필요하지 않거나 대체되어, 유지보수·재개 가능성 모두 없는 상태",
     }
 
-    team = models.ForeignKey("teams.Team", on_delete=models.CASCADE, related_name="projects")
+    org = models.ForeignKey("orgs.Organization", on_delete=models.CASCADE, related_name="projects")
+    teams = models.ManyToManyField(
+        "orgs.Team", blank=True, related_name="projects", verbose_name="담당 팀"
+    )
     name = models.CharField("이름", max_length=100)
     purpose = models.CharField("목적", max_length=200, blank=True)
     owners = models.ManyToManyField(
@@ -43,7 +46,7 @@ class Project(models.Model):
     class Meta:
         ordering = ["name"]
         constraints = [
-            models.UniqueConstraint(fields=["team", "name"], name="project_team_name"),
+            models.UniqueConstraint(fields=["org", "name"], name="project_org_name"),
         ]
 
     def __str__(self):
@@ -56,3 +59,63 @@ class Project(models.Model):
     @property
     def status_desc(self) -> str:
         return self.STATUS_DESC[self.status]
+
+
+class Milestone(models.Model):
+    STATUSES = [("planned", "준비 중"), ("active", "진행 중"), ("done", "완료")]
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="milestones")
+    name = models.CharField("이름", max_length=100)
+    start_date = models.DateField("시작일", null=True, blank=True)
+    target_date = models.DateField("목표일")
+    status = models.CharField("상태", max_length=7, choices=STATUSES, default="planned")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["target_date", "id"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def status_label(self) -> str:
+        return dict(self.STATUSES)[self.status]
+
+
+class ApiSpec(models.Model):
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name="api_spec")
+    source_url = models.CharField("출처", max_length=500, blank=True)
+    spec = models.JSONField()
+    fetched_at = models.DateTimeField(auto_now=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+
+    def __str__(self):
+        return f"{self.project.name} API"
+
+
+class ProjectDependency(models.Model):
+    from_project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="dependencies")
+    to_project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="dependents")
+    note = models.CharField("메모", max_length=200, blank=True)
+    is_blocking = models.BooleanField("차단", default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-is_blocking", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["from_project", "to_project"], name="dependency_from_to"
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(from_project=models.F("to_project")),
+                name="dependency_not_self",
+            ),
+        ]

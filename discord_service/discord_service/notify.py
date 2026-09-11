@@ -29,7 +29,7 @@ def classify(task: dict, today: date) -> str | None:
     return None
 
 
-def run_deadlines(core: CoreClient, bot: Bot, store: Store, team_id: int, today: date) -> dict:
+def run_deadlines(core: CoreClient, bot: Bot, store: Store, org_id: int, today: date) -> dict:
     """하루 1회. 담당자별 개인 DM으로 보낸다.
 
     한 사람이 하루에 받는 DM은 종류당 1건, 최대 4건이다(D-3·D-1·당일·기한 초과).
@@ -48,7 +48,7 @@ def run_deadlines(core: CoreClient, bot: Bot, store: Store, team_id: int, today:
         "recheck_failed": 0,
     }
     unlinked_names: list[str] = []
-    candidates = core.open_tasks(team_id, due_to=(today + timedelta(days=3)).isoformat())
+    candidates = core.open_tasks(org_id, due_to=(today + timedelta(days=3)).isoformat())
 
     # (종류, 담당자) 로 묶는다. 담당자는 태스크당 한 명이다.
     grouped: dict[tuple[str, int], list[dict]] = defaultdict(list)
@@ -124,7 +124,7 @@ def _send_dm(bot, store, did, text, key, day, result):
 
 
 def _notify_channel_once(bot, store, did, day):
-    """DM이 막힌 사람에게는 팀 채널로 하루 한 번만 알린다. 태스크 내용은 넣지 않는다."""
+    """DM이 막힌 사람에게는 조직 채널로 하루 한 번만 알린다. 태스크 내용은 넣지 않는다."""
     if not store.claim(0, f"dmblocked:{did}", day):
         return
     try:

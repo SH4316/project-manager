@@ -235,3 +235,8 @@
 
 구현 중 발견해 고친 것(지시서 코드 자체의 결함 포함) 22건과 지시서 반영 46곳은
 [IMPL-REPORT.md](IMPL-REPORT.md)에 있다. 이 문서는 이제 결정 근거로만 참고한다.
+
+
+---
+
+**후속:** 2026-09-11부터의 작업(조직·팀 재구성과 GitHub 통합)은 [IMPL-PLAN-2.md](IMPL-PLAN-2.md)와 [GUIDE-V2-00-overview.md](GUIDE-V2-00-overview.md)로 이어진다. 이 문서의 "팀"은 개명 전 용어이며 지금의 **조직**을 뜻한다.

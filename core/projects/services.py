@@ -1,14 +1,32 @@
+import ipaddress
+import json
+import socket
+from datetime import date
+from urllib.error import URLError
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 
-from common.dates import today_kst
+from common.dates import fmt_md, today_kst
 from common.errors import ConflictError, ServiceError
-from teams.services import is_member, require_admin
+from orgs.services import is_member, require_admin
 
-from .models import Project
+from .models import ApiSpec, Milestone, Project, ProjectDependency
 
-EDITABLE = {"name", "purpose", "owners", "status"}
+EDITABLE = {"name", "purpose", "owners", "status", "teams"}
+
+SPEC_MAX = 5 * 1024 * 1024
+SPEC_TIMEOUT = 10
+METHOD_COLOR = {
+    "get": "#1F6F82",
+    "post": "#12793F",
+    "patch": "#A85B00",
+    "put": "#2F6FBF",
+    "delete": "#C92A37",
+}
 
 
 def _log(project, field, old, new, actor, source, token=None, note=""):
@@ -40,13 +58,13 @@ def _ids(users) -> str:
     return ",".join(str(pk) for pk in sorted(u.pk for u in users))
 
 
-def _validate(team, name, owners, status):
+def _validate(org, name, owners, status):
     errors = {}
     if not name or not name.strip():
         errors["name"] = "프로젝트 이름을 입력하세요."
     for u in owners:
-        if not u.is_active or not is_member(u, team):
-            errors["owners"] = "관리자는 이 팀의 활성 멤버여야 합니다."
+        if not u.is_active or not is_member(u, org):
+            errors["owners"] = "관리자는 이 조직의 활성 멤버여야 합니다."
             break
     if status not in dict(Project.STATUSES):
         errors["status"] = "알 수 없는 상태입니다."
@@ -56,25 +74,39 @@ def _validate(team, name, owners, status):
 
 @transaction.atomic
 def create_project(
-    *, team, name, actor, source="web", token=None, purpose="", owners=(), status="preparing"
+    *,
+    org,
+    name,
+    actor,
+    source="web",
+    token=None,
+    purpose="",
+    owners=(),
+    status="preparing",
+    teams=(),
 ):
-    if not is_member(actor, team):
-        raise ServiceError({"team": "이 팀의 멤버가 아닙니다."})
+    if not is_member(actor, org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
     owners = list(owners)
-    _validate(team, name, owners, status)
+    teams = list(teams)
+    _validate(org, name, owners, status)
+    for t in teams:
+        if t.org_id != org.pk:
+            raise ServiceError({"teams": "다른 조직의 팀은 담당으로 지정할 수 없습니다."})
     # 저장할 값과 같은 값으로 검사해야 한다. 자르기 전 값으로 검사하면
     # 앞 100자가 같은 두 이름이 둘 다 통과해 INSERT에서 unique 제약에 걸린다.
     name = name.strip()[:100]
-    if Project.objects.filter(team=team, name=name).exists():
+    if Project.objects.filter(org=org, name=name).exists():
         raise ServiceError({"name": "같은 이름의 프로젝트가 이미 있습니다."})
     project = Project.objects.create(
-        team=team,
+        org=org,
         name=name,
         purpose=purpose.strip()[:200],
         status=status,
         created_by=actor,
     )
     project.owners.set(owners)
+    project.teams.set(teams)
     _log(project, "created", "", project.name, actor, source, token)
     return project
 
@@ -83,31 +115,37 @@ def create_project(
 def update_project(
     project, changes: dict, *, actor, source="web", token=None, expected_version: int
 ):
-    if not is_member(actor, project.team):
-        raise ServiceError({"team": "이 팀의 멤버가 아닙니다."})
+    if not is_member(actor, project.org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
     unknown = set(changes) - EDITABLE
     if unknown:
         raise ServiceError({k: "수정할 수 없는 항목입니다." for k in sorted(unknown)})
     old_owners = list(project.owners.all())
     new_owners = list(changes.get("owners", old_owners))
+    old_teams = list(project.teams.all())
+    new_teams = list(changes.get("teams", old_teams))
     new = {f: changes.get(f, getattr(project, f)) for f in ("name", "purpose", "status")}
-    # 새로 넣는 관리자만 검사한다. 이미 있던 사람이 팀에서 빠지면 그 프로젝트의
+    # 새로 넣는 관리자만 검사한다. 이미 있던 사람이 조직에서 빠지면 그 프로젝트의
     # 이름·상태조차 못 고치게 되기 때문이다(태스크 담당자와 같은 이유).
     old_ids = {u.pk for u in old_owners}
     _validate(
-        project.team, new["name"], [u for u in new_owners if u.pk not in old_ids], new["status"]
+        project.org, new["name"], [u for u in new_owners if u.pk not in old_ids], new["status"]
     )
+    for t in new_teams:
+        if t.org_id != project.org_id:
+            raise ServiceError({"teams": "다른 조직의 팀은 담당으로 지정할 수 없습니다."})
     new["name"] = new["name"].strip()[:100]
     new["purpose"] = (new["purpose"] or "").strip()[:200]
     if (
         new["name"] != project.name
-        and Project.objects.filter(team=project.team, name=new["name"]).exists()
+        and Project.objects.filter(org=project.org, name=new["name"]).exists()
     ):
         raise ServiceError({"name": "같은 이름의 프로젝트가 이미 있습니다."})
     old = {f: getattr(project, f) for f in ("name", "purpose", "status")}
     fields = {f: v for f, v in new.items() if v != old[f]}
     owners_changed = {u.pk for u in new_owners} != {u.pk for u in old_owners}
-    if not fields and not owners_changed:
+    teams_changed = {t.pk for t in new_teams} != {t.pk for t in old_teams}
+    if not fields and not owners_changed and not teams_changed:
         return project
     updated = Project.objects.filter(pk=project.pk, version=expected_version).update(
         version=expected_version + 1, updated_at=timezone.now(), **fields
@@ -118,6 +156,9 @@ def update_project(
     if owners_changed:
         project.owners.set(new_owners)
         _log(project, "owners", _ids(old_owners), _ids(new_owners), actor, source, token)
+    if teams_changed:
+        project.teams.set(new_teams)
+        _log(project, "teams", _ids(old_teams), _ids(new_teams), actor, source, token)
     project.refresh_from_db()
     if "status" in fields:
         _log(project, "status", old["status"], fields["status"], actor, source, token)
@@ -129,7 +170,7 @@ def archive_project(project, *, actor, source="web", token=None):
     """미완료 태스크가 있으면 ServiceError. errors['tasks']에 'TASK-1, TASK-2' 형식."""
     from tasks.models import Task
 
-    require_admin(actor, project.team)
+    require_admin(actor, project.org)
     open_tasks = list(Task.objects.filter(project=project, status__in=Task.OPEN).order_by("id"))
     if open_tasks:
         raise ServiceError({"tasks": ", ".join(t.number for t in open_tasks)})
@@ -145,7 +186,7 @@ def archive_project(project, *, actor, source="web", token=None):
 
 @transaction.atomic
 def restore_project(project, *, actor, source="web", token=None):
-    require_admin(actor, project.team)
+    require_admin(actor, project.org)
     if not project.is_archived:
         return project
     Project.objects.filter(pk=project.pk).update(
@@ -169,3 +210,297 @@ def project_stats(project) -> dict:
         blocked=Count("id", filter=Q(status="blocked")),
         done=Count("id", filter=Q(status="done")),
     )
+
+
+# ---------- 로드맵: 마일스톤 · 프로젝트 의존성 ----------
+
+
+def _add_month(d: date, n: int) -> date:
+    m = d.month - 1 + n
+    return date(d.year + m // 12, m % 12 + 1, 1)
+
+
+def _validate_milestone(name, target_date, start_date, status) -> dict:
+    errors = {}
+    if not (name or "").strip():
+        errors["name"] = "마일스톤 이름을 입력하세요."
+    if target_date is None:
+        errors["target_date"] = "목표일을 선택하세요."
+    if start_date and target_date and start_date > target_date:
+        errors["start_date"] = "시작일은 목표일보다 앞이어야 합니다."
+    if status not in dict(Milestone.STATUSES):
+        errors["status"] = "알 수 없는 상태입니다."
+    return errors
+
+
+def create_milestone(*, project, name, target_date, actor, start_date=None, status="planned"):
+    if not is_member(actor, project.org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    errors = _validate_milestone(name, target_date, start_date, status)
+    if errors:
+        raise ServiceError(errors)
+    return Milestone.objects.create(
+        project=project,
+        name=name.strip()[:100],
+        start_date=start_date,
+        target_date=target_date,
+        status=status,
+        created_by=actor,
+    )
+
+
+def update_milestone(ms, changes: dict, *, actor):
+    """마일스톤에는 version이 없다(동시 편집이 문제가 될 만큼 자주 고치지 않는다)."""
+    if not is_member(actor, ms.project.org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    name = changes.get("name", ms.name)
+    target_date = changes.get("target_date", ms.target_date)
+    start_date = changes.get("start_date", ms.start_date)
+    status = changes.get("status", ms.status)
+    errors = _validate_milestone(name, target_date, start_date, status)
+    if errors:
+        raise ServiceError(errors)
+    ms.name = name.strip()[:100]
+    ms.target_date = target_date
+    ms.start_date = start_date
+    ms.status = status
+    ms.save(update_fields=["name", "target_date", "start_date", "status"])
+    return ms
+
+
+def delete_milestone(ms, actor):
+    if not is_member(actor, ms.project.org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    ms.delete()
+
+
+def create_dependency(*, from_project, to_project, actor, note="", is_blocking=False):
+    if not is_member(actor, from_project.org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    if to_project.org_id != from_project.org_id:
+        raise ServiceError({"to_project": "같은 조직의 프로젝트만 연결할 수 있습니다."})
+    if to_project.pk == from_project.pk:
+        raise ServiceError({"to_project": "자기 자신에게는 의존할 수 없습니다."})
+    if ProjectDependency.objects.filter(from_project=from_project, to_project=to_project).exists():
+        raise ServiceError({"to_project": "이미 있는 의존성입니다."})
+    # ponytail: 순환은 막지 않는다. 표시만 하는 목록이라 해가 없다. 자동 일정 계산이
+    # 생기면 그때 검사한다.
+    return ProjectDependency.objects.create(
+        from_project=from_project,
+        to_project=to_project,
+        note=(note or "").strip()[:200],
+        is_blocking=bool(is_blocking),
+        created_by=actor,
+    )
+
+
+def delete_dependency(dep, actor):
+    if not is_member(actor, dep.from_project.org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    dep.delete()
+
+
+def roadmap(org, today=None) -> dict:
+    """3개월 창(이번 달 1일부터). 막대는 창에 잘라 맞춘 left/width %."""
+    today = today or today_kst()
+    start = today.replace(day=1)
+    end = _add_month(start, 3)
+    span = (end - start).days
+    months = [_add_month(start, i) for i in range(3)]
+
+    qs = Milestone.objects.filter(project__org=org, project__is_archived=False).select_related(
+        "project"
+    )
+    rows, hidden = [], 0
+    for ms in qs:
+        s = min(ms.start_date or ms.target_date, ms.target_date)
+        if ms.target_date < start or s >= end:
+            hidden += 1
+            continue
+        a, b = max(s, start), min(ms.target_date, end)
+        st = project_stats(ms.project)
+        rows.append(
+            {
+                "ms": ms,
+                "meta": f"{ms.project.name} · {fmt_md(ms.target_date)} · 완료 {st['done']}/{st['total']}",
+                "left": round((a - start).days / span * 100, 2),
+                "width": round(max((b - a).days, 1) / span * 100, 2),
+                "pct": round(st["done"] / st["total"] * 100) if st["total"] else 0,
+                "ready": ms.status != "planned",
+            }
+        )
+    rows.sort(key=lambda r: (r["ms"].target_date, r["ms"].pk))
+    deps = list(
+        ProjectDependency.objects.filter(from_project__org=org).select_related(
+            "from_project", "to_project"
+        )
+    )
+    return {"months": months, "rows": rows, "deps": deps, "hidden": hidden}
+
+
+def parse_spec(raw: bytes, *, source: str) -> dict:
+    if len(raw) > SPEC_MAX:
+        raise ServiceError({"spec": "스펙이 너무 큽니다 (5MB 상한)."})
+    try:
+        spec = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ServiceError({"spec": f"{source}를 JSON으로 읽지 못했습니다."}) from None
+    if not isinstance(spec, dict) or not isinstance(spec.get("paths"), dict):
+        raise ServiceError({"spec": "OpenAPI 문서가 아닙니다 (paths 없음)."})
+    return spec
+
+
+def _check_public(url: str) -> str:
+    """공개 인터넷 주소인지 본다. 아니면 ServiceError를 낸다.
+
+    서버가 대신 받아 주는 요청이라, 막지 않으면 조직 멤버 누구나 이 서버를 발판 삼아
+    사내 주소를 읽을 수 있다. 같은 도커 망에 web·mcp·db가 떠 있고 받아 온 내용이 화면에
+    그대로 나오므로 실제로 새어 나간다.
+    """
+    parsed = urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ServiceError({"spec": "http:// 또는 https:// 주소를 입력하세요."})
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 0, proto=socket.IPPROTO_TCP)
+    except OSError:
+        raise ServiceError({"spec": "주소를 찾지 못했습니다."}) from None
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global or ip.is_multicast:
+            raise ServiceError({"spec": "사내·사설 주소는 받아 올 수 없습니다."})
+    return url
+
+
+class _SafeRedirect(HTTPRedirectHandler):
+    """따라가기 전에 옮겨 갈 주소도 검사한다. 안 하면 공개 주소가 사내로 되돌린다."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_public(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_spec(url: str) -> dict:
+    """주소에서 OpenAPI JSON을 받는다. 브라우저가 아니라 서버가 받는다.
+
+    # ponytail: 주소를 풀어 본 뒤 연결하므로 그사이 DNS가 바뀌면 뚫린다(DNS 리바인딩).
+    # 거기까지 막아야 하면 IP로 직접 연결하고 Host 헤더를 세우는 방식으로 바꾼다.
+    """
+    url = _check_public(url)
+    req = Request(url, headers={"Accept": "application/json", "User-Agent": "sandol-pm"})
+    opener = build_opener(_SafeRedirect)
+    try:
+        with opener.open(req, timeout=SPEC_TIMEOUT) as r:  # noqa: S310 — 위에서 검사했다
+            raw = r.read(SPEC_MAX + 1)
+    except ServiceError:
+        raise
+    except URLError as e:
+        raise ServiceError({"spec": f"주소를 읽지 못했습니다: {e.reason}"}) from None
+    except OSError as e:
+        raise ServiceError({"spec": f"주소를 읽지 못했습니다: {e}"}) from None
+    return parse_spec(raw, source=url)
+
+
+def set_api_spec(project, spec: dict, *, source_url: str, actor) -> ApiSpec:
+    if not is_member(actor, project.org):
+        raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    obj, _ = ApiSpec.objects.update_or_create(
+        project=project,
+        defaults={"spec": spec, "source_url": source_url[:500], "uploaded_by": actor},
+    )
+    return obj
+
+
+def spec_view(spec: dict, q: str = "") -> dict:
+    """OpenAPI 문서를 태그별 그룹으로 바꾼다. 화면에 필요한 것만 뽑는다."""
+    q = (q or "").strip().lower()
+    info = spec.get("info") or {}
+    tag_desc = {
+        t.get("name"): t.get("description", "")
+        for t in (spec.get("tags") or [])
+        if isinstance(t, dict)
+    }
+    groups, order = {}, []
+    for path, ops in (spec.get("paths") or {}).items():
+        if not isinstance(ops, dict):
+            continue
+        for method, op in ops.items():
+            m = method.lower()
+            if m not in METHOD_COLOR or not isinstance(op, dict):
+                continue
+            summary = op.get("summary") or ""
+            if q and q not in f"{path} {summary} {m}".lower():
+                continue
+            tag = ((op.get("tags") or ["기타"]) or ["기타"])[0]
+            if tag not in groups:
+                groups[tag] = {"tag": tag, "desc": tag_desc.get(tag, ""), "ops": []}
+                order.append(tag)
+            body = None
+            content = (op.get("requestBody") or {}).get("content") or {}
+            for ctype, c in content.items():
+                example = (c or {}).get("example")
+                body = {
+                    "type": ctype,
+                    "example": json.dumps(example, ensure_ascii=False, indent=2) if example else "",
+                }
+                break
+            params = []
+            for pa in op.get("parameters") or []:
+                if not isinstance(pa, dict):
+                    continue
+                sc = pa.get("schema") or {}
+                bits = [pa.get("in", ""), sc.get("type", "string")]
+                if pa.get("required"):
+                    bits.append("필수")
+                if sc.get("enum"):
+                    bits.append(" | ".join(str(x) for x in sc["enum"]))
+                if sc.get("default") is not None:
+                    bits.append(f"기본 {sc['default']}")
+                params.append(
+                    {
+                        "name": pa.get("name", ""),
+                        "meta": " · ".join(b for b in bits if b),
+                        "desc": pa.get("description", ""),
+                    }
+                )
+            responses = []
+            for code, r in (op.get("responses") or {}).items():
+                code = str(code)
+                responses.append(
+                    {
+                        "code": code,
+                        "desc": (r or {}).get("description", ""),
+                        "bg": "#B9E6CB"
+                        if code.startswith("2")
+                        else "#F6C9C4"
+                        if code.startswith("4")
+                        else "#F0F4F6",
+                        "color": "#0B3D22"
+                        if code.startswith("2")
+                        else "#6B1410"
+                        if code.startswith("4")
+                        else "#636D7A",
+                    }
+                )
+            groups[tag]["ops"].append(
+                {
+                    "method": m.upper(),
+                    "color": METHOD_COLOR[m],
+                    "path": path,
+                    "summary": summary,
+                    "desc": op.get("description", ""),
+                    "auth": bool(op.get("security")),
+                    "params": params,
+                    "body": body,
+                    "responses": responses,
+                }
+            )
+    out = [groups[t] for t in order]
+    return {
+        "title": info.get("title") or "제목 없는 API",
+        "version": f"v{info['version']}" if info.get("version") else "버전 없음",
+        "openapi": spec.get("openapi") or spec.get("swagger") or "—",
+        "server": ((spec.get("servers") or [{}])[0] or {}).get("url") or "서버 정보 없음",
+        "desc": info.get("description", ""),
+        "groups": out,
+        "count": sum(len(g["ops"]) for g in out),
+    }

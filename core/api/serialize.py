@@ -51,10 +51,14 @@ def task_out(t) -> dict:
 def project_out(p) -> dict:
     return {
         "id": p.pk,
-        "team_id": p.team_id,
+        "org_id": p.org_id,
         "name": p.name,
         "purpose": p.purpose,
         "owners": [user_brief(u) for u in p.owners.all()],
+        "teams": [
+            {"id": t.pk, "name": t.name, "purpose": t.purpose, "member_count": t.members.count()}
+            for t in p.teams.all()
+        ],
         "status": p.status,
         "status_label": p.status_label,
         "is_archived": p.is_archived,

@@ -7,7 +7,7 @@ from mcp_server.auth import current_token
 from mcp_server.core_client import CoreError
 
 TOOL_NAMES = {
-    "list_teams",
+    "list_orgs",
     "list_projects",
     "get_project",
     "list_tasks",
@@ -16,7 +16,7 @@ TOOL_NAMES = {
     "update_task",
     "transition_task",
     "append_note",
-    "get_team_status",
+    "get_org_status",
     "get_weekly_report_data",
     "list_members",
     "search",
@@ -34,9 +34,9 @@ def last_body(fake):
     return json.loads(fake.calls[-1][3])
 
 
-def test_list_teams_sends_bearer_and_source(fake_core, with_token):
-    out = fn("list_teams")()
-    assert out["teams"][0]["name"] == "산돌이"
+def test_list_orgs_sends_bearer_and_source(fake_core, with_token):
+    out = fn("list_orgs")()
+    assert out["orgs"][0]["name"] == "산돌이"
     headers = fake_core.calls[-1][2]
     assert headers["authorization"] == "Bearer pm_good"
     assert headers["x-source"] == "mcp"
@@ -44,14 +44,14 @@ def test_list_teams_sends_bearer_and_source(fake_core, with_token):
 
 def test_tool_without_token_fails(fake_core):
     with pytest.raises(PermissionError):
-        fn("list_teams")()
+        fn("list_orgs")()
 
 
 def test_bad_token_message(fake_core):
     tok = current_token.set("pm_bad")
     try:
         with pytest.raises(CoreError) as e:
-            fn("list_teams")()
+            fn("list_orgs")()
         assert "유효하지 않습니다" in str(e.value)
     finally:
         current_token.reset(tok)

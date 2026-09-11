@@ -33,8 +33,8 @@ CORE_URL=http://localhost:8000 uv run python -m mcp_server
 
 ## 도구 14개
 
-`list_teams` `list_projects` `get_project` `list_tasks` `get_task` `create_task` `update_task`
-`transition_task` `append_note` `get_team_status` `get_weekly_report_data` `list_members`
+`list_orgs` `list_projects` `get_project` `list_tasks` `get_task` `create_task` `update_task`
+`transition_task` `append_note` `get_org_status` `get_weekly_report_data` `list_members`
 `search` `fetch` (뒤 두 개는 ChatGPT 커넥터 호환 별칭)
 
 수정 도구는 `get_task`로 읽은 최신 `version`을 함께 보낸다. 충돌하면 다시 읽고 재시도한다.

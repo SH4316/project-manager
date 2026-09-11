@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}프로젝트{% endblock %}
+{% block main %}
+<div class="card">
+  <h1 class="t24">프로젝트</h1>
+  <p class="muted">이 조직에는 아직 프로젝트가 없습니다.</p>
+  {% if is_admin %}
+  <button type="button" class="btn primary" hx-get="{% url 'project_new' %}?org={{ org.pk }}" hx-target="#dialog" hx-swap="innerHTML">새 프로젝트</button>
+  {% endif %}
+</div>
+{% endblock %}

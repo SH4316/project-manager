@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}조직{% endblock %}
+{% block main %}
+<div class="card">
+  <h1 class="t24">내 조직</h1>
+  <ul class="links">
+    {% for o in orgs %}<li><a href="{% url 'org_detail' o.pk %}">{{ o.name }}</a> <span class="muted t13">{{ o.purpose }}</span></li>
+    {% empty %}<li class="muted">아직 조직에 속해 있지 않습니다. 초대 링크가 필요합니다.</li>{% endfor %}
+  </ul>
+  <a class="btn" href="{% url 'org_new' %}">조직 만들기</a>
+</div>
+{% endblock %}

@@ -1,7 +1,15 @@
 # 구현 지시서 00: 공통 규칙
 
-이 문서는 구현 담당 AI가 **가장 먼저** 읽는다. 이후 GUIDE-01-core-1 → 01-2 → 01-3 → 01-4 → 01-5 → 02 → 03 → 04 순서로 진행한다.
-계획의 배경은 [PLAN.md](../PLAN.md), 원래 요구사항은 [SPEC.md](SPEC.md)에 있다. 두 문서와 이 지시서가 충돌하면 **지시서가 우선**한다.
+이 문서는 구현 담당 AI가 **가장 먼저** 읽는다. 계획의 배경은 [PLAN.md](../PLAN.md), 원래 요구사항은 [SPEC.md](SPEC.md)에 있다. 두 문서와 이 지시서가 충돌하면 **지시서가 우선**한다.
+
+### 지시서는 두 묶음이다
+
+| 묶음 | 무엇인가 | 지금 할 일인가 |
+|---|---|---|
+| `GUIDE-01-core-*` · `GUIDE-02` · `GUIDE-03` · `GUIDE-04` | **이미 만든 것의 기록.** 아무것도 없는 상태에서 core·discord·mcp·배포를 만드는 전체 코드다. 이 작업은 2026-09-10에 끝났다(커밋 `3b2fbee`) | 아니다. 기존 코드의 근거를 찾을 때 읽는다. **이 묶음의 용어는 개명 전 기준**이라 `GUIDE-V2-01`의 대조표를 함께 본다 |
+| **`GUIDE-V2-00` ~ `GUIDE-V2-08`** | **지금 할 일.** 이미 있는 코드를 고쳐 조직·팀 계층과 GitHub 통합을 넣는다 | **그렇다.** `GUIDE-V2-00`부터 읽고 01 → 08 순서로 진행한다 |
+
+근거 문서는 [IMPL-PLAN.md](IMPL-PLAN.md)(2026-09-10 목업 정합)와 [IMPL-PLAN-2.md](IMPL-PLAN-2.md)(2026-09-11 조직·팀 재구성과 GitHub 통합)다. 이 지시서와 다르면 지시서가 우선한다.
 
 ---
 
@@ -47,17 +55,19 @@
 
 | 파트 | 실행 의존성 | 개발 의존성 |
 |---|---|---|
-| `core/` | django, django-ninja, psycopg[binary], dj-database-url, gunicorn, whitenoise | pytest, pytest-django, ruff |
+| `core/` | django, django-ninja, psycopg[binary], dj-database-url, gunicorn, whitenoise, **cryptography** | pytest, pytest-django, ruff |
 | `discord_service/` | httpx, discord.py | pytest, ruff |
 | `mcp_server/` | mcp, httpx, uvicorn | pytest, ruff |
 
 `discord.py`는 게이트웨이(WebSocket) 수신 전용이다 — 하트비트·RESUME·close code 처리를 직접 쓰지 않기 위해 산다(`discord_service/listener.py`). 발송은 계속 `httpx`로 한다.
 
-**`core/`의 의존성은 이 개정에서 하나도 늘지 않는다.** Discord 봇을 붙이면서 core는 서명 검증(pynacl/cryptography)도, 새 공개 엔드포인트도 갖지 않았다 — HTTP 인터랙션 대신 게이트웨이 DM을 쓰기 때문이고, 이것이 이 설계의 가장 큰 이득이다. core는 Discord로 나가는 요청도 하지 않는다.
+core는 Discord로 나가는 요청을 한 곳도 하지 않는다(발송은 `discord_service` 전담). Discord 봇을 붙일 때 core의 의존성이 하나도 늘지 않은 이유이기도 하다.
+
+**`cryptography`는 GitHub 통합에서 딱 두 가지에 쓴다**(`GUIDE-V2-07`): 사용자 GitHub 토큰의 Fernet 암호화, GitHub App 설치 토큰을 받기 위한 JWT의 RS256 서명. 다른 용도로 쓰지 않는다. GitHub 통합에는 **네 번째 파트도 새 컨테이너도 새 공개 호스트도 없다** — 앱 수준 웹훅이라 수신 경로가 기존 `pm.<도메인>` 아래 하나뿐이기 때문이다.
 
 프론트엔드: HTMX를 **파일로 내려받아** `core/web/static/vendor/`에 둔다. CSS 프레임워크 없음. 디자인 토큰과 컴포넌트 스타일은 `core/web/static/app.css` 한 파일에 직접 쓴다(GUIDE-01-4). CDN 링크 금지. **예외 한 줄:** Pretendard 폰트 CSS(`https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css`)는 `<link>`로 쓴다. npm, Tailwind, React, 빌드 도구 금지.
 
-디자인 원본: `README.md`(핸드오프)와 `산돌이 업무 목업 v2.dc.html`, `TaskRow2.dc.html`. 색·크기·문구는 README 표를 따른다. 목업의 `class Component`는 참고용이며 옮겨 쓰지 않는다.
+디자인 원본: `README.md`(핸드오프)와 `산돌이 업무 목업 v2.dc.html`, `TaskRow2.dc.html`, 그리고 이번 라운드의 **`산돌이 신규 기능 목업.dc.html`**. 색·크기·문구는 README 표를 따른다. 목업의 `class Component`는 참고용이며 옮겨 쓰지 않는다. `NewMock/` 폴더 안의 `v2`·`TaskRow2` 사본은 저장소 사본보다 오래된 판이므로 보지 않는다.
 
 ### 하지 말 것
 
@@ -107,10 +117,14 @@
 | 닫힌 상태 | `done`, `cancelled` | 제목 취소선 |
 | 중요도 | 정수 `1`~`10`, 기본 `5` | `n/10`. 티어: 8~10 높음(굵게) / 4~7 중간 / 1~3 낮음 |
 | 프로젝트 상태 | `preparing` / `on_hold` / `waiting` / `active` / `paused` / `done` / `stopped` / `eol` | 🧪 준비 중 / 🕓 보류 중 / 🗂️ 대기 중 / 🚧 진행 중 / ⏸️ 일시 중단 / ✅ 완료 / 🛑 정지 / ⚰️ 지원 종료 (설명 문구는 모델의 `STATUS_DESC`) |
-| 팀 역할 | `admin` / `member` | 관리자 / 팀원 |
-| 링크 종류 | `doc` / `pr` / `repo` / `other` | 문서 / PR / 저장소 / 기타 |
+| 조직 역할 | `admin` / `member` | 관리자 / 멤버 |
+| 팀 | 조직 안의 사람 묶음. 역할 없음. **가시성을 제한하지 않는다** | 팀 |
+| 마일스톤 상태 | `planned` / `active` / `done` | 준비 중 / 진행 중 / 완료 |
+| 이슈 상태 | `open` / `closed` | 열림 / 닫힘 |
+| PR 상태 | `open` / `merged` / `closed` | 열림 / 머지됨 / 닫힘 |
+| 링크 종류 | `doc` / `pr` / `repo` / `issue` / `dash` / `other` | 문서 / PR / 저장소 / 이슈 / 대시보드 / 기타 (`pr`·`repo`는 남은 데이터용이고 새 폼에서는 고르지 못한다) |
 | 토큰 범위 | `read` / `write` / `bot` | 읽기 / 읽기·쓰기 / Discord 봇 |
-| 변경 경로 | `web` / `api` / `mcp` / `dc` | 웹 / API / AI / Discord |
+| 변경 경로 | `web` / `api` / `mcp` / `dc` / `gh` | 웹 / API / AI / Discord / GitHub |
 
 `ChangeLog.source`가 `discord`가 아니라 `dc`인 이유: 컬럼이 `max_length=4`다(7자는 Postgres `DataError`). 화면은 `get_source_display()`로 "Discord"를 그리고, API 응답만 코드 `"dc"`를 그대로 준다.
 
@@ -128,25 +142,39 @@ project-manager/
   docs/
     SPEC.md
     GUIDE-00-rules.md     ← 이 문서
-    GUIDE-01-core-1-setup-models.md
-    GUIDE-01-core-2-services.md
-    GUIDE-01-core-3-api.md
-    GUIDE-01-core-4-web.md
-    GUIDE-01-core-5-tests.md
-    GUIDE-02-discord.md
-    GUIDE-03-mcp.md
-    GUIDE-04-deploy.md
-    IMPL-PLAN.md          2026-09-10 목업 정합 결정. 지시서 개정 근거
-  README.md               목업 핸드오프(디자인 원본). GUIDE-04 Step 9에서 실행 안내 절을 앞에 덧붙인다
-  산돌이 업무 목업 v2.dc.html, TaskRow2.dc.html, support.js   디자인 참고 파일. 구현 대상 아님
-  compose.yml             GUIDE-04
-  .env.example            GUIDE-04. web·db·cloudflared 용
-  .env.discord.example    GUIDE-04. discord·discord-bot 용. 봇 토큰과 CORE_TOKEN이 여기만 있다
+    IMPL-PLAN.md          2026-09-10 목업 정합 결정
+    IMPL-PLAN-2.md        2026-09-11 조직·팀 재구성과 GitHub 통합 결정. GUIDE-V2-*의 근거
+    GUIDE-V2-00-overview.md     ← 지금 할 일은 여기부터
+    GUIDE-V2-01-org-teams.md
+    GUIDE-V2-02-shell-ia.md
+    GUIDE-V2-03-board-calendar.md
+    GUIDE-V2-04-capacity-roadmap.md
+    GUIDE-V2-05-notes.md
+    GUIDE-V2-06-api-docs.md
+    GUIDE-V2-07-github-read.md
+    GUIDE-V2-08-github-write.md
+    GUIDE-01-core-1-setup-models.md   ┐
+    GUIDE-01-core-2-services.md       │
+    GUIDE-01-core-3-api.md            │ 이미 만든 것의 기록.
+    GUIDE-01-core-4-web.md            │ 용어는 개명 전 기준이다
+    GUIDE-01-core-5-tests.md          │
+    GUIDE-02-discord.md               │
+    GUIDE-03-mcp.md                   │
+    GUIDE-04-deploy.md                ┘
+  README.md               목업 핸드오프(디자인 원본) + 실행 안내
+  산돌이 업무 목업 v2.dc.html, TaskRow2.dc.html, 산돌이 신규 기능 목업.dc.html, support.js
+                          디자인 참고 파일. 구현 대상 아님
+  compose.yml             GUIDE-04. 이번 라운드에서 바뀌지 않는다
+  .env.example            GUIDE-04 + GUIDE-V2-07(GitHub App 설정 5개, CREDENTIAL_KEY)
+  .env.discord.example    GUIDE-04. `TEAM_ID` → `ORG_ID`로 바뀐다
   .gitignore
-  core/                   GUIDE-01
+  core/
+    accounts/  orgs/  projects/  tasks/  notes/  github/  reports/  api/  web/  config/  common/
   discord_service/        GUIDE-02
   mcp_server/             GUIDE-03
 ```
+
+`orgs/`는 기존 `teams/`를 개명한 것이고 `notes/`·`github/`는 이번에 새로 만든다(`GUIDE-V2-01`·`05`·`07`).
 
 이 개정(웹훅 → 봇)에서 새로 생긴 파일:
 

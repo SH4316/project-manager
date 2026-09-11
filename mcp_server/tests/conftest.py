@@ -25,7 +25,7 @@ class FakeCore:
                 "notes": "",
                 "stop_reason": "",
                 "url": "http://pm/tasks/1",
-                "project": {"id": 1, "name": "학식 API", "team_id": 1},
+                "project": {"id": 1, "name": "학식 API", "org_id": 1},
                 "assignee": {"id": 2, "display_name": "팀원", "discord_user_id": None},
             },
         }
@@ -41,7 +41,7 @@ class FakeCore:
         if p == "/api/me":
             return httpx.Response(
                 200,
-                json={"id": 2, "teams": [{"id": 1, "name": "산돌이", "role": "member"}]},
+                json={"id": 2, "orgs": [{"id": 1, "name": "산돌이", "role": "member"}]},
             )
         if p == "/api/tasks" and request.method == "GET":
             return httpx.Response(

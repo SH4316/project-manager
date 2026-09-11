@@ -6,11 +6,11 @@ from accounts.models import ApiToken, User
 from accounts.services import issue_link_code
 from api.models import IntegrationStatus
 from common.dates import last_week_start, today_kst, week_bounds
+from orgs.models import OrgMembership
+from orgs.services import create_org
 from projects.services import create_project
 from tasks.models import ChangeLog
 from tasks.services import create_task
-from teams.models import Membership
-from teams.services import create_team
 
 pytestmark = pytest.mark.django_db
 
@@ -19,11 +19,11 @@ def _h(raw):
     return {"Authorization": f"Bearer {raw}"}
 
 
-def test_me(api, team):
+def test_me(api, org):
     r = api.get("/api/me")
     assert r.status_code == 200
     body = r.json()
-    assert body["teams"][0]["role"] == "member"
+    assert body["orgs"][0]["role"] == "member"
     assert body["auto_pull_days"] == 5
 
 
@@ -37,7 +37,7 @@ def test_revoked_token_401(client, member):
     assert client.get("/api/me", headers=_h(raw)).status_code == 401
 
 
-def test_read_token_cannot_write(client, read_token, task, team):
+def test_read_token_cannot_write(client, read_token, task, org):
     body = {"status": "done", "version": task.version}
     r = client.post(
         f"/api/tasks/{task.pk}/transition",
@@ -60,7 +60,7 @@ def test_read_token_can_report_integration_status(client, read_token, member):
     assert IntegrationStatus.objects.count() == 1
 
 
-def test_list_tasks_filters_and_paging(api, project, member, team):
+def test_list_tasks_filters_and_paging(api, project, member, org):
     for i in range(3):
         create_task(
             project=project,
@@ -69,7 +69,7 @@ def test_list_tasks_filters_and_paging(api, project, member, team):
             source="web",
             due_date=today_kst() + timedelta(days=i + 1),
         )
-    r = api.get(f"/api/tasks?team={team.pk}&status=todo&limit=2&offset=0")
+    r = api.get(f"/api/tasks?org={org.pk}&status=todo&limit=2&offset=0")
     assert r.json()["total"] == 3
     assert len(r.json()["items"]) == 2
     assert api.get("/api/tasks?status=bogus").status_code == 400
@@ -194,10 +194,10 @@ def test_today_endpoints(api, task):
     assert r.json()["auto_pull_days"] == 0
 
 
-def test_project_owners_via_api(api, team, member, admin):
+def test_project_owners_via_api(api, org, member, admin):
     r = api.post(
         "/api/projects",
-        {"team_id": team.pk, "name": "챗봇", "owner_ids": [member.pk, admin.pk]},
+        {"org_id": org.pk, "name": "챗봇", "owner_ids": [member.pk, admin.pk]},
     )
     assert r.status_code == 201
     pid = r.json()["id"]
@@ -207,28 +207,28 @@ def test_project_owners_via_api(api, team, member, admin):
     assert api.patch(f"/api/projects/{pid}", {"version": 2, "owner_ids": [9999]}).status_code == 400
 
 
-def test_weekly_endpoint(api, team):
-    r = api.get(f"/api/reports/weekly?team={team.pk}")
+def test_weekly_endpoint(api, org):
+    r = api.get(f"/api/reports/weekly?org={org.pk}")
     assert r.status_code == 200
     assert r.json()["period_start"] == last_week_start().isoformat()
     tuesday = week_bounds()[0] + timedelta(days=1)
     assert (
-        api.get(f"/api/reports/weekly?team={team.pk}&week_start={tuesday.isoformat()}").status_code
+        api.get(f"/api/reports/weekly?org={org.pk}&week_start={tuesday.isoformat()}").status_code
         == 400
     )
 
 
-def test_team_status_endpoint(api, team):
-    r = api.get(f"/api/teams/{team.pk}/status")
+def test_org_status_endpoint(api, org):
+    r = api.get(f"/api/orgs/{org.pk}/status")
     assert r.status_code == 200
     assert "counts" in r.json()
 
 
-def test_invite_admin_only(client, api, team, admin):
-    assert api.post(f"/api/teams/{team.pk}/invites", {"days": 7}).status_code == 400
+def test_invite_admin_only(client, api, org, admin):
+    assert api.post(f"/api/orgs/{org.pk}/invites", {"days": 7}).status_code == 400
     _, raw = ApiToken.issue(admin, "a", "write")
     r = client.post(
-        f"/api/teams/{team.pk}/invites",
+        f"/api/orgs/{org.pk}/invites",
         data={"days": 7},
         content_type="application/json",
         headers=_h(raw),
@@ -327,9 +327,9 @@ def test_done_needs_the_bot_scope(client, task, member, read_token, write_token,
     assert _post(client, bot_token, url, BODY).status_code == 200
 
 
-def test_bot_token_cannot_write_outside_integrations(client, bot, bot_token, team, project):
+def test_bot_token_cannot_write_outside_integrations(client, bot, bot_token, org, project):
     """bot 범위는 /api/integrations/ 안에서만 쓴다. 그 밖의 쓰기는 읽기 전용과 똑같이 막힌다."""
-    Membership.objects.create(team=team, user=bot, role="member")
+    OrgMembership.objects.create(org=org, user=bot, role="member")
     r = _post(
         client,
         bot_token,
@@ -366,14 +366,12 @@ def test_unknown_or_unproven_snowflake_is_404(client, task, outsider, bot_token)
     assert not ChangeLog.objects.filter(field="status").exists()
 
 
-def test_scope_follows_the_actor_not_the_bot(client, bot, bot_token, team, task, member):
+def test_scope_follows_the_actor_not_the_bot(client, bot, bot_token, org, task, member):
     """봇이 볼 수 있는 태스크가 아니라 그 사람이 볼 수 있는 태스크만 움직인다."""
-    Membership.objects.create(team=team, user=bot, role="member")  # 봇은 팀 A
-    Membership.objects.filter(team=team, user=member).delete()  # 사람은 팀 B로 옮긴다
-    team_b = create_team("남의 팀", "", member)
-    project_b = create_project(
-        team=team_b, name="B", actor=member, owners=[member], status="active"
-    )
+    OrgMembership.objects.create(org=org, user=bot, role="member")  # 봇은 조직 A
+    OrgMembership.objects.filter(org=org, user=member).delete()  # 사람은 조직 B로 옮긴다
+    org_b = create_org("남의 조직", "", member)
+    project_b = create_project(org=org_b, name="B", actor=member, owners=[member], status="active")
     mine = create_task(
         project=project_b,
         title="내 일",
@@ -385,7 +383,7 @@ def test_scope_follows_the_actor_not_the_bot(client, bot, bot_token, team, task,
     items = _post(client, bot_token, f"{DC}/today", BODY).json()["items"]
     assert [i["id"] for i in items] == [mine.pk]
 
-    # 팀 A 태스크는 봇의 GET에는 보이지만 행위자 범위에서는 없는 것이다.
+    # 조직 A 태스크는 봇의 GET에는 보이지만 행위자 범위에서는 없는 것이다.
     assert client.get(f"/api/tasks/{task.pk}", headers=_h(bot_token)).status_code == 200
     assert _post(client, bot_token, f"{DC}/tasks/{task.pk}/done", BODY).status_code == 404
     assert _post(client, bot_token, f"{DC}/tasks/{mine.pk}/done", BODY).status_code == 200
@@ -454,3 +452,30 @@ def test_throttle_bucket_is_per_user_not_per_display_name(rf, member, outsider):
         keys.append(t.get_cache_key(r))
     assert keys[0] != keys[1]
     assert str(member.pk) in keys[0]
+
+
+def test_api_spec_put_endpoint(client, write_token, read_token, project):
+    from projects.tests import SAMPLE_SPEC
+
+    body = {"spec": SAMPLE_SPEC, "source_url": "openapi.json"}
+    r = client.put(
+        f"/api/projects/{project.pk}/api-spec",
+        data=body,
+        content_type="application/json",
+        headers={"Authorization": f"Bearer {write_token}"},
+    )
+    assert r.status_code == 200
+
+    r = client.get(
+        f"/api/projects/{project.pk}/api-spec", headers={"Authorization": f"Bearer {read_token}"}
+    )
+    assert r.status_code == 200
+    assert r.json()["spec"]["info"]["title"] == "학식 API"
+
+    r = client.put(
+        f"/api/projects/{project.pk}/api-spec",
+        data=body,
+        content_type="application/json",
+        headers={"Authorization": f"Bearer {read_token}"},
+    )
+    assert r.status_code == 403

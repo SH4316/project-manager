@@ -1,5 +1,8 @@
 # 구현 지시서 01-3: core — HTTP API (Step 5)
 
+
+> **이 문서는 2026-09-10에 끝난 최초 구축의 기록이다.** 지금 할 일은 [GUIDE-V2-00-overview.md](GUIDE-V2-00-overview.md)부터 시작하는 묶음이다. 이 문서에 나오는 `Team`·`teams`·"팀"은 2026-09-11 개명 전 용어로 **조직**을 뜻한다. 대조표는 [GUIDE-V2-01](GUIDE-V2-01-org-teams.md) §1에 있다.
+
 이전: [01-2](GUIDE-01-core-2-services.md). Django Ninja로 만든다. 이 API는 MCP 서버·Discord 서비스와의 **유일한 계약**이다. 경로, 필드 이름, 응답 모양을 바꾸지 않는다.
 
 개정 2026-09-10: 상태 7개, 중요도 정수, 프로젝트 `owners`, `stop_reason`·`notes`, `/block`·`/comments` 삭제, `/extend` 추가, 오늘 목록 제외·복원·설정.

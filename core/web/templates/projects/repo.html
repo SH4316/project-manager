@@ -1,0 +1,102 @@
+{% extends "base.html" %}{% block title %}{{ project.name }} · 저장소 연결{% endblock %}
+{% block main %}
+{% include "projects/_tabs.html" %}
+<div class="card">
+  <h2>저장소</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if state.state == "none" %}
+  <p class="muted t13">아직 연결된 저장소가 없습니다.</p>
+  <form method="post" class="row">{% csrf_token %}
+    <input class="input" name="url" placeholder="https://github.com/owner/repo.git" style="flex:1 1 260px">
+    <button class="btn sm primary">저장소 연결</button>
+  </form>
+  {% elif state.state == "unlinked" %}
+  <p class="muted t13">GitHub를 연결하면 저장소 정보가 보입니다.</p>
+  <a class="btn sm" href="{% url 'profile' %}">GitHub 연결</a>
+  {% elif state.state == "denied" %}
+  <p>연결됨(접근 권한 없음)</p>
+  {% else %}
+  <p class="row">연결됨 · <a href="https://github.com/{{ state.conn.full_name }}" target="_blank" rel="noopener">{{ state.conn.full_name }}</a>
+    <span class="badge">{% if state.conn.last_event_at %}{{ state.conn.last_event_at|date:"Y-m-d H:i" }} 마지막 이벤트{% else %}이벤트 없음{% endif %}</span>
+  </p>
+  <div class="row">
+    <form method="post" action="{% url 'repo_disconnect' project.pk %}" onsubmit="return confirm('저장소 연결을 해제할까요?')">{% csrf_token %}<button class="btn sm">연결 해제</button></form>
+  </div>
+
+  <h3 class="t15">접근 팀</h3>
+  {% if repo_teams %}
+  <table class="grid">
+    <thead><tr><th>팀</th><th>권한 수준</th></tr></thead>
+    <tbody>
+    {% for t in repo_teams %}<tr><td>{{ t.name }}</td><td>{{ t.permission }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted t13">접근 팀 정보를 읽을 수 없습니다.</p>
+  {% endif %}
+  <a class="btn sm" target="_blank" rel="noopener" href="https://github.com/{{ state.conn.full_name }}/settings/access">GitHub에서 변경</a>
+
+  <h3 class="t15">이슈 가져오기</h3>
+  <form method="post" action="{% url 'repo_settings' project.pk %}" class="stack">{% csrf_token %}
+    <div class="row">
+      <label class="field">라벨 필터<input class="input" name="import_label" value="{{ state.conn.import_label }}" placeholder="task"></label>
+      <label class="field">기본 담당자
+        <select name="assignee_default" class="select">
+          <option value="issue"{% if state.conn.assignee_default == "issue" %} selected{% endif %}>이슈 담당자</option>
+          <option value="none"{% if state.conn.assignee_default == "none" %} selected{% endif %}>비워 두기</option>
+        </select>
+      </label>
+    </div>
+    <label class="row"><input type="checkbox" name="auto_import" {% if state.conn.auto_import %}checked{% endif %}> 새 이슈 자동 가져오기</label>
+    <div class="row t13">
+      <label class="row"><input type="checkbox" name="rule_issue" {% if state.conn.rule_issue %}checked{% endif %}> 이슈 → 태스크</label>
+      <label class="row"><input type="checkbox" name="rule_branch" {% if state.conn.rule_branch %}checked{% endif %}> 브랜치 연결 → 진행 중</label>
+      <label class="row"><input type="checkbox" name="rule_commit" {% if state.conn.rule_commit %}checked{% endif %}> 커밋 → 체크리스트</label>
+      <label class="row"><input type="checkbox" name="rule_pr" {% if state.conn.rule_pr %}checked{% endif %}> PR 오픈 → 검토 대기</label>
+      <label class="row"><input type="checkbox" name="rule_merge" {% if state.conn.rule_merge %}checked{% endif %}> 머지 → 완료</label>
+    </div>
+    <button class="btn sm primary">규칙 저장</button>
+  </form>
+  <form method="post" action="{% url 'repo_issues_sync' project.pk %}">{% csrf_token %}<button class="btn sm">이슈 새로고침</button></form>
+  <table class="grid">
+    <thead><tr><th>#</th><th>제목</th><th>담당자</th><th></th></tr></thead>
+    <tbody>
+    {% for i in issues %}
+    <tr>
+      <td>#{{ i.number }}</td>
+      <td>{{ i.title }}</td>
+      <td class="t13">{{ i.assignee_login|default:"-" }}</td>
+      <td>
+        {% if i.task %}<span class="badge">{{ i.task.number }}로 가져옴</span>
+        {% else %}<form method="post" action="{% url 'repo_issue_import' project.pk i.number %}">{% csrf_token %}<button class="btn sm">태스크로 가져오기</button></form>{% endif %}
+      </td>
+    </tr>
+    {% empty %}<tr><td colspan="4" class="muted">열린 이슈가 없습니다.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+
+  <h3 class="t15">최근 이벤트</h3>
+  <table class="grid">
+    <thead><tr><th>시각</th><th>이벤트</th><th>태스크</th><th>결과</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+    <tr>
+      <td class="t13">{{ e.occurred_at|date:"n/j H:i" }}</td>
+      <td class="t13">{{ e.summary }}</td>
+      <td>{% if e.task %}<a href="{% url 'task_detail' e.task_id %}">{{ e.task.number }}</a>{% else %}
+        <form method="post" action="{% url 'repo_event_link' project.pk e.pk %}" class="row">{% csrf_token %}
+          <select name="task_id" class="select auto">
+            <option value="">태스크 선택</option>
+            {% for t in open_tasks %}<option value="{{ t.pk }}">{{ t.number }} {{ t.title }}</option>{% endfor %}
+          </select>
+          <button class="btn sm">연결</button>
+        </form>
+      {% endif %}</td>
+      <td class="t13">{{ e.result|default:"-" }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="4" class="muted">이벤트가 없습니다.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

@@ -7,8 +7,8 @@ from django.utils import timezone
 from accounts.models import IdempotencyKey, User
 from common.dates import kst_day_range, today_kst, week_bounds
 from common.errors import ConflictError, ServiceError
+from orgs.services import is_member, orgs_of
 from projects.services import project_stats
-from teams.services import is_member, teams_of
 
 from .models import ChangeLog, ChecklistItem, Link, Task, TodayItem
 
@@ -54,7 +54,11 @@ def _s(v) -> str:
     return str(v)
 
 
-def _log(task, field, old, new, actor, source, token=None, note=""):
+def _log(task, field, old, new, actor, source, token=None, note="", external_actor=""):
+    """actor가 None이면 external_actor(GitHub 로그인)가 행위자를 대신한다.
+
+    그 사람이 나중에 GitHub를 연결하면 github.services.backfill_actor()가 소급해 채운다.
+    """
     ChangeLog.objects.create(
         target_type="task",
         target_id=task.pk,
@@ -63,14 +67,22 @@ def _log(task, field, old, new, actor, source, token=None, note=""):
         new_value=_s(new),
         note=note[:200],
         actor=actor,
+        external_actor=(external_actor or "")[:100],
         source=source,
         token=token,
     )
 
 
 def _require_member(actor, project):
-    if not is_member(actor, project.team):
-        raise ServiceError({"project": "이 팀의 멤버가 아닙니다."})
+    """actor가 None이면 GitHub 웹훅이다. 연결된 저장소가 곧 권한의 근거다.
+
+    None을 넘기는 호출은 github/services.py 안에만 있어야 한다
+    (test_actor_none_only_from_github_services가 grep으로 고정한다).
+    """
+    if actor is None:
+        return
+    if not is_member(actor, project.org):
+        raise ServiceError({"project": "이 조직의 멤버가 아닙니다."})
 
 
 def _validate(
@@ -85,10 +97,10 @@ def _validate(
     title,
     check_assignee=True,
 ):
-    """check_assignee=False면 담당자가 팀의 활성 멤버인지 보지 않는다.
+    """check_assignee=False면 담당자가 조직의 활성 멤버인지 보지 않는다.
 
-    담당자를 바꾸지 않는 수정에는 이 검사를 걸지 않는다. 담당자가 팀에서 빠지거나
-    비활성이 되면(팀원 관리 화면의 [제거]) 그 태스크의 중요도·기한조차 못 고치게 되고,
+    담당자를 바꾸지 않는 수정에는 이 검사를 걸지 않는다. 담당자가 조직에서 빠지거나
+    비활성이 되면(멤버 관리 화면의 [제거]) 그 태스크의 중요도·기한조차 못 고치게 되고,
     화면에는 이미 나간 사람 이름이 담긴 오류만 나온다.
     """
     errors = {}
@@ -98,8 +110,8 @@ def _validate(
         errors["project"] = "보관된 프로젝트에는 태스크를 둘 수 없습니다."
     if assignee is None:
         errors["assignee"] = "담당자를 지정하세요."
-    elif check_assignee and (not assignee.is_active or not is_member(assignee, project.team)):
-        errors["assignee"] = "담당자는 이 팀의 활성 멤버여야 합니다."
+    elif check_assignee and (not assignee.is_active or not is_member(assignee, project.org)):
+        errors["assignee"] = "담당자는 이 조직의 활성 멤버여야 합니다."
     if not isinstance(priority, int) or isinstance(priority, bool) or not 1 <= priority <= 10:
         errors["priority"] = "중요도는 1~10 사이의 정수여야 합니다."
     if status == "doing" and due_date is None:
@@ -127,9 +139,9 @@ def _apply(task, expected_version: int, fields: dict):
 
 
 def visible_tasks(user):
-    """user가 볼 수 있는 태스크 queryset (내 팀 범위)."""
-    return Task.objects.filter(project__team__in=teams_of(user)).select_related(
-        "project", "project__team", "assignee"
+    """user가 볼 수 있는 태스크 queryset (내 조직 범위)."""
+    return Task.objects.filter(project__org__in=orgs_of(user)).select_related(
+        "project", "project__org", "assignee"
     )
 
 
@@ -221,7 +233,9 @@ def update_text(task, field: str, value: str, *, actor) -> Task:
 
 
 @transaction.atomic
-def update_task(task, changes: dict, *, actor, source, token=None, expected_version: int) -> Task:
+def update_task(
+    task, changes: dict, *, actor, source, token=None, expected_version: int, external_actor=""
+) -> Task:
     """팀 데이터 필드는 version 검사 후 갱신·이력 기록. TEXT_FIELDS는 update_text로 보낸다."""
     _require_member(actor, task.project)
     unknown = set(changes) - EDITABLE
@@ -236,8 +250,8 @@ def update_task(task, changes: dict, *, actor, source, token=None, expected_vers
     new = {f: changes.get(f, getattr(task, f)) for f in LOCKED_FIELDS}
     if "project" in changes:
         _require_member(actor, new["project"])
-        if new["project"].team_id != task.project.team_id:
-            raise ServiceError({"project": "다른 팀의 프로젝트로 옮길 수 없습니다."})
+        if new["project"].org_id != task.project.org_id:
+            raise ServiceError({"project": "다른 조직의 프로젝트로 옮길 수 없습니다."})
     new["no_due_reason"] = (new["no_due_reason"] or "").strip()[:200]
     new["stop_reason"] = (new["stop_reason"] or "").strip()[:300]
     _validate(
@@ -258,13 +272,21 @@ def update_task(task, changes: dict, *, actor, source, token=None, expected_vers
     _apply(task, expected_version, fields)
     for f in TRACKED:
         if f in fields:
-            _log(task, f, old[f], fields[f], actor, source, token)
+            _log(task, f, old[f], fields[f], actor, source, token, external_actor=external_actor)
     return task
 
 
 @transaction.atomic
 def transition(
-    task, new_status: str, *, actor, source, token=None, reason="", expected_version: int
+    task,
+    new_status: str,
+    *,
+    actor,
+    source,
+    token=None,
+    reason="",
+    expected_version: int,
+    external_actor="",
 ) -> Task:
     """상태 변경. 규칙:
     - 미완료 5개 사이는 자유. 미완료 → 완료·취소 가능. 완료·취소 → 시작 전·진행 중으로만 재개.
@@ -306,17 +328,55 @@ def transition(
         fields["completed_at"] = None
     old_status, old_completed, old_reason = task.status, task.completed_at, task.stop_reason
     _apply(task, expected_version, fields)
-    _log(task, "status", old_status, new_status, actor, source, token, note=reason)
+    _log(
+        task,
+        "status",
+        old_status,
+        new_status,
+        actor,
+        source,
+        token,
+        note=reason,
+        external_actor=external_actor,
+    )
     if old_status == "done" and old_completed is not None:
-        _log(task, "completed_at", old_completed, None, actor, source, token, note="재개")
+        _log(
+            task,
+            "completed_at",
+            old_completed,
+            None,
+            actor,
+            source,
+            token,
+            note="재개",
+            external_actor=external_actor,
+        )
     if old_reason and not task.stop_reason:
-        _log(task, "stop_reason", old_reason, "", actor, source, token, note="상태 변경으로 해제")
+        _log(
+            task,
+            "stop_reason",
+            old_reason,
+            "",
+            actor,
+            source,
+            token,
+            note="상태 변경으로 해제",
+            external_actor=external_actor,
+        )
     return task
 
 
 @transaction.atomic
 def extend_due(
-    task, new_date: date | None, reason: str, *, actor, source, token=None, expected_version: int
+    task,
+    new_date: date | None,
+    reason: str,
+    *,
+    actor,
+    source,
+    token=None,
+    expected_version: int,
+    external_actor="",
 ) -> Task:
     """목표일 연장. 기한이 없던 태스크는 목표일 정하기. 새 날짜는 현 기한보다 뒤, 사유 필수.
     이력에 'due_date' 행 하나, note='연장: 사유'. 진행 메모는 건드리지 않는다."""
@@ -333,7 +393,17 @@ def extend_due(
     old = task.due_date
     _apply(task, expected_version, {"due_date": new_date, "no_due_reason": ""})
     note = f"연장: {reason}" if old else f"목표일 지정: {reason}"
-    _log(task, "due_date", old, new_date, actor, source, token, note=note)
+    _log(
+        task,
+        "due_date",
+        old,
+        new_date,
+        actor,
+        source,
+        token,
+        note=note,
+        external_actor=external_actor,
+    )
     return task
 
 
@@ -427,12 +497,12 @@ def _pull_end(user, day: date) -> date | None:
 
 
 def today_items(user, day: date):
-    """그 날짜의 오늘 목록 행. 팀 범위를 벗어난 태스크는 제외한다.
+    """그 날짜의 오늘 목록 행. 조직 범위를 벗어난 태스크는 제외한다.
 
-    TodayItem은 태스크를 담은 시점의 기록이라, 그 뒤 팀에서 빠지면 남아 있을 수 있다.
+    TodayItem은 태스크를 담은 시점의 기록이라, 그 뒤 조직에서 빠지면 남아 있을 수 있다.
     담기·읽기 두 경로가 같은 범위를 쓰도록 여기 한 곳에서 거른다.
     """
-    return TodayItem.objects.filter(user=user, date=day, task__project__team__in=teams_of(user))
+    return TodayItem.objects.filter(user=user, date=day, task__project__org__in=orgs_of(user))
 
 
 def today_membership(user, day: date | None = None) -> dict:
@@ -535,7 +605,7 @@ def today_view(user, day: date | None = None) -> dict:
         .select_related("task__project", "task__assignee")
         .order_by("position", "id")
     ]
-    # 팀에서 빠진 뒤에도 담당으로 남은 태스크가 새는 것을 막는다(다른 읽기 경로와 같은 범위).
+    # 조직에서 빠진 뒤에도 담당으로 남은 태스크가 새는 것을 막는다(다른 읽기 경로와 같은 범위).
     mine = visible_tasks(user).filter(assignee=user)
     my_open = mine.filter(status__in=Task.OPEN)
     auto = []
@@ -599,7 +669,7 @@ def _due_preds(today: date) -> dict:
 def me_view(
     user, *, member=None, group="due", due="", project=None, status="", priority=""
 ) -> dict:
-    """내 태스크 화면 데이터. member: None=나, 0=팀 전체, User=다른 팀원.
+    """내 태스크 화면 데이터. member: None=나, 0=조직 전체, User=다른 팀원.
     반환: {title, hint, groups, read_only, completion}
     groups[i]: {title, count, empty_text, flat, tasks, projects:[{project, done, total, pct, tasks}]}
     flat이면 tasks를 그대로, 아니면 projects의 하위 묶음으로 그린다."""
@@ -698,7 +768,7 @@ def me_view(
     if member is None:
         title = "내 태스크"
     elif isinstance(member, int):
-        title = "팀 전체 태스크"
+        title = "조직 전체 태스크"
     else:
         title = f"{member.display_name}의 태스크"
     hint = f"{'완료' if completion else '미완료'} {base.count()}건 · 결과 {len(tasks)}건"

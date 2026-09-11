@@ -1,0 +1,11 @@
+<form class="stack" hx-post="{% if team %}{% url 'team_edit' team.pk %}{% else %}{% url 'team_new' org.pk %}{% endif %}" hx-target="#dialog" hx-swap="innerHTML">
+  <h2 class="t20">{% if team %}팀 수정{% else %}새 팀{% endif %}</h2>
+  <label class="field">이름<input class="input" name="name" value="{{ form.name.value|default:'' }}" required autofocus></label>
+  <label class="field">목적<input class="input" name="purpose" value="{{ form.purpose.value|default:'' }}"></label>
+  {% for e in form.non_field_errors %}<div class="error">{{ e }}</div>{% endfor %}
+  {% for f in form %}{% for e in f.errors %}<div class="error">{{ f.label }}: {{ e }}</div>{% endfor %}{% endfor %}
+  <div class="row">
+    <button class="btn primary">{% if team %}변경 내용 저장{% else %}팀 만들기{% endif %}</button>
+    <button type="button" class="btn" data-action="close-dialog">취소</button>
+  </div>
+</form>

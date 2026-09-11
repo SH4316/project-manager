@@ -19,7 +19,7 @@ def run_weekly(
     core: CoreClient,
     bot: Bot,
     store: Store,
-    team_id: int,
+    org_id: int,
     week_start: date,
     provider: str,
     force: bool = False,
@@ -27,7 +27,7 @@ def run_weekly(
     ws = week_start.isoformat()
     if not force and store.weekly_sent(ws):
         return {"status": "skipped", "period_start": ws}
-    data = core.weekly(team_id, ws)
+    data = core.weekly(org_id, ws)
     summary, source = summarize(data, provider)
     try:
         bot.send_channel(summary)

@@ -25,7 +25,7 @@ class ReadOnlyAdmin(admin.ModelAdmin):
 @admin.register(Task)
 class TaskAdmin(ReadOnlyAdmin):
     list_display = ("id", "title", "project", "assignee", "status", "priority", "due_date")
-    list_filter = ("status", "project__team")
+    list_filter = ("status", "project__org")
     search_fields = ("title",)
 
 

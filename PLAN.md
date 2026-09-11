@@ -7,6 +7,10 @@
 
 **구현 지시서:** 실제 구현은 [docs/GUIDE-00-rules.md](docs/GUIDE-00-rules.md)부터 시작하는 GUIDE 문서를 따른다. 이 계획서와 지시서가 다르면 지시서가 우선한다.
 
+**2026-09-12 (v1 완료):** 위 v0.6 범위의 여덟 단계가 전부 끝났다. core 306 · discord_service 58 · mcp_server 16 테스트 통과(SQLite·Postgres). 결과·확인 내역·배포 전에 해야 할 일은 [docs/IMPL-REPORT-2.md](docs/IMPL-REPORT-2.md).
+
+**2026-09-11 추가 (v0.6):** 계층을 **조직 → 팀 → 멤버**로 바꾸고 GitHub 통합(App 설치·저장소 연결·자동 상태 전환·조직과 팀 관리)을 넣는다. 회의록·부하 현황·로드맵·API 문서 화면도 함께 들어온다. 결정과 근거는 [docs/IMPL-PLAN-2.md](docs/IMPL-PLAN-2.md), 구현 순서는 [docs/GUIDE-V2-00-overview.md](docs/GUIDE-V2-00-overview.md)에 있다. 이 계획서의 "팀"은 개명 전 용어이므로 조직으로 읽는다.
+
 **2026-09-10 추가 (v0.5):** Discord 연동을 웹훅에서 **봇**으로 바꿨다. 마감 알림은 담당자 개인 DM으로 묶어 보내고, 봇에게 온 DM 평문 명령(`오늘`·`완료`·`연장`)으로 처리한다. 계정 연결은 웹 1회용 코드와 게이트웨이 `author.id`의 교환이다. `teams.DiscordWebhook`과 알림 채널 화면은 삭제했다. 전환 근거와 범위는 [docs/IMPL-PLAN.md](docs/IMPL-PLAN.md) §8 마지막 항목, 절차는 [docs/GUIDE-04-deploy.md](docs/GUIDE-04-deploy.md) Step 7.
 
 **2026-09-10 추가 (v0.4):** 목업 핸드오프([README.md](README.md))가 확정되면서 도메인 모델·화면이 바뀌었다. 정합 결정과 근거는 [docs/IMPL-PLAN.md](docs/IMPL-PLAN.md)에 있고, 지시서(GUIDE-00~04)는 그에 맞춰 개정을 마쳤다. 이 계획서의 §3(데이터 모델)·§5(API)·§6(화면)은 개정 전 요약이므로, 다르면 지시서와 IMPL-PLAN §3 결정표를 따른다.

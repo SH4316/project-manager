@@ -1,0 +1,75 @@
+{% if github_enabled %}
+<div class="section">
+  <div class="label">GitHub</div>
+  {% if gh.state == "none" %}
+  <p class="muted t13">저장소 미연결 · <a href="{% url 'project_repo' task.project_id %}">저장소 연결</a></p>
+  {% elif gh.state == "unlinked" %}
+  <p class="muted t13">GitHub를 연결하면 저장소 정보가 보입니다. <a href="{% url 'profile' %}">GitHub 연결</a></p>
+  {% elif gh.state == "denied" %}
+  <p class="muted t13">저장소 접근 권한 없음</p>
+  {% else %}
+  <p class="t13 muted">{{ gh.conn.full_name }}</p>
+  <ol class="git-steps">
+    <li class="{% if gh.link.issue_number %}done{% endif %}">
+      <span class="dot">{% if gh.link.issue_number %}&#10003;{% else %}&#9675;{% endif %}</span>
+      <span>이슈{% if gh.link.issue_number %} #{{ gh.link.issue_number }} {{ gh.link.issue_title }}{% endif %}</span>
+      {% if not gh.link.issue_number %}
+      <form method="post" action="{% url 'git_issue' task.pk %}" class="row">{% csrf_token %}
+        <select name="number" class="select auto" aria-label="이슈 선택">
+          <option value="">이슈 선택</option>
+          {% for i in gh.issues %}<option value="{{ i.number }}">#{{ i.number }} {{ i.title }}</option>{% endfor %}
+        </select>
+        <button class="btn sm">이슈 연결</button>
+      </form>
+      <form method="post" action="{% url 'git_issue_create' task.pk %}"><button class="btn sm">이슈 만들기</button></form>
+      {% elif task.status == "done" and gh.link.issue_state == "open" %}
+      <form method="post" action="{% url 'git_issue_close' task.pk %}"><button class="btn sm">이슈 #{{ gh.link.issue_number }} 닫기</button></form>
+      {% endif %}
+    </li>
+    <li class="{% if gh.link.branch %}done{% endif %}">
+      <span class="dot">{% if gh.link.branch %}&#10003;{% else %}&#9675;{% endif %}</span>
+      <span>브랜치{% if gh.link.branch %} {{ gh.link.branch }}{% endif %}</span>
+      {% if not gh.link.branch %}
+      <form method="post" action="{% url 'git_branch' task.pk %}" class="row">{% csrf_token %}
+        <input class="input" name="branch" placeholder="branch-name" aria-label="브랜치 이름">
+        <button class="btn sm">브랜치 연결</button>
+      </form>
+      <form method="post" action="{% url 'git_branch_create' task.pk %}" class="row">{% csrf_token %}
+        <input class="input" name="name" value="{{ gh.default_branch_name }}" aria-label="새 브랜치 이름">
+        <button class="btn sm">브랜치 만들기</button>
+      </form>
+      {% endif %}
+    </li>
+    <li class="{% if gh.link.pr_number %}{% if gh.link.pr_state == 'merged' %}done{% else %}progress{% endif %}{% endif %}">
+      <span class="dot">{% if gh.link.pr_number %}&#10003;{% else %}&#9675;{% endif %}</span>
+      <span>
+        {% if gh.link.pr_number %}
+        <span class="badge" style="{% if gh.link.pr_state == 'merged' %}background:#E7DBF7;color:#3B1A66{% else %}background:#CFE3F7;color:#0B3A66{% endif %}">#{{ gh.link.pr_number }} {% if gh.link.pr_state == 'merged' %}Merged{% else %}Open{% endif %}</span>
+        · 커밋 {{ gh.link.commits|length }}건
+        {% else %}
+        연결된 PR 없음 · 커밋 {{ gh.link.commits|length|default:0 }}건
+        {% endif %}
+      </span>
+      {% if not gh.link.pr_number and gh.link.branch and gh.pr_url %}
+      <a class="btn sm" target="_blank" rel="noopener" href="{{ gh.pr_url }}">PR 열기</a>
+      {% endif %}
+    </li>
+    <li class="{% if gh.link.pr_state == 'merged' %}done{% endif %}">
+      <span class="dot">{% if gh.link.pr_state == 'merged' %}&#10003;{% else %}&#9675;{% endif %}</span>
+      <span>머지{% if gh.link.merged_at %} · {{ gh.link.merged_at|date:"n/j H:i" }}{% endif %}</span>
+    </li>
+  </ol>
+  {% if gh.link.commits %}
+  <ul class="git-commits t13">
+    {% for c in gh.link.commits %}
+    <li><code>{{ c.sha|slice:":7" }}</code> {{ c.message }}{% if c.item %} · 항목 {{ c.item }} 체크{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <p class="muted t12">커밋 메시지에 <code>TASK-{{ task.pk }}:2</code>처럼 적으면 그 항목이 자동으로 체크됩니다.</p>
+  {% if gh.link %}
+  <form method="post" action="{% url 'git_unlink' task.pk %}"><button class="btn sm">GitHub 연결 해제</button></form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}

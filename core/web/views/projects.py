@@ -7,10 +7,15 @@ from django.views.decorators.http import require_POST
 from common.errors import ConflictError, ServiceError
 from projects.models import Project
 from projects.services import (
+    SPEC_MAX,
     archive_project,
     create_project,
+    fetch_spec,
+    parse_spec,
     project_stats,
     restore_project,
+    set_api_spec,
+    spec_view,
     update_project,
 )
 from tasks import services as ts
@@ -21,18 +26,60 @@ from .common import (
     CONFLICT_MSG,
     apply_service_error,
     can_admin,
+    current_org,
     hx_redirect,
     new_idem,
+    org_or_404,
     project_or_404,
     rows_for,
-    team_or_404,
 )
 
+BOARD_OPEN = ["todo", "doing", "review", "blocked", "paused"]
+# ponytail: 완료 열은 최근 20건만 보여 준다. 전부 보려면 목록 보기의 '완료·취소 포함'을 쓴다.
+DONE_ON_BOARD = 20
 
-def _owner_ids(form) -> set[int]:
-    """체크된 관리자 pk 집합. bound form의 value()는 raw 문자열이라 int()가 터질 수 있다."""
+
+def board_context(request, project, include_closed: bool) -> dict:
+    """보드 부분 렌더 context. 목록 보기와 달리 완료를 항상 실어 온다."""
+    labels = dict(Task.STATUSES)
+    codes = BOARD_OPEN + ["done"] + (["cancelled"] if include_closed else [])
+    base = project.tasks.select_related("project", "assignee")
+    open_tasks = sorted(base.filter(status__in=Task.OPEN), key=ts.by_due)
+    done_tasks = list(base.filter(status="done").order_by("-completed_at", "-id")[:DONE_ON_BOARD])
+    extra = list(base.filter(status="cancelled").order_by("-id")) if include_closed else []
+    rows = rows_for(request.user, open_tasks + done_tasks + extra, "board")
+    return {
+        "project": project,
+        "include_closed": include_closed,
+        "columns": [(c, labels[c], [r for r in rows if r["task"].status == c]) for c in codes],
+    }
+
+
+@login_required
+def project_index(request):
+    """헤더의 '프로젝트'. 마지막으로 본 프로젝트 → 조직의 첫 프로젝트 → 빈 화면."""
+    org = current_org(request)
+    if org is None:
+        return redirect("org_list")
+    pid = request.session.get("project_id")
+    project = None
+    if pid:
+        project = Project.objects.filter(pk=pid, org=org, is_archived=False).first()
+    if project is None:
+        project = org.projects.filter(is_archived=False).order_by("name").first()
+    if project is None:
+        return render(
+            request,
+            "projects/empty.html",
+            {"org": org, "is_admin": can_admin(request.user, org)},
+        )
+    return redirect("project_detail", project_id=project.pk)
+
+
+def _checked_ids(form, field: str) -> set[int]:
+    """체크된 pk 집합. bound form의 value()는 raw 문자열이라 int()가 터질 수 있다."""
     ids = set()
-    for x in form["owners"].value() or []:
+    for x in form[field].value() or []:
         pk = getattr(x, "pk", x)
         try:
             ids.add(int(pk))
@@ -41,17 +88,19 @@ def _owner_ids(form) -> set[int]:
     return ids
 
 
-def _dialog(request, form, team, project=None):
+def _dialog(request, form, org, project=None):
     """프로젝트 생성·수정 모달 부분 템플릿."""
     return render(
         request,
         "projects/_dialog.html",
         {
             "form": form,
-            "team": team,
+            "org": org,
             "project": project,
-            "members": team.members.filter(is_active=True).order_by("display_name"),
-            "checked_owner_ids": _owner_ids(form),
+            "members": org.members.filter(is_active=True).order_by("display_name"),
+            "teams": org.teams.order_by("name"),
+            "checked_owner_ids": _checked_ids(form, "owners"),
+            "checked_team_ids": _checked_ids(form, "teams"),
             "status_options": [
                 (code, label, Project.STATUS_DESC[code]) for code, label in Project.STATUSES
             ],
@@ -62,25 +111,26 @@ def _dialog(request, form, team, project=None):
 
 @login_required
 def project_new(request):
-    team = team_or_404(request.user, request.GET.get("team") or request.POST.get("team"))
-    form = ProjectForm(request.POST or None, team=team)
+    org = org_or_404(request.user, request.GET.get("org") or request.POST.get("org"))
+    form = ProjectForm(request.POST or None, org=org)
     if request.method == "POST" and form.is_valid():
         d = form.cleaned_data
         try:
             p = create_project(
-                team=team,
+                org=org,
                 name=d["name"],
                 purpose=d["purpose"],
                 owners=list(d["owners"]),
+                teams=list(d["teams"]),
                 status=d["status"],
                 actor=request.user,
                 source="web",
             )
-            request.session["team_id"] = team.pk
+            request.session["org_id"] = org.pk
             return hx_redirect(request, reverse("project_detail", args=[p.pk]))
         except ServiceError as e:
             apply_service_error(form, e)
-    return _dialog(request, form, team)
+    return _dialog(request, form, org)
 
 
 @login_required
@@ -91,15 +141,17 @@ def project_edit(request, project_id):
         "purpose": project.purpose,
         "status": project.status,
         "owners": list(project.owners.all()),
+        "teams": list(project.teams.all()),
         "version": project.version,
     }
-    form = ProjectForm(request.POST or None, team=project.team, initial=initial)
+    form = ProjectForm(request.POST or None, org=project.org, initial=initial)
     if request.method == "POST" and form.is_valid():
         d = form.cleaned_data
         changes = {
             "name": d["name"],
             "purpose": d["purpose"],
             "owners": list(d["owners"]),
+            "teams": list(d["teams"]),
             "status": d["status"],
         }
         try:
@@ -115,46 +167,44 @@ def project_edit(request, project_id):
             apply_service_error(form, e)
         except ConflictError:
             form.add_error(None, CONFLICT_MSG)
-    return _dialog(request, form, project.team, project)
+    return _dialog(request, form, project.org, project)
 
 
 @login_required
 def project_detail(request, project_id):
     project = project_or_404(request.user, project_id)
-    request.session["team_id"] = project.team_id
+    request.session["org_id"] = project.org_id
+    request.session["project_id"] = project.pk
     view = "board" if request.GET.get("view") == "board" else "list"
     include_closed = request.GET.get("include_closed") == "1"
-    qs = project.tasks.select_related("project", "assignee")
-    if not include_closed:
-        qs = qs.filter(status__in=Task.OPEN)
-    rows = rows_for(request.user, sorted(qs, key=ts.by_due))
-    columns = [
-        (code, label, [r for r in rows if r["task"].status == code])
-        for code, label in Task.STATUSES
-        if code in Task.OPEN or include_closed
-    ]
-    form = TaskInlineForm(
-        team=project.team,
-        initial={"assignee": request.user.pk, "priority": 5, "idem": new_idem()},
-    )
-    return render(
-        request,
-        "projects/detail.html",
-        {
-            "project": project,
-            "owners": list(project.owners.all()),
-            "links": project.links.all(),
-            "stats": project_stats(project),
-            "view": view,
-            "include_closed": include_closed,
-            "rows": rows,
-            "columns": columns,
-            "form": form,
-            "form_open": request.GET.get("new") == "1",
-            "is_admin": can_admin(request.user, project.team),
-            "link_form": LinkForm(),
-        },
-    )
+    if request.GET.get("part") == "board":
+        return render(
+            request, "projects/_board.html", board_context(request, project, include_closed)
+        )
+    ctx = {
+        "project": project,
+        "owners": list(project.owners.all()),
+        "links": project.links.all(),
+        "stats": project_stats(project),
+        "view": view,
+        "include_closed": include_closed,
+        "form_open": request.GET.get("new") == "1",
+        "is_admin": can_admin(request.user, project.org),
+        "link_form": LinkForm(),
+        "tab": "tasks",
+        "form": TaskInlineForm(
+            org=project.org,
+            initial={"assignee": request.user.pk, "priority": 5, "idem": new_idem()},
+        ),
+    }
+    if view == "board":
+        ctx.update(board_context(request, project, include_closed))
+    else:
+        qs = project.tasks.select_related("project", "assignee")
+        if not include_closed:
+            qs = qs.filter(status__in=Task.OPEN)
+        ctx["rows"] = rows_for(request.user, sorted(qs, key=ts.by_due))
+    return render(request, "projects/detail.html", ctx)
 
 
 @login_required
@@ -162,7 +212,7 @@ def project_detail(request, project_id):
 def task_create(request, project_id):
     """인라인 태스크 폼. 성공하면 프로젝트 화면으로 돌아가며 #task-{id}로 패널을 연다."""
     project = project_or_404(request.user, project_id)
-    form = TaskInlineForm(request.POST, team=project.team)
+    form = TaskInlineForm(request.POST, org=project.org)
     if form.is_valid():
         d = form.cleaned_data
         try:
@@ -238,3 +288,38 @@ def link_add(request, project_id):
     else:
         messages.error(request, "링크 입력이 올바르지 않습니다.")
     return redirect("project_detail", project_id=project.pk)
+
+
+@login_required
+def project_api(request, project_id):
+    project = project_or_404(request.user, project_id)
+    error = None
+    if request.method == "POST":
+        try:
+            upload = request.FILES.get("file")
+            if upload:
+                if not upload.name.lower().endswith(".json"):
+                    raise ServiceError({"spec": ".json 파일만 올릴 수 있습니다."})
+                spec = parse_spec(upload.read(SPEC_MAX + 1), source=upload.name)
+                source = upload.name
+            else:
+                source = request.POST.get("url", "")
+                spec = fetch_spec(source)
+            set_api_spec(project, spec, source_url=source, actor=request.user)
+            return redirect("project_api", project_id=project.pk)
+        except ServiceError as e:
+            error = " ".join(e.errors.values())
+
+    obj = getattr(project, "api_spec", None)
+    q = request.GET.get("q", "")
+    ctx = {
+        "project": project,
+        "tab": "api",
+        "q": q,
+        "error": error,
+        "spec_obj": obj,
+        "api": spec_view(obj.spec, q) if obj else None,
+    }
+    if request.GET.get("part") == "endpoints":
+        return render(request, "projects/_endpoints.html", ctx)
+    return render(request, "projects/api.html", ctx)

@@ -21,7 +21,7 @@ def main():
     sub.add_parser("run", help="60초 루프로 상주 (발송)")
     sub.add_parser("bot", help="DM 명령 수신으로 상주 (게이트웨이)")
     sub.add_parser("once", help="지금 시각 기준 tick 1회")
-    sub.add_parser("test", help="팀 채널에 테스트 메시지 1건")
+    sub.add_parser("test", help="조직 채널에 테스트 메시지 1건")
     w = sub.add_parser("weekly", help="주간 보고")
     w.add_argument("--now", action="store_true", help="이미 보냈어도 다시 보낸다")
     w.add_argument("--week-start", help="YYYY-MM-DD (월요일)")
@@ -56,10 +56,10 @@ def main():
             if a.week_start
             else last_monday(datetime.now(cfg.tz).date())
         )
-        print(run_weekly(core, bot, store, cfg.team_id, ws, cfg.llm_provider, force=a.now))
+        print(run_weekly(core, bot, store, cfg.org_id, ws, cfg.llm_provider, force=a.now))
     elif a.cmd == "deadlines":
         today = date.fromisoformat(a.date) if a.date else datetime.now(cfg.tz).date()
-        print(run_deadlines(core, bot, store, cfg.team_id, today))
+        print(run_deadlines(core, bot, store, cfg.org_id, today))
     elif a.cmd == "status":
         print(json.dumps(store.recent(), ensure_ascii=False, indent=2))
 

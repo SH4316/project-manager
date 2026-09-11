@@ -5,6 +5,7 @@ from django.db import IntegrityError, transaction
 
 from common.dates import today_kst, week_bounds
 from common.errors import ConflictError, ServiceError
+from orgs.services import create_org
 from projects.services import archive_project, create_project
 from reports.services import weekly
 from tasks import services as ts
@@ -32,7 +33,6 @@ from tasks.services import (
     update_task,
     update_text,
 )
-from teams.services import create_team
 
 pytestmark = pytest.mark.django_db
 
@@ -77,8 +77,8 @@ def test_create_rejects_non_member_assignee(project, member, outsider):
     assert "assignee" in e.value.errors
 
 
-def test_create_in_archived_project_rejected(team, admin, member):
-    p = create_project(team=team, name="보관용", actor=admin)
+def test_create_in_archived_project_rejected(org, admin, member):
+    p = create_project(org=org, name="보관용", actor=admin)
     archive_project(p, actor=admin)
     with pytest.raises(ServiceError) as e:
         create_task(project=p, title="제목", actor=member, source="web", due_date=today_kst())
@@ -191,11 +191,11 @@ def test_closed_can_only_reopen_to_todo_or_doing(task, member):
     assert "status" in e.value.errors
 
 
-def test_cancel_is_not_completion(task, member, team):
+def test_cancel_is_not_completion(task, member, org):
     t = transition(task, "cancelled", actor=member, source="web", expected_version=1)
     assert t.completed_at is None
     monday, _ = week_bounds()
-    assert weekly(team, monday)["counts"]["completed"] == 0
+    assert weekly(org, monday)["counts"]["completed"] == 0
 
 
 def test_transition_blocked_requires_reason_paused_optional(task, member):
@@ -309,9 +309,9 @@ def test_update_logs_tracked_fields_only(task, member):
     assert not _logs(task, "next_action").exists()
 
 
-def test_move_to_other_team_project_rejected(task, member):
-    other_team = create_team("다른 팀", "", member)
-    other = create_project(team=other_team, name="다른 프로젝트", actor=member)
+def test_move_to_other_org_project_rejected(task, member):
+    other_org = create_org("다른 조직", "", member)
+    other = create_project(org=other_org, name="다른 프로젝트", actor=member)
     with pytest.raises(ServiceError) as e:
         update_task(task, {"project": other}, actor=member, source="web", expected_version=1)
     assert "project" in e.value.errors
@@ -600,14 +600,14 @@ def test_no_due_reason_truncated_to_column_length(project, member):
     assert len(t.no_due_reason) == 200
 
 
-def test_today_view_is_scoped_to_team_membership(task, member, project):
-    """팀에서 빠지면 담당으로 남은 태스크도 오늘 화면에서 보이지 않는다 (A01)."""
-    from teams.models import Membership
+def test_today_view_is_scoped_to_org_membership(task, member, project):
+    """조직에서 빠지면 담당으로 남은 태스크도 오늘 화면에서 보이지 않는다 (A01)."""
+    from orgs.models import OrgMembership
 
     v = today_view(member)
     assert [t.pk for t in v["items"]] == [task.pk]
 
-    Membership.objects.filter(team=project.team, user=member).delete()
+    OrgMembership.objects.filter(org=project.org, user=member).delete()
     v = today_view(member)
     assert v["items"] == []
     assert v["focus"] is None
@@ -618,14 +618,14 @@ def test_today_view_is_scoped_to_team_membership(task, member, project):
 
 
 def test_today_view_manual_item_also_scoped(task, member, project):
-    """직접 담은 항목(TodayItem)도 팀 범위를 따른다. auto 분기만 막으면 새어 나간다."""
-    from teams.models import Membership
+    """직접 담은 항목(TodayItem)도 조직 범위를 따른다. auto 분기만 막으면 새어 나간다."""
+    from orgs.models import OrgMembership
 
     today_set_auto_pull(member, 0)  # auto 분기를 끄고 manual 분기만 남긴다
     today_add(member, task)
     assert [t.pk for t in today_view(member)["items"]] == [task.pk]
 
-    Membership.objects.filter(team=project.team, user=member).delete()
+    OrgMembership.objects.filter(org=project.org, user=member).delete()
     v = today_view(member)
     assert v["items"] == []
     assert v["focus"] is None
@@ -642,14 +642,14 @@ def test_assignee_is_required(task, member):
 
 
 def test_removed_member_does_not_freeze_their_tasks(task, project, member, admin, outsider):
-    """팀원 관리 화면에서 담당자를 제거해도 그 태스크의 다른 항목은 고칠 수 있어야 한다.
+    """멤버 관리 화면에서 담당자를 제거해도 그 태스크의 다른 항목은 고칠 수 있어야 한다.
 
-    담당자를 새로 지정하는 것은 그대로 팀의 활성 멤버만 된다.
+    담당자를 새로 지정하는 것은 그대로 조직의 활성 멤버만 된다.
     """
-    from teams.models import Membership
-    from teams.services import remove_member
+    from orgs.models import OrgMembership
+    from orgs.services import remove_member
 
-    remove_member(Membership.objects.get(team=project.team, user=member), admin)
+    remove_member(OrgMembership.objects.get(org=project.org, user=member), admin)
 
     t = update_task(task, {"priority": 9}, actor=admin, source="web", expected_version=task.version)
     assert t.priority == 9

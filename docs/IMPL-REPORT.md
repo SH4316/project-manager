@@ -249,7 +249,7 @@ SPEC §12의 A 시나리오와 GUIDE 표의 B 시나리오를 테스트에 하�
 
 | 시나리오 | 대응 테스트 |
 |---|---|
-| A01 미승인 사용자 조회 불가 | `test_outsider_cannot_see_team_data_via_api`, `test_outsider_cannot_open_project_page`, `test_today_view_is_scoped_to_team_membership`, `test_today_view_manual_item_also_scoped`, `test_schedule_card_is_scoped_to_team_membership` |
+| A01 미승인 사용자 조회 불가 | `test_outsider_cannot_see_org_data_via_api`, `test_outsider_cannot_open_project_page`, `test_today_view_is_scoped_to_org_membership`, `test_today_view_manual_item_also_scoped`, `test_schedule_card_is_scoped_to_org_membership` |
 | A02 프로젝트 화면에서 생성 → 자동 연결 | `test_project_inline_task_create` (`t.project == project`, `status == "todo"` 단정) |
 | A03 담당자 없이 생성 거부 | `test_assignee_is_required`, `test_create_rejects_non_member_assignee` |
 | A04 웹에서 완료 → 상태·완료 시각·이력 | `test_transition_flow_records_completed_at_and_log`, `test_status_change_returns_row` |
