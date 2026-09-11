@@ -296,6 +296,8 @@ def test_actor_none_only_from_github_services():
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",  # Windows 기본 코덱(cp949)이 한글 줄에서 터진다
     ).stdout.splitlines()
     outside = [
         h

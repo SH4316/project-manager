@@ -188,6 +188,8 @@ def _grep(pattern: str) -> list[str]:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",  # Windows 기본 코덱(cp949)이 한글 줄에서 터진다
     ).stdout.splitlines()
     return [line for line in out if "test_" not in line.split(":")[0]]
 
