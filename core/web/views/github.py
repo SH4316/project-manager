@@ -373,9 +373,15 @@ def git_issue_close(request, task_id):
     task = task_or_404(request.user, task_id)
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
+    # 버튼은 완료·열린 이슈일 때만 그려지지만, 패널이 열린 채 다른 곳에서 상태가 바뀌면
+    # 여기로 올 수 있다. 404로 패널을 깨지 말고 왜 못 닫는지 알려준다.
     link = getattr(task, "git", None)
-    if task.status != "done" or link is None or link.issue_state != "open":
-        raise Http404
+    if link is None or not link.issue_number:
+        return _panel(request, task, error="연결된 이슈가 없어요.")
+    if task.status != "done":
+        return _panel(request, task, error="태스크가 완료되기 전에는 이슈를 닫을 수 없어요.")
+    if link.issue_state != "open":
+        return _panel(request, task, error="이미 닫힌 이슈예요.")
     try:
         gh_writes.close_issue(task, actor=request.user)
     except (ServiceError, GitHubError) as e:

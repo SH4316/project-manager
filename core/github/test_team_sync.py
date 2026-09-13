@@ -254,10 +254,15 @@ def test_close_issue_button_only_when_done_and_open(installed, as_admin, repo_re
     assert "이슈 #7 닫기" in body
 
 
-def test_close_issue_view_requires_done_and_open(installed, as_admin, repo_ready, calls):
+def test_close_issue_view_explains_refusal(installed, as_admin, repo_ready, calls):
+    """완료 전·이미 닫힘은 404 대신 패널에 이유를 적는다. 거부할 때는 GitHub를 부르지 않는다.
+
+    패널은 HTMX가 갈아 끼우므로 404는 설명 없이 패널만 깨뜨린다.
+    """
     task, link = repo_ready
     r = as_admin.post(f"/tasks/{task.pk}/git/issue/close")
-    assert r.status_code == 404  # 아직 완료가 아니다
+    assert r.status_code == 200
+    assert "태스크가 완료되기 전에는 이슈를 닫을 수 없어요." in r.content.decode()
     assert calls == []
 
     transition(task, "done", actor=task.assignee, source="web", expected_version=task.version)
@@ -265,6 +270,9 @@ def test_close_issue_view_requires_done_and_open(installed, as_admin, repo_ready
     assert r.status_code == 200
     link.refresh_from_db()
     assert link.issue_state == "closed"
+    assert [c["method"] for c in calls] == ["PATCH"]
 
     r = as_admin.post(f"/tasks/{task.pk}/git/issue/close")
-    assert r.status_code == 404  # 이미 닫혔다
+    assert r.status_code == 200
+    assert "이미 닫힌 이슈예요." in r.content.decode()
+    assert len(calls) == 1  # 두 번째 거부에도 GitHub 쓰기는 없다
