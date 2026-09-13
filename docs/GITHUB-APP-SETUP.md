@@ -59,9 +59,13 @@ GitHub → 오른쪽 위 프로필 → Settings → Developer settings → GitHu
 
 ### Subscribe to events
 
-Push · Create · Pull request · Issues · Membership · Team · Installation · Installation repositories
+Push · Create · Pull request · Issues · Membership · Team
 
 (권한을 고른 뒤에야 체크할 수 있는 항목이 나타난다.)
+
+`installation`과 `installation_repositories`는 **목록에 없다. 찾지 말 것.** 모든 GitHub App에 자동으로
+전달되는 이벤트라 구독 항목이 아니다(목록의 "Installation target"은 설치 대상 개명으로 다른 이벤트다).
+PM은 이 둘을 받아 설치와 저장소 추가·삭제를 반영한다.
 
 ### Where can this GitHub App be installed?
 
