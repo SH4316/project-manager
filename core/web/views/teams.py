@@ -14,8 +14,7 @@ from orgs import services as osv
 from orgs.models import Team
 
 from ..forms import TeamForm
-from .common import can_admin, hx_redirect, org_or_404
-from .orgs import _admin_only
+from .common import can_admin, dialog, hx_redirect, not_admin, org_or_404
 
 
 def _team_or_404(request, team_id):
@@ -37,12 +36,14 @@ def _apply_errors(form, exc: ServiceError):
 
 
 def _dialog(request, form, org, team=None):
-    return render(request, "orgs/_team_dialog.html", {"form": form, "org": org, "team": team})
+    return dialog(request, "orgs/_team_dialog.html", {"form": form, "org": org, "team": team})
 
 
 @login_required
 def team_new(request, org_id):
-    org = _admin_only(request, org_id)
+    org = org_or_404(request.user, org_id)
+    if denied := not_admin(request, org):
+        return denied
     form = TeamForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         d = form.cleaned_data
@@ -56,7 +57,9 @@ def team_new(request, org_id):
 
 @login_required
 def team_edit(request, team_id):
-    team = _admin_team_or_404(request, team_id)
+    team = _team_or_404(request, team_id)
+    if denied := not_admin(request, team.org):
+        return denied
     form = TeamForm(request.POST or None, initial={"name": team.name, "purpose": team.purpose})
     if request.method == "POST" and form.is_valid():
         d = form.cleaned_data
@@ -88,7 +91,9 @@ def team_delete(request, team_id):
 
 @login_required
 def team_detail(request, team_id):
-    team = _admin_team_or_404(request, team_id)
+    team = _team_or_404(request, team_id)
+    if denied := not_admin(request, team.org):
+        return denied
     members = team.members.order_by("display_name")
     candidates = (
         team.org.members.filter(is_active=True)

@@ -387,9 +387,16 @@ def as_admin(client, org):
     return client
 
 
-def test_admin_pages_are_hidden_from_members(logged, org):
-    """멤버에게는 관리 화면이 아예 없는 것처럼 보인다(403이 아니라 404)."""
-    assert logged.get(f"/orgs/{org.pk}/teams").status_code == 404
+def test_admin_pages_explain_to_members(logged, org):
+    """멤버가 관리 화면을 열면 404가 아니라 이유를 말하고 조직 현황으로 보낸다.
+
+    예전에는 404였다. 멤버는 팀이 있다는 걸 이미 아는 사람이라 숨길 것이 없고,
+    "없는 페이지"로 읽히면 권한 문제인지 알 수 없었다. 존재를 숨기는 404는 조직 밖 사람 몫이다.
+    """
+    r = logged.get(f"/orgs/{org.pk}/teams")
+    assert r.status_code == 302 and r.url == f"/orgs/{org.pk}"
+    page = logged.get(r.url)
+    assert page.status_code == 200 and "조직 관리자만 볼 수 있어요" in page.content.decode()
 
 
 def test_webhook_routes_are_gone(as_admin, org):
@@ -460,8 +467,10 @@ def test_org_tabs_hidden_for_member(logged, org):
     assert f"/orgs/{org.pk}/teams" not in body
 
 
-def test_org_teams_requires_admin(logged, org):
-    assert logged.get(f"/orgs/{org.pk}/teams").status_code == 404
+def test_org_teams_denial_is_htmx_aware(logged, org):
+    """탭을 HTMX로 열다 거절되면 조각 대신 HX-Redirect로 조직 현황에 착지한다."""
+    r = logged.get(f"/orgs/{org.pk}/teams", headers={"HX-Request": "true"})
+    assert r.status_code == 204 and r.headers["HX-Redirect"] == f"/orgs/{org.pk}"
 
 
 def test_team_crud_via_web(as_admin, org):
@@ -856,3 +865,19 @@ def test_governance_page(client, org, admin, member):
     client.post(f"/orgs/{org.pk}/governance", {"text": "몰래"})
     org.refresh_from_db()
     assert org.governance == "# 우리 규칙"
+
+
+def test_outsider_admin_page_still_404(client, outsider, org):
+    """조직 밖 사람에게는 존재를 숨긴다 — 이쪽은 계속 404다."""
+    client.force_login(outsider)
+    assert client.get(f"/orgs/{org.pk}/teams").status_code == 404
+
+
+def test_dialog_opened_directly_gets_the_shell(logged, project):
+    """모달 조각을 주소로 직접 열면 조각이 맨몸으로 보이지 말고 셸 안에 담겨야 한다."""
+    r = logged.get(f"/projects/{project.pk}/edit")
+    assert r.status_code == 200
+    body = r.content.decode()
+    assert "app.css" in body and "프로젝트 수정" in body
+    frag = logged.get(f"/projects/{project.pk}/edit", headers={"HX-Request": "true"})
+    assert "app.css" not in frag.content.decode()

@@ -27,6 +27,7 @@ from .common import (
     apply_service_error,
     can_admin,
     current_org,
+    dialog,
     hx_redirect,
     new_idem,
     org_or_404,
@@ -90,7 +91,7 @@ def _checked_ids(form, field: str) -> set[int]:
 
 def _dialog(request, form, org, project=None):
     """프로젝트 생성·수정 모달 부분 템플릿."""
-    return render(
+    return dialog(
         request,
         "projects/_dialog.html",
         {

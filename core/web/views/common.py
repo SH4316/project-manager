@@ -3,8 +3,10 @@ import uuid
 from datetime import date, timedelta
 from urllib.parse import urlencode
 
+from django.contrib import messages
 from django.http import Http404, HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import User
@@ -92,6 +94,28 @@ def hx_redirect(request, url: str):
     if request.headers.get("HX-Request"):
         return HttpResponse(status=204, headers={"HX-Redirect": url})
     return redirect(url)
+
+
+def not_admin(request, org):
+    """관리자 전용 화면의 관문. 멤버지만 관리자가 아니면 이유를 말하고 조직 현황으로 보낸다.
+
+    조직 밖 사람은 그 전에 org_or_404가 404를 낸다 — 존재를 숨기는 일은 그쪽 몫이다.
+    멤버에게까지 404를 주면 "없는 페이지"로 읽혀 권한 문제인지 알 수 없다.
+    """
+    if is_admin(request.user, org):
+        return None
+    messages.error(request, "조직 관리자만 볼 수 있어요.")
+    return hx_redirect(request, reverse("org_detail", args=[org.pk]))
+
+
+def dialog(request, template: str, ctx: dict):
+    """모달 조각. HTMX면 조각만, 아니면 셸에 담아 준다.
+
+    주소를 직접 열거나 뒤로 가기로 돌아오면 HX-Request가 없어 조각이 맨몸(CSS 없는 폼)으로 보였다.
+    """
+    if request.headers.get("HX-Request"):
+        return render(request, template, ctx)
+    return render(request, "dialog_page.html", {**ctx, "dialog_template": template})
 
 
 def trigger(response, event: str, task=None):

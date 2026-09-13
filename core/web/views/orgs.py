@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -15,7 +14,7 @@ from projects.services import project_stats
 from reports.services import org_status
 
 from ..forms import InviteForm, OrgForm
-from .common import apply_service_error, can_admin, current_org, org_or_404
+from .common import apply_service_error, can_admin, current_org, not_admin, org_or_404
 
 
 @login_required
@@ -84,18 +83,12 @@ def org_detail(request, org_id):
     )
 
 
-def _admin_only(request, org_id):
-    """조직 관리자 전용 화면의 공통 관문. 멤버에게는 화면 자체를 숨긴다(404)."""
-    org = org_or_404(request.user, org_id)
-    if not can_admin(request.user, org):
-        raise Http404
-    return org
-
-
 @login_required
 def org_teams(request, org_id):
     """조직 → 팀. 멤버·태그·초대·팀을 한 화면에서 관리한다."""
-    org = _admin_only(request, org_id)
+    org = org_or_404(request.user, org_id)
+    if denied := not_admin(request, org):
+        return denied
     load = {r["assignee_id"]: r for r in org_status(org)["by_assignee"]}
     rows = [
         {"m": m, "load": load.get(m.user_id)}

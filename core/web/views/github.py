@@ -19,8 +19,7 @@ from github.models import GitHubIdentity, TaskGitLink
 from tasks import services as ts
 from tasks.models import Task
 
-from .common import can_admin, project_or_404, task_or_404
-from .orgs import _admin_only
+from .common import can_admin, not_admin, org_or_404, project_or_404, task_or_404
 from .tasks import _panel
 
 
@@ -35,7 +34,9 @@ def _gh_enabled_or_404():
 @login_required
 def org_github(request, org_id):
     _gh_enabled_or_404()
-    org = _admin_only(request, org_id)
+    org = org_or_404(request.user, org_id)
+    if denied := not_admin(request, org):
+        return denied
     projects = org.projects.filter(is_archived=False).select_related("repo").order_by("name")
     return render(
         request,
@@ -54,7 +55,9 @@ def org_github(request, org_id):
 @login_required
 def github_install(request, org_id):
     _gh_enabled_or_404()
-    org = _admin_only(request, org_id)
+    org = org_or_404(request.user, org_id)
+    if denied := not_admin(request, org):
+        return denied
     request.session["gh_install_org"] = org.pk
     state = secrets.token_urlsafe(16)
     request.session["gh_state"] = state
@@ -69,7 +72,9 @@ def github_installed(request):
     if request.GET.get("state") != request.session.pop("gh_state", None):
         raise Http404
     org_id = request.session.pop("gh_install_org", None)
-    org = _admin_only(request, org_id)
+    org = org_or_404(request.user, org_id)
+    if denied := not_admin(request, org):
+        return denied
     iid = request.GET.get("installation_id", "")
     if not iid.isdecimal():
         messages.error(request, "설치를 확인하지 못했습니다.")

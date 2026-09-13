@@ -20,7 +20,7 @@ from projects.services import (
 )
 from reports.services import org_status
 
-from .common import can_admin, org_or_404
+from .common import can_admin, dialog, org_or_404
 
 
 @login_required
@@ -116,7 +116,7 @@ def _milestone_dialog(request, org, ms=None, errors=None):
             "target_date": "",
             "status": "planned",
         }
-    return render(
+    return dialog(
         request,
         "orgs/_milestone_dialog.html",
         {

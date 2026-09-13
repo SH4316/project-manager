@@ -15,6 +15,7 @@ from tasks.models import Task
 from ..forms import QuickTaskForm
 from .common import (
     apply_service_error,
+    dialog,
     due_label,
     hx_redirect,
     new_idem,
@@ -160,7 +161,7 @@ def quick_add(request):
             return hx_redirect(request, reverse("today"))
         except ServiceError as e:
             apply_service_error(form, e)
-    return render(request, "today/_quick.html", {"form": form, "quick_open": True})
+    return dialog(request, "today/_quick.html", {"form": form, "quick_open": True})
 
 
 @login_required
