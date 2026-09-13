@@ -19,6 +19,8 @@ class Organization(models.Model):
 
     name = models.CharField("이름", max_length=100)
     purpose = models.CharField("목적", max_length=200, blank=True)
+    # 개발 거버넌스(마크다운). 비어 있으면 governance.DEFAULT_GOVERNANCE를 쓴다.
+    governance = models.TextField("개발 거버넌스", blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
     )

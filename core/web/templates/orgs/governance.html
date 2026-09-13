@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}개발 거버넌스{% endblock %}
+{% block main %}
+{% include "orgs/_tabs.html" %}
+<section class="card">
+  <div class="card-head">
+    <h1 class="t24">개발 거버넌스</h1>
+    <span class="badge{% if is_default %}{% else %} primary{% endif %}">{% if is_default %}기본안{% else %}우리 조직 규칙{% endif %}</span>
+  </div>
+  <p class="muted t13">
+    사람과 AI가 함께 읽는 기준입니다. AI는 태스크를 만들거나 기한·담당을 바꾸기 전에 이 글을 읽고 그대로 움직입니다.
+    {% if is_default %}지금은 기본 제안을 그대로 쓰고 있습니다. 조직에 맞게 고쳐 주세요.{% endif %}
+  </p>
+  {% if is_admin %}
+  <form method="post">{% csrf_token %}
+    <textarea name="text" class="textarea" rows="28" aria-label="거버넌스 본문">{{ text }}</textarea>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <div class="row" style="margin-top:8px">
+      <button class="btn primary">저장</button>
+      {% if not is_default %}
+      <button class="btn" name="reset" value="1" onclick="return confirm('기본안으로 되돌릴까요? 지금 내용은 지워집니다.')">기본안으로 되돌리기</button>
+      {% endif %}
+    </div>
+  </form>
+  <p class="muted t13">마크다운으로 씁니다. 2만 자까지. 비워서 저장하면 기본안으로 되돌아갑니다.</p>
+  {% else %}
+  <pre class="doc" style="white-space:pre-wrap">{{ text }}</pre>
+  <p class="muted t13">조직 관리자만 고칠 수 있습니다.</p>
+  {% endif %}
+</section>
+{% endblock %}

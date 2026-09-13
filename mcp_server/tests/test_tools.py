@@ -19,6 +19,12 @@ TOOL_NAMES = {
     "get_org_status",
     "get_weekly_report_data",
     "list_members",
+    "get_governance",
+    "list_teams",
+    "create_team",
+    "add_team_member",
+    "remove_team_member",
+    "set_project_teams",
     "search",
     "fetch",
 }
@@ -121,4 +127,9 @@ def test_search_fetch_shape(fake_core, with_token):
 async def test_tool_names_registered():
     tools = await s.mcp.list_tools()
     assert {t.name for t in tools} == TOOL_NAMES
-    assert len(TOOL_NAMES) == 14
+    assert len(TOOL_NAMES) == 20
+
+
+def test_governance_tool(fake_core, with_token):
+    out = fn("get_governance")(1)
+    assert out["is_default"] is True and out["text"]

@@ -814,3 +814,18 @@ def test_panel_survives_changelog_without_actor(logged, task):
     body = logged.get(f"/tasks/{task.pk}/panel")
     assert body.status_code == 200
     assert "ghost" in body.content.decode()
+
+
+def test_governance_page(client, org, admin, member):
+    client.force_login(admin)
+    r = client.get(f"/orgs/{org.pk}/governance")
+    assert r.status_code == 200 and "개발 거버넌스" in r.content.decode()
+    assert client.post(f"/orgs/{org.pk}/governance", {"text": "# 우리 규칙"}).status_code == 302
+    org.refresh_from_db()
+    assert org.governance == "# 우리 규칙"
+    # 멤버는 보기만 한다. POST해도 안 바뀐다.
+    client.force_login(member)
+    assert client.get(f"/orgs/{org.pk}/governance").status_code == 200
+    client.post(f"/orgs/{org.pk}/governance", {"text": "몰래"})
+    org.refresh_from_db()
+    assert org.governance == "# 우리 규칙"

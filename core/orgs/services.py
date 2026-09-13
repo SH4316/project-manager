@@ -166,3 +166,17 @@ def remove_team_member(team, user, actor):
 def teams_of(user, org):
     """org 안에서 user가 속한 팀 queryset. 가시성 계산에 쓰지 않는다."""
     return Team.objects.filter(org=org, memberships__user=user).distinct()
+
+
+# ---------- 거버넌스 ----------
+
+
+def set_governance(org, text: str, actor) -> Organization:
+    """조직의 개발 거버넌스 본문 교체. 비우면 기본안으로 되돌아간다."""
+    require_admin(actor, org)
+    text = (text or "").strip()
+    if len(text) > 20000:
+        raise ServiceError({"governance": "2만 자를 넘을 수 없습니다."})
+    org.governance = text
+    org.save(update_fields=["governance"])
+    return org

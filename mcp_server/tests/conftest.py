@@ -74,6 +74,8 @@ class FakeCore:
             )
             self.tasks[1]["version"] += 1
             return httpx.Response(200, json=self.tasks[1])
+        if p == "/api/orgs/1/governance" and request.method == "GET":
+            return httpx.Response(200, json={"text": "# 기본안", "is_default": True})
         if p == "/api/tasks" and request.method == "POST":
             return httpx.Response(201, json={**self.tasks[1], "id": 9, "number": "TASK-9"})
         return httpx.Response(404, json={"detail": "x"})

@@ -9,6 +9,7 @@ from django.views.decorators.http import require_POST
 from common.errors import ServiceError
 from github import writes as gh_writes
 from orgs import services as osv
+from orgs.governance import governance_text
 from orgs.models import Invite, OrgMembership
 from projects.services import project_stats
 from reports.services import org_status
@@ -211,3 +212,32 @@ def member_remove(request, membership_id):
             if warn:
                 messages.warning(request, warn)
     return _member_redirect(request, org_id)
+
+
+@login_required
+def org_governance(request, org_id):
+    """개발 거버넌스. 멤버는 읽고 관리자는 고친다."""
+    org = org_or_404(request.user, org_id)
+    is_admin = can_admin(request.user, org)
+    error = ""
+    if request.method == "POST" and is_admin:
+        try:
+            osv.set_governance(
+                org, "" if request.POST.get("reset") else request.POST["text"], request.user
+            )
+            messages.success(request, "거버넌스를 저장했습니다.")
+            return redirect("org_governance", org_id=org.pk)
+        except ServiceError as e:
+            error = "; ".join(e.errors.values())
+    return render(
+        request,
+        "orgs/governance.html",
+        {
+            "org": org,
+            "text": governance_text(org),
+            "is_default": not org.governance.strip(),
+            "is_admin": is_admin,
+            "error": error,
+            "tab": "governance",
+        },
+    )

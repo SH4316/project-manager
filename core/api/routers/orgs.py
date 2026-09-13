@@ -1,13 +1,33 @@
 from ninja import Router
 from ninja.errors import HttpError
 
-from orgs.models import Invite, OrgMembership
-from orgs.services import create_invite, revoke_invite
+from accounts.models import User
+from orgs.governance import governance_text
+from orgs.models import Invite, OrgMembership, Team
+from orgs.services import (
+    add_team_member,
+    create_invite,
+    create_team,
+    remove_team_member,
+    revoke_invite,
+    set_governance,
+)
 from reports.services import org_status
 from tasks.brief import user_brief
 
 from ..context import ctx, org_or_404
-from ..schemas import ErrorOut, InviteIn, InviteOut, OrgOut, TeamOut, UserBrief
+from ..schemas import (
+    ErrorOut,
+    GovernanceIn,
+    GovernanceOut,
+    InviteIn,
+    InviteOut,
+    OrgOut,
+    TeamCreateIn,
+    TeamMemberIn,
+    TeamOut,
+    UserBrief,
+)
 from ..serialize import invite_out, project_out
 
 router = Router(tags=["orgs"])
@@ -77,3 +97,60 @@ def delete_invite(request, invite_id: int):
     org_or_404(request, inv.org_id)
     revoke_invite(inv, ctx(request)["actor"])
     return 204, None
+
+
+# ---- 거버넌스 ----
+
+
+@router.get("/{org_id}/governance", response=GovernanceOut)
+def get_governance(request, org_id: int):
+    org = org_or_404(request, org_id)
+    return {"text": governance_text(org), "is_default": not org.governance.strip()}
+
+
+@router.put("/{org_id}/governance", response={200: GovernanceOut, 400: ErrorOut})
+def put_governance(request, org_id: int, payload: GovernanceIn):
+    org = set_governance(org_or_404(request, org_id), payload.text, request.auth)
+    return {"text": governance_text(org), "is_default": not org.governance.strip()}
+
+
+# ---- 팀 쓰기 ----
+
+
+def _team_out(t: Team) -> dict:
+    return {"id": t.pk, "name": t.name, "purpose": t.purpose, "member_count": t.members.count()}
+
+
+def _team_or_404(request, team_id: int) -> Team:
+    team = Team.objects.filter(pk=team_id).select_related("org").first()
+    if team is None:
+        raise HttpError(404, "팀을 찾을 수 없습니다.")
+    org_or_404(request, team.org_id)
+    return team
+
+
+@router.post("/{org_id}/teams", response={201: TeamOut, 400: ErrorOut})
+def create_team_ep(request, org_id: int, payload: TeamCreateIn):
+    org = org_or_404(request, org_id)
+    team = create_team(org=org, name=payload.name, purpose=payload.purpose, actor=request.auth)
+    return 201, _team_out(team)
+
+
+@router.post("/teams/{team_id}/members", response={200: TeamOut, 400: ErrorOut})
+def add_team_member_ep(request, team_id: int, payload: TeamMemberIn):
+    team = _team_or_404(request, team_id)
+    user = User.objects.filter(pk=payload.user_id).first()
+    if user is None:
+        raise HttpError(404, "사용자를 찾을 수 없습니다.")
+    add_team_member(team, user, request.auth)
+    return _team_out(team)
+
+
+@router.delete("/teams/{team_id}/members/{user_id}", response={200: TeamOut, 400: ErrorOut})
+def remove_team_member_ep(request, team_id: int, user_id: int):
+    team = _team_or_404(request, team_id)
+    user = User.objects.filter(pk=user_id).first()
+    if user is None:
+        raise HttpError(404, "사용자를 찾을 수 없습니다.")
+    remove_team_member(team, user, request.auth)
+    return _team_out(team)

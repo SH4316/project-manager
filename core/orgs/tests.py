@@ -210,3 +210,71 @@ def test_remove_team_member_only_removes_team(org, team, admin, member):
     remove_team_member(team, member, admin)
     assert member not in team.members.all()
     assert is_member(member, org)
+
+
+# ---------- 거버넌스 ----------
+
+
+def test_governance_defaults_and_override(org, admin, member):
+    from .governance import DEFAULT_GOVERNANCE, governance_text
+    from .services import set_governance
+
+    assert governance_text(org) == DEFAULT_GOVERNANCE
+    set_governance(org, "# 우리 규칙\n- 기한은 금요일", admin)
+    org.refresh_from_db()
+    assert governance_text(org).startswith("# 우리 규칙")
+    # 비우면 기본안으로 되돌아간다.
+    set_governance(org, "  ", admin)
+    org.refresh_from_db()
+    assert governance_text(org) == DEFAULT_GOVERNANCE
+    with pytest.raises(ServiceError):
+        set_governance(org, "x", member)
+    with pytest.raises(ServiceError):
+        set_governance(org, "x" * 20001, admin)
+
+
+def test_governance_api_read_and_write(client, org, admin, member):
+    _, raw = ApiToken.issue(admin, "a", "write")
+    _, member_raw = ApiToken.issue(member, "m", "write")
+    h = {"Authorization": f"Bearer {raw}"}
+    r = client.get(f"/api/orgs/{org.pk}/governance", headers=h)
+    assert r.status_code == 200 and r.json()["is_default"] is True
+    r = client.put(
+        f"/api/orgs/{org.pk}/governance",
+        data={"text": "# 우리 규칙"},
+        content_type="application/json",
+        headers=h,
+    )
+    assert r.status_code == 200 and r.json() == {"text": "# 우리 규칙", "is_default": False}
+    # 멤버는 읽을 수 있고 고칠 수 없다.
+    mh = {"Authorization": f"Bearer {member_raw}"}
+    assert client.get(f"/api/orgs/{org.pk}/governance", headers=mh).json()["text"] == "# 우리 규칙"
+    r = client.put(
+        f"/api/orgs/{org.pk}/governance",
+        data={"text": "x"},
+        content_type="application/json",
+        headers=mh,
+    )
+    assert r.status_code == 400
+
+
+def test_team_write_api(client, org, admin, member):
+    _, raw = ApiToken.issue(admin, "a", "write")
+    h = {"Authorization": f"Bearer {raw}"}
+    r = client.post(
+        f"/api/orgs/{org.pk}/teams",
+        data={"name": "백엔드"},
+        content_type="application/json",
+        headers=h,
+    )
+    assert r.status_code == 201
+    team_id = r.json()["id"]
+    r = client.post(
+        f"/api/orgs/teams/{team_id}/members",
+        data={"user_id": member.pk},
+        content_type="application/json",
+        headers=h,
+    )
+    assert r.status_code == 200 and r.json()["member_count"] == 1
+    r = client.delete(f"/api/orgs/teams/{team_id}/members/{member.pk}", headers=h)
+    assert r.status_code == 200 and r.json()["member_count"] == 0

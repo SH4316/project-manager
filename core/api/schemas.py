@@ -280,3 +280,21 @@ class ErrorOut(Schema):
 class ConflictOut(Schema):
     detail: str
     latest: dict
+
+
+class GovernanceOut(Schema):
+    text: str
+    is_default: bool  # True면 조직이 아직 고치지 않은 기본안
+
+
+class GovernanceIn(Schema):
+    text: str
+
+
+class TeamCreateIn(Schema):
+    name: str
+    purpose: str = ""
+
+
+class TeamMemberIn(Schema):
+    user_id: int

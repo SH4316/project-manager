@@ -31,13 +31,17 @@ CORE_URL=http://localhost:8000 uv run python -m mcp_server
 
 개인 비밀 URL은 비밀번호와 같다. 공유하지 말고, 유출되면 `/settings/tokens`에서 폐기한다.
 
-## 도구 14개
+## 도구 20개
 
-`list_orgs` `list_projects` `get_project` `list_tasks` `get_task` `create_task` `update_task`
-`transition_task` `append_note` `get_org_status` `get_weekly_report_data` `list_members`
-`search` `fetch` (뒤 두 개는 ChatGPT 커넥터 호환 별칭)
+- 태스크·프로젝트: `list_orgs` `list_projects` `get_project` `list_tasks` `get_task`
+  `create_task` `update_task` `transition_task` `append_note`
+- 거버넌스: `get_governance` — 그 조직의 개발 규칙(마크다운). **쓰기 전에 먼저 읽는다.**
+- 팀: `list_teams` `create_team` `add_team_member` `remove_team_member` `set_project_teams`
+- 현황: `get_org_status` `get_weekly_report_data` `list_members`
+- ChatGPT 커넥터 호환 별칭: `search` `fetch`
 
 수정 도구는 `get_task`로 읽은 최신 `version`을 함께 보낸다. 충돌하면 다시 읽고 재시도한다.
+거버넌스는 조직이 화면에서 고치는 글이고 서버는 검증하지 않는다 — 자세한 건 `docs/GOVERNANCE.md`.
 
 ## 테스트
 

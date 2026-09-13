@@ -43,6 +43,7 @@ urlpatterns = [
     path("orgs/new", orgs.org_new, name="org_new"),
     path("orgs/<int:org_id>", orgs.org_detail, name="org_detail"),
     path("orgs/<int:org_id>/teams", orgs.org_teams, name="org_teams"),
+    path("orgs/<int:org_id>/governance", orgs.org_governance, name="org_governance"),
     path("orgs/<int:org_id>/teams/new", teams.team_new, name="team_new"),
     path("orgs/<int:org_id>/invites", orgs.invite_create, name="invite_create"),
     path("orgs/invites/<int:invite_id>/revoke", orgs.invite_revoke, name="invite_revoke"),
