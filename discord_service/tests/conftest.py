@@ -94,6 +94,11 @@ class FakeCore:
         self.writes: list[tuple[str, dict]] = []  # 실제로 태스크를 바꾼 호출만
         self.bot_status = 200
         self.bot_detail = "x"
+        # 슬래시 명령용. admin=False면 채널 저장이 400, channel_save_fail이면 새 id 저장만 500.
+        self.admin = True
+        self.channel_save_fail = False
+        self.channels = {"team": "", "project": ""}
+        self.next_id = 100
 
     # --- 조회 도움말 ---
     def paths(self) -> list[str]:
@@ -140,7 +145,61 @@ class FakeCore:
                     "counts": {"my_open": len(items), "done_today": 1},
                 },
             )
-        parts = cmd.split("/")  # tasks/<id>/<action>
+        if cmd == "projects":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 1,
+                        "name": "학식 API",
+                        "org_id": 1,
+                        "discord_channel_id": self.channels["project"],
+                    },
+                    {"id": 2, "name": "산돌이 봇", "org_id": 1, "discord_channel_id": ""},
+                ],
+            )
+        if cmd == "teams":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 1,
+                        "name": "백엔드",
+                        "org_id": 1,
+                        "discord_channel_id": self.channels["team"],
+                    }
+                ],
+            )
+        if cmd == "members":
+            return httpx.Response(
+                200, json=[{"id": 1, "display_name": "관리자"}, {"id": 2, "display_name": "팀원"}]
+            )
+        if cmd == "mytasks":
+            return httpx.Response(200, json=[t for t in self.tasks.values() if t["status"] in OPEN])
+        if cmd == "tasks":
+            if not body.get("due_date") and not body.get("no_due_reason"):
+                return httpx.Response(
+                    400, json={"detail": {"no_due_reason": "기한이 없으면 사유를 입력하세요."}}
+                )
+            self.writes.append((cmd, body))
+            t = task(self.next_id, body.get("due_date"))
+            t["title"] = body["title"]
+            self.tasks[t["id"]] = t
+            self.next_id += 1
+            return httpx.Response(200, json={"task": t})
+        parts = cmd.split("/")  # tasks/<id>/<action> · teams/<id>/channel · projects/<id>/channel
+        if len(parts) == 3 and parts[2] == "channel":
+            kind = parts[0].removesuffix("s")
+            if int(parts[1]) != 1:
+                return httpx.Response(404, json={"detail": "찾을 수 없습니다."})
+            if not self.admin:
+                return httpx.Response(
+                    400, json={"detail": {"org": "조직 관리자만 할 수 있습니다."}}
+                )
+            if body["channel_id"] and self.channel_save_fail:
+                return httpx.Response(500, json={"detail": "boom"})
+            self.channels[kind] = body["channel_id"]
+            return httpx.Response(200, json={"id": 1, "discord_channel_id": body["channel_id"]})
         if len(parts) == 3 and parts[0] == "tasks":
             t = self.tasks.get(int(parts[1]))
             if t is None:
@@ -153,6 +212,16 @@ class FakeCore:
             if parts[2] == "extend":
                 t["due_date"] = body["due_date"]
                 return httpx.Response(200, json={"task": t})
+            if parts[2] == "update":
+                t.update({k: v for k, v in body.items() if k in t})
+                return httpx.Response(200, json={"task": t})
+            if parts[2] == "note":
+                return httpx.Response(200, json={"task": t})
+            if parts[2] == "status":
+                was = STATUS[t["status"]]
+                t["status"] = body["status"]
+                t["stop_reason"] = body["reason"]
+                return httpx.Response(200, json={"was": was, "task": t})
         return httpx.Response(404, json={"detail": "x"})
 
 

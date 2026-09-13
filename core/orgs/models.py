@@ -68,6 +68,8 @@ class Team(models.Model):
     org = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="teams")
     name = models.CharField("이름", max_length=100)
     purpose = models.CharField("목적", max_length=200, blank=True)
+    # 봇이 만든 팀 채널의 snowflake. 비밀이 아니고 core는 저장·표시만 한다(발송은 봇 전담).
+    discord_channel_id = models.CharField("Discord 채널", max_length=32, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
     )

@@ -163,6 +163,14 @@ def remove_team_member(team, user, actor):
     TeamMembership.objects.filter(team=team, user=user).delete()
 
 
+def set_team_channel(team, channel_id: str, actor) -> Team:
+    """봇이 만든 채널 id를 적는다. 빈 문자열이면 연결을 끊는다(Discord에서 지워졌을 때)."""
+    require_admin(actor, team.org)
+    team.discord_channel_id = (channel_id or "").strip()[:32]
+    team.save(update_fields=["discord_channel_id"])
+    return team
+
+
 def teams_of(user, org):
     """org 안에서 user가 속한 팀 queryset. 가시성 계산에 쓰지 않는다."""
     return Team.objects.filter(org=org, memberships__user=user).distinct()

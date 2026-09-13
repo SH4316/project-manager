@@ -10,12 +10,37 @@
 from ninja import Router
 from ninja.errors import HttpError
 
+from accounts.models import User
 from accounts.services import link_discord, unlink_discord_by_id, user_by_discord_id
+from orgs.models import Team
+from orgs.services import orgs_of, set_team_channel
+from projects.models import Project
+from projects.services import set_project_channel
 from tasks.brief import task_brief
-from tasks.services import extend_due, get_visible_task, today_view, transition
+from tasks.models import Task
+from tasks.services import (
+    by_due,
+    create_task,
+    extend_due,
+    get_visible_task,
+    today_view,
+    transition,
+    update_task,
+    update_text,
+    visible_tasks,
+)
 
 from ..auth import BotTokenAuth
-from ..schemas import DiscordActorIn, DiscordExtendIn, DiscordLinkIn
+from ..schemas import (
+    DiscordActorIn,
+    DiscordChannelIn,
+    DiscordExtendIn,
+    DiscordLinkIn,
+    DiscordNoteIn,
+    DiscordStatusIn,
+    DiscordTaskCreateIn,
+    DiscordTaskUpdateIn,
+)
 from ..serialize import task_out
 
 router = Router(tags=["discord"], auth=BotTokenAuth())
@@ -91,3 +116,141 @@ def extend(request, task_id: int, payload: DiscordExtendIn):
         **_ctx(request, actor),
     )
     return {"task": task_out(task)}
+
+
+# ---------- 슬래시 명령 (IMPL-PLAN-3). 자동완성 목록도 행위자 범위로만 준다 ----------
+
+
+def _project(actor, project_id: int):
+    project = Project.objects.filter(pk=project_id, org__in=orgs_of(actor)).first()
+    if project is None:
+        raise HttpError(404, "프로젝트를 찾을 수 없습니다.")
+    return project
+
+
+def _assignee(assignee_id: int | None):
+    if assignee_id is None:
+        return None
+    user = User.objects.filter(pk=assignee_id).first()
+    if user is None:
+        raise HttpError(400, "담당자를 찾을 수 없습니다.")
+    return user
+
+
+@router.post("/projects", response=list[dict])
+def projects(request, payload: DiscordActorIn):
+    """자동완성과 채널 생성용. 채널 id를 같이 주어 봇이 중복 생성 전에 확인한다."""
+    actor = _actor(payload.discord_user_id)
+    qs = Project.objects.filter(org__in=orgs_of(actor), is_archived=False)
+    return [
+        {"id": p.pk, "name": p.name, "org_id": p.org_id, "discord_channel_id": p.discord_channel_id}
+        for p in qs
+    ]
+
+
+@router.post("/teams", response=list[dict])
+def teams(request, payload: DiscordActorIn):
+    actor = _actor(payload.discord_user_id)
+    qs = Team.objects.filter(org__in=orgs_of(actor))
+    return [
+        {"id": t.pk, "name": t.name, "org_id": t.org_id, "discord_channel_id": t.discord_channel_id}
+        for t in qs
+    ]
+
+
+@router.post("/members", response=list[dict])
+def members(request, payload: DiscordActorIn):
+    actor = _actor(payload.discord_user_id)
+    qs = (
+        User.objects.filter(org_memberships__org__in=orgs_of(actor), is_active=True)
+        .distinct()
+        .order_by("display_name")
+    )
+    return [{"id": u.pk, "display_name": u.display_name} for u in qs]
+
+
+@router.post("/mytasks", response=list[dict])
+def mytasks(request, payload: DiscordActorIn):
+    """`번호` 자동완성용. 그 사람의 미완료만 — 조직 전체는 25개 상한에 걸리고 캐시도 못 한다."""
+    actor = _actor(payload.discord_user_id)
+    qs = visible_tasks(actor).filter(
+        assignee=actor, status__in=Task.OPEN, project__is_archived=False
+    )
+    return [task_brief(t) for t in sorted(qs, key=by_due)]
+
+
+@router.post("/tasks", response=dict)
+def create(request, payload: DiscordTaskCreateIn):
+    actor = _actor(payload.discord_user_id)
+    task = create_task(
+        project=_project(actor, payload.project_id),
+        title=payload.title,
+        assignee=_assignee(payload.assignee_id),
+        priority=payload.priority,
+        due_date=payload.due_date,
+        no_due_reason=payload.no_due_reason,
+        **_ctx(request, actor),
+    )
+    return {"task": task_out(task)}
+
+
+@router.post("/tasks/{task_id}/update", response=dict)
+def update(request, task_id: int, payload: DiscordTaskUpdateIn):
+    actor = _actor(payload.discord_user_id)
+    task = _task(actor, task_id)
+    changes = payload.dict(exclude_unset=True, exclude={"discord_user_id"})
+    if "assignee_id" in changes:
+        changes["assignee"] = _assignee(changes.pop("assignee_id"))
+    if changes:
+        task = update_task(task, changes, expected_version=task.version, **_ctx(request, actor))
+    return {"task": task_out(task)}
+
+
+@router.post("/tasks/{task_id}/note", response=dict)
+def note(request, task_id: int, payload: DiscordNoteIn):
+    """MCP의 append_note와 같은 의미: 기존 메모 뒤에 줄을 덧붙인다."""
+    actor = _actor(payload.discord_user_id)
+    task = _task(actor, task_id)
+    text = payload.text.strip()
+    if not text:
+        raise HttpError(400, "메모 내용을 입력하세요.")
+    notes = f"{task.notes}\n{text}" if task.notes else text
+    task = update_text(task, "notes", notes, actor=actor)
+    return {"task": task_out(task)}
+
+
+@router.post("/tasks/{task_id}/status", response=dict)
+def status(request, task_id: int, payload: DiscordStatusIn):
+    actor = _actor(payload.discord_user_id)
+    task = _task(actor, task_id)
+    was = task.get_status_display()
+    task = transition(
+        task,
+        payload.status,
+        expected_version=task.version,
+        reason=payload.reason,
+        **_ctx(request, actor),
+    )
+    return {"was": was, "task": task_out(task)}
+
+
+@router.post("/teams/{team_id}/channel", response=dict)
+def team_channel(request, team_id: int, payload: DiscordChannelIn):
+    """채널을 만들지 않는다. 봇이 만든 결과 id를 적을 뿐이다(core는 Discord로 나가지 않는다)."""
+    actor = _actor(payload.discord_user_id)
+    team = Team.objects.filter(pk=team_id, org__in=orgs_of(actor)).first()
+    if team is None:
+        raise HttpError(404, "팀을 찾을 수 없습니다.")
+    team = set_team_channel(team, payload.channel_id, actor)
+    return {"id": team.pk, "name": team.name, "discord_channel_id": team.discord_channel_id}
+
+
+@router.post("/projects/{project_id}/channel", response=dict)
+def project_channel(request, project_id: int, payload: DiscordChannelIn):
+    actor = _actor(payload.discord_user_id)
+    project = set_project_channel(_project(actor, project_id), payload.channel_id, actor)
+    return {
+        "id": project.pk,
+        "name": project.name,
+        "discord_channel_id": project.discord_channel_id,
+    }

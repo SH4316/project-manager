@@ -12,6 +12,7 @@
         <span class="badge">{{ project.status_label }}</span>
         {% for l in links %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.get_kind_display }}: {{ l.title }}</a>{% endfor %}
         {% if project.is_archived %}<span class="badge">보관됨</span>{% endif %}
+        {% if project.discord_channel_id %}<span class="muted">Discord 채널 <code>{{ project.discord_channel_id }}</code></span>{% endif %}
       </div>
       <p class="muted t13">{{ project.status_desc }}</p>
     </div>

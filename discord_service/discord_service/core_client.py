@@ -67,6 +67,46 @@ class CoreClient:
             {"discord_user_id": did, "due_date": due_date, "reason": reason},
         )
 
+    # --- 슬래시 명령 (IMPL-PLAN-3). 자동완성 목록도 행위자 범위로만 온다 ---
+
+    def projects(self, did: str) -> list[dict]:
+        return self._bot("/projects", {"discord_user_id": did})
+
+    def teams(self, did: str) -> list[dict]:
+        return self._bot("/teams", {"discord_user_id": did})
+
+    def members(self, did: str) -> list[dict]:
+        return self._bot("/members", {"discord_user_id": did})
+
+    def mytasks(self, did: str) -> list[dict]:
+        return self._bot("/mytasks", {"discord_user_id": did})
+
+    def create_task(self, did: str, fields: dict) -> dict:
+        return self._bot("/tasks", {"discord_user_id": did, **fields})
+
+    def update_task(self, did: str, task_id: int, changes: dict) -> dict:
+        return self._bot(f"/tasks/{task_id}/update", {"discord_user_id": did, **changes})
+
+    def note(self, did: str, task_id: int, text: str) -> dict:
+        return self._bot(f"/tasks/{task_id}/note", {"discord_user_id": did, "text": text})
+
+    def status(self, did: str, task_id: int, status: str, reason: str) -> dict:
+        return self._bot(
+            f"/tasks/{task_id}/status",
+            {"discord_user_id": did, "status": status, "reason": reason},
+        )
+
+    def set_team_channel(self, did: str, team_id: int, channel_id: str) -> dict:
+        return self._bot(
+            f"/teams/{team_id}/channel", {"discord_user_id": did, "channel_id": channel_id}
+        )
+
+    def set_project_channel(self, did: str, project_id: int, channel_id: str) -> dict:
+        return self._bot(
+            f"/projects/{project_id}/channel",
+            {"discord_user_id": did, "channel_id": channel_id},
+        )
+
     def report_status(self, ok: bool, detail: dict):
         try:
             self.http.post("/api/integrations/discord/status", json={"ok": ok, "detail": detail})

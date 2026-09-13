@@ -1,10 +1,12 @@
-"""봇에게 온 DM을 받는 상주 프로세스.
+"""봇에게 온 DM과 슬래시 명령을 받는 상주 프로세스.
 
 `import discord`는 절대 임포트라 site-packages의 discord.py를 가리킨다
 (같은 패키지의 `discord_service/discord.py`가 아니다 — 패키지 디렉터리는 sys.path에 없다).
 
-인텐트는 `DIRECT_MESSAGES`(1<<12) 하나, 비특권이다. 봇에게 온 DM의 본문은
-MESSAGE_CONTENT 특권 인텐트 없이도 전달된다(문서 명시 예외). 특권 인텐트는 켜지 않는다.
+인텐트는 `DIRECT_MESSAGES`(1<<12)와 `GUILDS`(1<<0) 둘, 모두 비특권이다. 봇에게 온 DM의 본문은
+MESSAGE_CONTENT 특권 인텐트 없이도 전달된다(문서 명시 예외). 길드 인텐트는 채널을 만들 길드
+캐시 때문이다. 특권 인텐트는 켜지 않는다. 슬래시 명령(인터랙션)도 게이트웨이로 온다 —
+공개 엔드포인트도 서명 검증도 없다.
 """
 
 import asyncio
@@ -12,30 +14,37 @@ import logging
 import time
 
 import discord
+from discord import app_commands
 
-from .commands import handle
+from .commands import RATE, handle, too_fast  # noqa: F401  (RATE·too_fast는 기존 import 경로 유지)
 from .core_client import CoreClient
 from .discord import chunk
+from .slash import register
 
 log = logging.getLogger(__name__)
-
-# 발신자별 분당 한도. core의 처리량 제한(60/m)은 봇 계정 하나로 세므로 한 사람이
-# 다 쓰면 다른 사람 명령까지 429가 된다.
-RATE = 20
-
-
-def too_fast(seen: dict[str, list[float]], uid: str, now: float) -> bool:
-    recent = [t for t in seen.get(uid, []) if now - t < 60]
-    recent.append(now)
-    seen[uid] = recent
-    return len(recent) > RATE
 
 
 def run(cfg, core: CoreClient):
     intents = discord.Intents.none()
     intents.dm_messages = True
+    intents.guilds = True
     client = discord.Client(intents=intents)
     seen: dict[str, list[float]] = {}
+
+    tree = app_commands.CommandTree(client)
+    guild = discord.Object(id=int(cfg.guild_id)) if cfg.guild_id else None
+    if guild is not None:
+        register(tree, guild, cfg, core, seen)
+    else:
+        log.warning("DISCORD_GUILD_ID 가 없어 슬래시 명령을 등록하지 않습니다 (DM 명령만 동작)")
+
+    async def setup_hook():
+        # 길드 범위 동기화는 즉시 반영된다(전역은 최대 1시간). on_ready는 재접속마다 다시
+        # 불리므로 거기서 하면 매번 API를 때린다.
+        if guild is not None:
+            await tree.sync(guild=guild)
+
+    client.setup_hook = setup_hook
 
     @client.event
     async def on_ready():

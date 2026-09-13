@@ -7,6 +7,7 @@
       <a class="t13" href="{% url 'org_teams' org.pk %}">{{ org.name }}</a>
       <h1 class="t24">{{ team.name }}</h1>
       {% if team.purpose %}<p class="muted">{{ team.purpose }}</p>{% endif %}
+      {% if team.discord_channel_id %}<p class="muted t13">Discord 채널 <code>{{ team.discord_channel_id }}</code></p>{% endif %}
     </div>
     <div class="row">
       <button type="button" class="btn" hx-get="{% url 'team_edit' team.pk %}" hx-target="#dialog" hx-swap="innerHTML">수정</button>

@@ -21,6 +21,7 @@ Webhook은 쓰지 않는다 — 발송은 봇 토큰으로 `discord.com/api/v10`
 | `ORG_ID` | ✅ | — | 마감 스캔·주간 보고 대상 조직 id |
 | `DISCORD_BOT_TOKEN` | ✅ | — | Developer Portal → Bot → `[Reset Token]`. **이 파일 밖으로 내보내지 않는다** |
 | `DISCORD_CHANNEL_ID` | ✅ | — | 주간 보고와 'DM을 못 보냈다' 통보를 받을 채널 id |
+| `DISCORD_GUILD_ID` | | (빈 값) | 슬래시 명령을 등록하고 채널을 만들 서버 id. 비우면 슬래시 명령 없이 DM 명령만 동작 |
 | `TZ` | | `Asia/Seoul` | 판정·표시 기준 시간대 |
 | `SEND_HOUR` | | `9` | 마감 알림을 보낼 시각(시). 이 시각 **이후** 첫 tick에 하루 1회 |
 | `WEEKLY_WEEKDAY` | | `0` | 주간 보고 요일 (0=월) |
@@ -62,13 +63,36 @@ python -m discord_service status                  # 최근 발송·실행 기록
 영어 별칭(`today` · `done` · `extend` · `link` · `unlink`)도 받는다. 변경은 웹에서 한 것과 같은
 검사·같은 이력을 남긴다(행위자는 연결된 **사람**, 경로는 `Discord`).
 
+## 슬래시 명령 (`DISCORD_GUILD_ID`가 있을 때)
+
+같은 core 경로·같은 문구다. 파싱만 Discord가 대신한다. **답장은 전부 나에게만 보인다(ephemeral)** —
+서버 채널은 공유 공간이고 `/오늘`은 그 사람의 업무 목록이기 때문이다.
+
+| 명령 | 인자 |
+|---|---|
+| `/오늘` `/연결해제` `/도움` | — |
+| `/완료` | `번호` |
+| `/연장` | `번호` `기한` `사유` |
+| `/연결` | `코드` |
+| `/태스크만들기` | `프로젝트` `제목` (`기한` `기한미정사유` `중요도` `담당자`) |
+| `/태스크수정` | `번호` (`제목` `기한` `중요도` `담당자` `다음행동`) |
+| `/메모` | `번호` `내용` |
+| `/상태` | `번호` `상태`(목록에서 선택) (`사유`) |
+| `/팀채널` `/프로젝트채널` | `팀`/`프로젝트` (`카테고리`) — 채널을 만들고 core에 연결한다. **부르는 사람이 Discord 서버에서 Manage Channels를 갖고 있고 PM 조직 관리자여야 한다**(둘 다). 봇은 그 사람이 이미 가진 Discord 권한보다 더 주지 않는다 |
+
+`번호`·`프로젝트`·`팀`·`담당자`는 입력하면 목록이 뜬다(내 미완료 태스크·내 조직의 프로젝트·팀·멤버).
+목록도 core가 그 사람 기준으로 준다 — 연결되지 않은 사람에게는 빈 목록이다. 봇 프로세스가 30초 캐시를
+들고 있어 타자마다 core를 부르지 않는다. 명령 동기화는 기동 시 서버 범위로 한 번 한다(즉시 반영).
+
 ## Discord 쪽 준비
 
 1. Developer Portal에서 앱을 만들고 **Bot** 페이지 `[Reset Token]` → `DISCORD_BOT_TOKEN`.
    토큰은 그때 한 번만 보인다. APPLICATION ID·PUBLIC KEY는 필요 없다(인터랙션 엔드포인트를 쓰지 않는다).
 2. **특권 인텐트는 하나도 켜지 않는다.** 봇에게 온 DM의 본문은 MESSAGE CONTENT 없이도 전달된다.
-3. Installation → **Guild Install**, scope `bot`, permissions `VIEW_CHANNEL | SEND_MESSAGES`(=3072).
-   그 링크로 팀 서버에 추가한다.
+3. Installation → **Guild Install**, scope `bot` + `applications.commands`, permissions
+   `VIEW_CHANNEL | SEND_MESSAGES | MANAGE_CHANNELS`(=3088). 그 링크로 팀 서버에 추가한다.
+   Manage Channels는 `/팀채널`·`/프로젝트채널`용이다. **그 밖의 권한(Manage Roles·Manage Server·
+   Administrator)은 주지 않는다.** 서버 id(개발자 모드 → 서버 우클릭 → ID 복사)를 `DISCORD_GUILD_ID`에 넣는다.
 4. 팀원 전원: 서버 우클릭 → 개인정보 보호 설정 → **'서버 멤버의 DM 허용' 켜기.** 꺼져 있으면
    Discord가 `50007`로 영구 거부한다(봇은 친구 추가가 안 되므로 '친구만' 설정은 하드 블록이다).
 5. 토큰이 유출되면 포털에서 `[Reset Token]` → `.env.discord` 수정 → `docker compose up -d discord discord-bot`.

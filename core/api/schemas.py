@@ -298,3 +298,41 @@ class TeamCreateIn(Schema):
 
 class TeamMemberIn(Schema):
     user_id: int
+
+
+# ---------- Discord 슬래시 명령 (IMPL-PLAN-3) ----------
+
+
+class DiscordTaskCreateIn(Schema):
+    discord_user_id: str
+    project_id: int
+    title: str
+    due_date: date | None = None
+    no_due_reason: str = ""
+    priority: int = 5
+    assignee_id: int | None = None
+
+
+class DiscordTaskUpdateIn(Schema):
+    discord_user_id: str
+    title: str | None = None
+    priority: int | None = None
+    due_date: date | None = None
+    assignee_id: int | None = None
+    next_action: str | None = None
+
+
+class DiscordNoteIn(Schema):
+    discord_user_id: str
+    text: str
+
+
+class DiscordStatusIn(Schema):
+    discord_user_id: str
+    status: str
+    reason: str = ""
+
+
+class DiscordChannelIn(Schema):
+    discord_user_id: str
+    channel_id: str = ""

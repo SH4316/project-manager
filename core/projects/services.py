@@ -197,6 +197,14 @@ def restore_project(project, *, actor, source="web", token=None):
     return project
 
 
+def set_project_channel(project, channel_id: str, actor) -> Project:
+    """봇이 만든 채널 id를 적는다. 빈 문자열이면 연결을 끊는다(Discord에서 지워졌을 때)."""
+    require_admin(actor, project.org)
+    Project.objects.filter(pk=project.pk).update(discord_channel_id=(channel_id or "").strip()[:32])
+    project.refresh_from_db()
+    return project
+
+
 def project_stats(project) -> dict:
     """{'total','open','overdue','review','blocked','done'}. total은 취소를 뺀 수."""
     from tasks.models import Task
