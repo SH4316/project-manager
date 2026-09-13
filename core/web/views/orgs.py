@@ -143,9 +143,7 @@ def member_tags(request, membership_id):
 def _member_redirect(request, org_id):
     # 팀 화면은 관리자 전용이다. 권한 없이 POST한 사람을 여기로 보내면 "관리자만 할 수
     # 있습니다" 메시지가 404 페이지에 묻힌다. 그 사람은 조직 현황으로 보낸다.
-    is_admin = OrgMembership.objects.filter(
-        org_id=org_id, user=request.user, role="admin"
-    ).exists()
+    is_admin = OrgMembership.objects.filter(org_id=org_id, user=request.user, role="admin").exists()
     return redirect("org_teams" if is_admin else "org_detail", org_id=org_id)
 
 
