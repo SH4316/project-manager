@@ -786,3 +786,31 @@ def test_spec_upload_saves_and_shows_endpoints(logged, project):
 def test_api_tab_requires_membership(client, outsider, project):
     client.login(username="outsider", password="pw12345678")
     assert client.get(f"/projects/{project.pk}/api").status_code == 404
+
+
+def test_git_panel_forms_are_htmx():
+    """git 뷰는 전부 _panel 조각만 돌려준다 — 평범한 POST면 레이아웃 없는 조각 페이지로 튄다."""
+    from pathlib import Path
+
+    src = (Path(__file__).parent / "templates" / "tasks" / "_git.html").read_text(encoding="utf-8")
+    assert 'method="post"' not in src
+    assert src.count("<form") == src.count("hx-post")
+
+
+def test_panel_survives_changelog_without_actor(logged, task):
+    """GitHub 웹훅이 남긴 로그는 actor가 비고 external_actor만 있다."""
+    from tasks.models import ChangeLog
+
+    ChangeLog.objects.create(
+        target_type="task",
+        target_id=task.pk,
+        field="status",
+        old_value="todo",
+        new_value="doing",
+        actor=None,
+        external_actor="ghost",
+        source="gh",
+    )
+    body = logged.get(f"/tasks/{task.pk}/panel")
+    assert body.status_code == 200
+    assert "ghost" in body.content.decode()

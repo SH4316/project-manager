@@ -174,7 +174,8 @@ def history_rows(logs) -> list[dict]:
                 "from": _display(log.field, log.old_value),
                 "to": to,
                 "time": f"{at.month}월 {at.day}일 {at:%H:%M}",
-                "actor": log.actor.display_name,
+                # actor가 비면 GitHub 로그인(external_actor)이 대신 남아 있다 — 모델 주석 참고.
+                "actor": log.actor.display_name if log.actor else (log.external_actor or "GitHub"),
                 "source": log.get_source_display(),
             }
         )

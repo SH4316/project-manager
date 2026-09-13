@@ -14,27 +14,27 @@
       <span class="dot">{% if gh.link.issue_number %}&#10003;{% else %}&#9675;{% endif %}</span>
       <span>이슈{% if gh.link.issue_number %} #{{ gh.link.issue_number }} {{ gh.link.issue_title }}{% endif %}</span>
       {% if not gh.link.issue_number %}
-      <form method="post" action="{% url 'git_issue' task.pk %}" class="row">{% csrf_token %}
+      <form class="row" hx-post="{% url 'git_issue' task.pk %}" hx-target="#panel" hx-swap="innerHTML">
         <select name="number" class="select auto" aria-label="이슈 선택">
           <option value="">이슈 선택</option>
           {% for i in gh.issues %}<option value="{{ i.number }}">#{{ i.number }} {{ i.title }}</option>{% endfor %}
         </select>
         <button class="btn sm">이슈 연결</button>
       </form>
-      <form method="post" action="{% url 'git_issue_create' task.pk %}"><button class="btn sm">이슈 만들기</button></form>
+      <form hx-post="{% url 'git_issue_create' task.pk %}" hx-target="#panel" hx-swap="innerHTML"><button class="btn sm">이슈 만들기</button></form>
       {% elif task.status == "done" and gh.link.issue_state == "open" %}
-      <form method="post" action="{% url 'git_issue_close' task.pk %}"><button class="btn sm">이슈 #{{ gh.link.issue_number }} 닫기</button></form>
+      <form hx-post="{% url 'git_issue_close' task.pk %}" hx-target="#panel" hx-swap="innerHTML"><button class="btn sm">이슈 #{{ gh.link.issue_number }} 닫기</button></form>
       {% endif %}
     </li>
     <li class="{% if gh.link.branch %}done{% endif %}">
       <span class="dot">{% if gh.link.branch %}&#10003;{% else %}&#9675;{% endif %}</span>
       <span>브랜치{% if gh.link.branch %} {{ gh.link.branch }}{% endif %}</span>
       {% if not gh.link.branch %}
-      <form method="post" action="{% url 'git_branch' task.pk %}" class="row">{% csrf_token %}
+      <form class="row" hx-post="{% url 'git_branch' task.pk %}" hx-target="#panel" hx-swap="innerHTML">
         <input class="input" name="branch" placeholder="branch-name" aria-label="브랜치 이름">
         <button class="btn sm">브랜치 연결</button>
       </form>
-      <form method="post" action="{% url 'git_branch_create' task.pk %}" class="row">{% csrf_token %}
+      <form class="row" hx-post="{% url 'git_branch_create' task.pk %}" hx-target="#panel" hx-swap="innerHTML">
         <input class="input" name="name" value="{{ gh.default_branch_name }}" aria-label="새 브랜치 이름">
         <button class="btn sm">브랜치 만들기</button>
       </form>
@@ -68,7 +68,7 @@
   {% endif %}
   <p class="muted t12">커밋 메시지에 <code>TASK-{{ task.pk }}:2</code>처럼 적으면 그 항목이 자동으로 체크됩니다.</p>
   {% if gh.link %}
-  <form method="post" action="{% url 'git_unlink' task.pk %}"><button class="btn sm">GitHub 연결 해제</button></form>
+  <form hx-post="{% url 'git_unlink' task.pk %}" hx-target="#panel" hx-swap="innerHTML"><button class="btn sm">GitHub 연결 해제</button></form>
   {% endif %}
   {% endif %}
 </div>
