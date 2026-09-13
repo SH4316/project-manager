@@ -155,6 +155,33 @@ def test_me_team_view_read_only(logged, task):
     assert "disabled" in body
 
 
+def test_me_group_buttons_toggle_off(logged, task):
+    pressed = 'aria-pressed="true"'
+
+    def group_row(body):
+        return body.split('aria-label="묶음"')[1].split('aria-label="정렬"')[0]
+
+    # 기본·오타는 기한별. 눌린 버튼은 다시 누르면 "none"을 보낸다
+    for url in ("/me?member=0", "/me?member=0&group=nonsense"):
+        body = logged.get(url).content.decode()
+        assert group_row(body).count(pressed) == 1
+        assert 'value="none" aria-pressed="true">기한별' in body
+        assert "<h2>기한 초과 <" in body and "<h2>미완료 <" not in body
+    body = logged.get("/me?member=0&group=none").content.decode()
+    assert pressed not in group_row(body)
+    assert 'value="due" aria-pressed="false">기한별' in body
+    assert "<h2>미완료 <" in body and "<h2>기한 초과 <" not in body
+
+
+def test_me_sort_survives_filters(logged, task):
+    body = logged.get("/me?member=0&sort=priority&due=overdue").content.decode()
+    assert 'value="priority" aria-pressed="true">중요도' in body
+    assert '<input type="hidden" name="sort" value="priority">' in body
+    assert "&group=due&sort=priority" in body  # 필터 지우기 링크
+    body = logged.get("/me?member=0&sort=nonsense").content.decode()
+    assert 'value="due" aria-pressed="true">기한' in body
+
+
 def test_org_page_renders(logged, org, project):
     body = logged.get(f"/orgs/{org.pk}").content.decode()
     assert "미완료" in body

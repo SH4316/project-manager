@@ -32,7 +32,13 @@ def me(request):
     project = (
         project_or_404(request.user, g["project"]) if g.get("project", "").isdecimal() else None
     )
-    group = g.get("group") if g.get("group") in dict(ts.GROUP_OPTIONS) else "due"
+    # "none"은 눌린 버튼을 다시 눌러 묶음을 푼 상태. 파라미터 없음(첫 방문)과 오타는 기한별
+    group = g.get("group", "due")
+    if group != "none" and group not in dict(ts.GROUP_OPTIONS):
+        group = "due"
+    sort = g.get("sort", "due")
+    if sort not in dict(ts.SORT_OPTIONS):
+        sort = "due"
     f = {
         "due": g.get("due", ""),
         "project": g.get("project", ""),
@@ -43,6 +49,7 @@ def me(request):
         request.user,
         member=member,
         group=group,
+        sort=sort,
         due=f["due"],
         project=project,
         status=f["status"],
@@ -62,6 +69,7 @@ def me(request):
             "view": view,
             "groups": view["groups"],
             "group": group,
+            "sort": sort,
             "f": f,
             "has_filter": any(f.values()),
             "member_id": member_id,
@@ -77,5 +85,6 @@ def me(request):
             "status_options": ts.STATUS_FILTERS,
             "priority_options": ts.PRIORITY_FILTERS,
             "group_options": ts.GROUP_OPTIONS,
+            "sort_options": ts.SORT_OPTIONS,
         },
     )

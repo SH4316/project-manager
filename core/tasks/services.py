@@ -39,6 +39,7 @@ STATUS_FILTERS = (
 )
 PRIORITY_FILTERS = [("", "모든 중요도")] + Task.TIER_LABELS
 GROUP_OPTIONS = [("due", "기한별"), ("project", "프로젝트별"), ("status", "상태별")]
+SORT_OPTIONS = [("due", "기한"), ("priority", "중요도"), ("updated", "최근 수정")]
 
 
 # ---------- 공통 ----------
@@ -667,9 +668,18 @@ def _due_preds(today: date) -> dict:
 
 
 def me_view(
-    user, *, member=None, group="due", due="", project=None, status="", priority=""
+    user,
+    *,
+    member=None,
+    group="due",
+    sort="due",
+    due="",
+    project=None,
+    status="",
+    priority="",
 ) -> dict:
     """내 태스크 화면 데이터. member: None=나, 0=조직 전체, User=다른 팀원.
+    group: due/project/status, "none"이면 묶지 않고 한 목록. sort: SORT_OPTIONS 코드.
     반환: {title, hint, groups, read_only, completion}
     groups[i]: {title, count, empty_text, flat, tasks, projects:[{project, done, total, pct, tasks}]}
     flat이면 tasks를 그대로, 아니면 projects의 하위 묶음으로 그린다."""
@@ -696,7 +706,9 @@ def me_view(
     if priority in Task.TIERS:
         lo, hi = Task.TIERS[priority]
         qs = qs.filter(priority__gte=lo, priority__lte=hi)
-    tasks = sorted(qs, key=by_due)
+    # 정렬은 묶기 전에 한 번. 하위 묶음은 이 순서를 걸러 쓰므로 그룹 안에서도 같은 순서다
+    keys = {"priority": _rank, "updated": lambda t: (-t.updated_at.timestamp(), -t.pk)}
+    tasks = sorted(qs, key=keys.get(sort, by_due))
     if due in preds:
         tasks = [t for t in tasks if preds[due](t)]
 
@@ -737,6 +749,9 @@ def me_view(
     if completion:
         title = "오늘 완료" if status == "done_today" else "지난 7일 완료"
         groups = [grp(title, lambda t: True, "완료한 태스크가 없습니다.", flat=True)]
+    elif group == "none":
+        # 묶음 해제. 묶인 화면과 같은 정렬 순서라 토글해도 행이 섞이지 않는다
+        groups = [grp("미완료", lambda t: True, flat=True)] if tasks else []
     elif group == "project":
         groups = [grp(p.name, eq("project_id", p.pk), flat=True) for p in projects_of(tasks)]
     elif group == "status":

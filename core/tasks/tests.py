@@ -555,6 +555,39 @@ def test_me_view_filters(five, member, project):
     assert v["groups"][0]["title"] == "오늘 완료"
 
 
+def test_me_view_ungrouped_is_one_flat_list(five, member, project):
+    grouped = [t for g in me_view(member)["groups"] for t in g["tasks"]]
+    v = me_view(member, group="none")
+    assert len(v["groups"]) == 1
+    g = v["groups"][0]
+    assert g["title"] == "미완료" and g["flat"] is True
+    # 기한별 묶음을 이어 붙인 순서 그대로여야 토글해도 행이 안 섞인다
+    assert g["tasks"] == grouped
+    assert sum(x["count"] for x in me_view(member, group="none", due="overdue")["groups"]) == 1
+    v = me_view(member, group="none", priority="high")
+    assert [x["title"] for x in v["groups"]] == ["결과 없음"]
+
+
+def test_me_view_sort_orders_inside_groups(five, member):
+    yesterday, today, week, nxt, none = five
+    for t, p in ((none, 9), (nxt, 8)):
+        update_task(t, {"priority": p}, actor=member, source="web", expected_version=t.version)
+
+    def order(**kw):
+        return [t.title for g in me_view(member, **kw)["groups"] for t in g["tasks"]]
+
+    by_due = ["어제", "오늘", "이번 주", "다음 주", "미정"]
+    assert order() == by_due
+    assert order(sort="nonsense") == by_due
+    by_pri = ["미정", "다음 주", "어제", "오늘", "이번 주"]
+    assert order(group="none", sort="priority") == by_pri
+    assert order(group="none", sort="updated") == ["다음 주", "미정", "이번 주", "오늘", "어제"]
+    # 묶어도 하위 목록이 같은 순서여야 한다
+    v = me_view(member, group="status", sort="priority")
+    assert [t.title for t in v["groups"][0]["projects"][0]["tasks"]] == by_pri
+    assert order(sort="priority")[:2] == ["어제", "오늘"]  # 기한별 묶음 안에서 중요도순
+
+
 def test_me_view_member_scope(five, admin, member):
     v = me_view(admin, member=0)
     assert v["read_only"] is True
