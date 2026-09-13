@@ -72,7 +72,8 @@ def test_list_tasks_filters_and_paging(api, project, member, org):
     r = api.get(f"/api/tasks?org={org.pk}&status=todo&limit=2&offset=0")
     assert r.json()["total"] == 3
     assert len(r.json()["items"]) == 2
-    assert api.get("/api/tasks?status=bogus").status_code == 400
+    r = api.get("/api/tasks?status=bogus")
+    assert r.status_code == 400 and "todo, doing" in r.json()["detail"]
     assert api.get("/api/tasks?status=blocked").json()["total"] == 0
 
 

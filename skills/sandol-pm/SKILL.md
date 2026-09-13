@@ -22,12 +22,13 @@ description: 산돌이 PM(조직 업무 관리)을 MCP로 다룬다. 태스크�
 |---|---|
 | 태스크 만들기 | `list_members` → `list_projects` → `create_task` |
 | 진행 시작 | `get_task` → 기한 없으면 먼저 `update_task(due_date=...)` → `transition_task("doing")` |
-| 막힘 보고 | `transition_task("blocked", reason="무엇이 필요한지")` |
+| 막힘 보고 | `transition_task("blocked", stop_reason="무엇이 필요한지")` |
 | 끝냈다 보고 | `transition_task("review")` — `done`은 확인하는 사람이 바꾼다 |
 | 진행 기록 | `append_note` (덧붙임). `update_task(notes=)`는 통째로 교체하니 주의 |
 | 기한 조정 | `get_task`로 version 확인 → `update_task(due_date=)` → `append_note`로 미룬 이유 |
 | 밀린 것 찾기 | `list_tasks(status="todo,doing,paused,blocked,review", due_to=오늘)` |
 | 팀 구성 | `list_teams` → `create_team` → `list_members` → `add_team_member` |
+| 팀에서 빼기 | `remove_team_member` — 조직 멤버십과 태스크는 그대로 남는다 |
 | 프로젝트 담당 팀 | `get_project`로 version → `set_project_teams` |
 | 주간 보고 | `get_weekly_report_data` — 여기 없는 진척은 만들어 쓰지 않는다 |
 

@@ -9,6 +9,15 @@ class CoreError(Exception):
     pass
 
 
+def _detail(r: httpx.Response) -> str:
+    # 라우터 밖 404는 JSON이 아닐 수 있다.
+    try:
+        d = r.json().get("detail")
+    except ValueError:
+        return ""
+    return d if isinstance(d, str) else ""
+
+
 class Core:
     def __init__(self, token: str, transport=None):
         self.http = httpx.Client(
@@ -28,7 +37,8 @@ class Core:
         if r.status_code == 403:
             raise CoreError("이 토큰으로는 할 수 없는 작업입니다(읽기 전용).")
         if r.status_code == 404:
-            raise CoreError("대상을 찾을 수 없습니다.")
+            # core는 무엇을 못 찾았는지(프로젝트·사용자·팀…) 이미 말해 준다. 그대로 전달한다.
+            raise CoreError(_detail(r) or "대상을 찾을 수 없습니다.")
         if r.status_code == 409:
             latest = r.json().get("latest", {})
             raise CoreError(

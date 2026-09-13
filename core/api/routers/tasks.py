@@ -60,7 +60,10 @@ def list_tasks(
         values = [s.strip() for s in status.split(",") if s.strip()]
         bad = [s for s in values if s not in dict(Task.STATUSES)]
         if bad:
-            raise HttpError(400, f"알 수 없는 상태: {', '.join(bad)}")
+            raise HttpError(
+                400,
+                f"알 수 없는 상태: {', '.join(bad)}. 가능한 값: {', '.join(dict(Task.STATUSES))}",
+            )
         qs = qs.filter(status__in=values)
     if due_from:
         qs = qs.filter(due_date__gte=due_from)

@@ -74,9 +74,26 @@ def test_transition_blocked_needs_reason(fake_core, with_token):
     with pytest.raises(CoreError) as e:
         fn("transition_task")(1, "blocked", version=1)
     assert "막힘 사유" in str(e.value)
-    out = fn("transition_task")(1, "blocked", version=1, reason="서류")
+    out = fn("transition_task")(1, "blocked", version=1, stop_reason="서류")
     assert out["status"] == "blocked"
     assert out["stop_reason"] == "서류"
+    # core에는 예전 이름(reason)으로 간다. 오류가 말하는 stop_reason과 도구 인자 이름은 같아야 한다.
+    assert last_body(fake_core)["reason"] == "서류"
+
+
+def test_404_keeps_core_message(fake_core, with_token):
+    with pytest.raises(CoreError) as e:
+        fn("create_task")(project_id=999, title="x", due_date="2026-09-20")
+    assert str(e.value) == "프로젝트를 찾을 수 없습니다."
+    with pytest.raises(CoreError) as e:
+        fn("add_team_member")(team_id=1, user_id=999)
+    assert str(e.value) == "사용자를 찾을 수 없습니다."
+
+
+def test_404_without_json_falls_back(fake_core, with_token):
+    with pytest.raises(CoreError) as e:
+        fn("get_project")(404)
+    assert str(e.value) == "대상을 찾을 수 없습니다."
 
 
 def test_update_conflict_message(fake_core, with_token):
