@@ -278,3 +278,16 @@ def test_team_write_api(client, org, admin, member):
     assert r.status_code == 200 and r.json()["member_count"] == 1
     r = client.delete(f"/api/orgs/teams/{team_id}/members/{member.pk}", headers=h)
     assert r.status_code == 200 and r.json()["member_count"] == 0
+
+
+def test_member_sees_permission_error_instead_of_404(client, org, member):
+    """관리자 전용 동작을 일반 멤버가 POST하면 오류 메시지를 볼 수 있는 곳으로 보낸다.
+
+    팀 화면은 관리자 전용이라 거기로 보내면 메시지가 404에 묻힌다.
+    """
+    client.force_login(member)
+    r = client.post(f"/orgs/{org.pk}/invites", {})
+    assert r.status_code == 302
+    assert r.url == f"/orgs/{org.pk}"
+    assert client.get(r.url).status_code == 200  # 메시지를 실제로 볼 수 있다
+    assert org.invites.count() == 0
