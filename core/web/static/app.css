@@ -68,6 +68,15 @@ p { margin: 0; }
   border-radius: 6px; color: var(--text-primary); text-decoration: none; cursor: pointer;
 }
 .menu-list a:hover, .menu-list button:hover { background: var(--bg-secondary); }
+/* 조직 전환: 로고 자리가 손잡이다. .menu-list는 오른쪽 정렬이라 왼쪽 변형만 덧붙인다. */
+.switcher > summary.logo { display: inline-flex; align-items: center; gap: 6px; }
+.switcher > summary.logo > span { max-width: 15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switcher .caret { flex: none; color: var(--text-secondary); transition: transform .12s ease; }
+.switcher[open] .caret { transform: rotate(180deg); }
+.menu-list.start { right: auto; left: 0; }
+.menu-list a[aria-current="true"] { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
+.menu-list .menu-new { margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; padding-top: 10px; }
+@media (prefers-reduced-motion: reduce) { .switcher .caret { transition: none; } }
 .frame { display: flex; align-items: flex-start; }
 .rail { position: sticky; top: 64px; flex: none; width: 200px; padding: 16px 8px; display: flex; flex-direction: column; gap: 2px; }
 .rail.collapsed { width: 56px; }

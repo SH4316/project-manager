@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone
 
 from accounts.models import ApiToken, User
@@ -9,6 +10,18 @@ from orgs.models import OrgMembership
 from orgs.services import add_team_member, create_org, create_team
 from projects.services import create_project
 from tasks.services import create_task
+
+
+@pytest.fixture(autouse=True)
+def _clear_throttle_cache():
+    """테스트마다 처리량 제한 카운터를 비운다.
+
+    `UserRateThrottle("60/m")`은 사용자 pk로 locmem 캐시에 센다. 캐시는 테스트 사이에
+    살아남고 SQLite는 롤백으로 pk를 되돌려 쓰므로, 서로 다른 테스트의 `member`가 같은
+    분당 버킷을 공유해 스위트가 커지면 엉뚱한 테스트가 429로 깨진다.
+    """
+    cache.clear()
+    yield
 
 
 @pytest.fixture

@@ -57,9 +57,13 @@ def project_or_404(user, project_id):
     return p
 
 
-def current_org(request):
-    """세션의 org_id가 내 조직이면 그 조직, 아니면 이름순 첫 조직. 조직이 없으면 None."""
-    orgs = list(orgs_of(request.user).order_by("name"))
+def current_org(request, orgs=None):
+    """세션의 org_id가 내 조직이면 그 조직, 아니면 이름순 첫 조직. 조직이 없으면 None.
+
+    orgs를 주면 그것을 쓴다 — 셸이 조직 목록(전환 패널)을 이미 읽었을 때 같은 질의를 두 번 하지 않는다.
+    """
+    if orgs is None:
+        orgs = list(orgs_of(request.user).order_by("name"))
     if not orgs:
         return None
     oid = request.session.get("org_id")

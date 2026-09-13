@@ -10,7 +10,26 @@
 </head>
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-page-url="{% block page_url %}{{ page_url }}{% endblock %}">
 <header class="header">
+  {% if user.is_authenticated %}
+  {# 조직 이름이 곧 전환 손잡이다. 열면 다른 조직과 새 조직 만들기가 나온다. #}
+  <details class="menu switcher">
+    <summary class="logo" aria-label="조직 전환">
+      <span>{{ current_org.name|default:"산돌이 태스크" }}</span>
+      <svg class="caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+        <path d="M2 4.5 6 8.5 10 4.5" fill="none" stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </summary>
+    <div class="menu-list start">
+      {% for o in my_orgs %}
+      <a href="{% url 'org_detail' o.pk %}"{% if o.pk == current_org.pk %} aria-current="true"{% endif %}>{{ o.name }}</a>
+      {% endfor %}
+      <a class="menu-new" href="{% url 'org_new' %}">＋ 새 조직 만들기</a>
+    </div>
+  </details>
+  {% else %}
   <a class="logo" href="{% url 'today' %}">산돌이 태스크</a>
+  {% endif %}
   {% if user.is_authenticated %}
   <nav class="nav" aria-label="주 메뉴">
     <a href="{% url 'today' %}"{% if nav == "today" %} aria-current="page"{% endif %}>오늘</a>
@@ -31,7 +50,6 @@
       <span class="muted t13" style="padding:4px 10px">{{ user.display_name }}</span>
       <a href="{% url 'profile' %}">프로필</a>
       <a href="{% url 'tokens' %}">API 토큰</a>
-      {% if org_count > 1 %}<a href="{% url 'org_list' %}">조직 전환</a>{% endif %}
       {% if user.is_staff %}<a href="{% url 'ops' %}">운영 상태</a>{% endif %}
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">로그아웃</button></form>
     </div>

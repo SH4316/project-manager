@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db.models import Count, Q
 
+from orgs.services import orgs_of
 from tasks.models import Task
 
 from .views.common import current_org
@@ -36,7 +37,9 @@ def shell(request):
         from github.services import refresh_github_access
 
         refresh_github_access(request)
-    org = current_org(request)
+    # 셸이 조직 전환 패널을 그리므로 목록을 여기서 한 번 읽고 current_org에 넘긴다.
+    my_orgs = list(orgs_of(request.user).order_by("name"))
+    org = current_org(request, my_orgs)
     match = request.resolver_match
     url_name = match.url_name if match else ""
     nav = NAV_BY_URL.get(url_name, "")
@@ -49,10 +52,10 @@ def shell(request):
         )
     return {
         "current_org": org,
+        "my_orgs": my_orgs,
         "nav_projects": projects,  # 프로젝트 영역이 아니면 빈 목록이라 레일이 렌더되지 않는다
         "nav": nav,
         "current_project_id": match.kwargs.get("project_id") if match else None,
         "page_url": request.get_full_path(),
-        "org_count": request.user.orgs.count(),
         "github_enabled": settings.GITHUB_ENABLED,
     }
