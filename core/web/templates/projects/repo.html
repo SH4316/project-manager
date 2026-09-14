@@ -40,14 +40,9 @@
   <form method="post" action="{% url 'repo_settings' project.pk %}" class="stack">{% csrf_token %}
     <div class="row">
       <label class="field">라벨 필터<input class="input" name="import_label" value="{{ state.conn.import_label }}" placeholder="task"></label>
-      <label class="field">기본 담당자
-        <select name="assignee_default" class="select">
-          <option value="issue"{% if state.conn.assignee_default == "issue" %} selected{% endif %}>이슈 담당자</option>
-          <option value="none"{% if state.conn.assignee_default == "none" %} selected{% endif %}>비워 두기</option>
-        </select>
-      </label>
     </div>
     <label class="row"><input type="checkbox" name="auto_import" {% if state.conn.auto_import %}checked{% endif %}> 새 이슈 자동 가져오기</label>
+    <p class="muted t12">GitHub를 연결한 조직 멤버가 <b>배정된</b> 이슈만 가져오고, 그 사람이 담당자가 됩니다. 배정되지 않은 이슈는 기록만 남고 아래 목록에서 손으로 가져올 수 있습니다.</p>
     <div class="row t13">
       <label class="row"><input type="checkbox" name="rule_issue" {% if state.conn.rule_issue %}checked{% endif %}> 이슈 → 태스크</label>
       <label class="row"><input type="checkbox" name="rule_branch" {% if state.conn.rule_branch %}checked{% endif %}> 브랜치 연결 → 진행 중</label>

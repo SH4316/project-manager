@@ -219,7 +219,6 @@ def repo_settings(request, project_id):
     if conn is None:
         raise Http404
     conn.import_label = request.POST.get("import_label", "")[:50]
-    conn.assignee_default = "issue" if request.POST.get("assignee_default") == "issue" else "none"
     conn.auto_import = request.POST.get("auto_import") == "on"
     for field in ("rule_issue", "rule_branch", "rule_commit", "rule_pr", "rule_merge"):
         setattr(conn, field, request.POST.get(field) == "on")

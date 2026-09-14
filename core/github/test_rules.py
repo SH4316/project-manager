@@ -225,7 +225,12 @@ def test_rules_off_do_nothing(gh, client, conn, task):
 # ---------- 이슈 가져오기 ----------
 
 
-def test_issue_import_creates_task_and_link(gh, client, conn, admin):
+def test_unassigned_issue_is_not_imported(gh, client, conn, admin):
+    """배정 없는 이슈는 auto_import가 켜져 있어도 태스크가 되지 않는다.
+
+    이슈는 저장소를 볼 수 있는 누구나 열 수 있다. 배정을 문턱으로 두지 않으면 공개 저장소에서
+    이슈만 열어도 PM에 태스크가 쌓인다.
+    """
     conn.auto_import = True
     conn.import_label = ""
     conn.save(update_fields=["auto_import", "import_label"])
@@ -238,8 +243,11 @@ def test_issue_import_creates_task_and_link(gh, client, conn, admin):
     r = signed(client, payload, "issues", "issue-1")
     assert r.status_code == 200
     issue = RepoIssue.objects.get(connection=conn, number=42)
-    assert issue.task is not None
-    assert issue.task.git.issue_number == 42
+    assert issue.task is None  # 기록만 남는다
+    assert (
+        GitEvent.objects.get(delivery_id__startswith="issue-1").result
+        == "담당자 미배정 · 가져오지 않음"
+    )
 
 
 def test_issue_closed_closes_task(gh, client, conn, task):
@@ -257,33 +265,42 @@ def test_issue_closed_closes_task(gh, client, conn, task):
     assert task.status == "done"
 
 
-def test_import_actor_fallback(gh, client, conn, admin, project):
+def test_import_actor_fallback(gh, client, conn, admin, member, project):
+    """배정된 멤버가 있으면 행위자는 sender → 프로젝트 첫 관리자 → 그 멤버 순으로 정해진다."""
     conn.auto_import = True
     conn.import_label = ""
     conn.save(update_fields=["auto_import", "import_label"])
+    GitHubIdentity.objects.create(user=member, github_id=42, login="member-gh")
     payload = {
         "action": "opened",
         "repository": {"full_name": "o/r"},
-        "issue": {"number": 55, "title": "폴백", "body": "", "labels": [], "assignee": None},
+        "issue": {
+            "number": 55,
+            "title": "폴백",
+            "body": "",
+            "labels": [],
+            "assignee": {"login": "member-gh"},
+        },
         "sender": {"id": 1234, "login": "outsider-dev"},
     }
     signed(client, payload, "issues", "fallback-1")
     issue = RepoIssue.objects.get(connection=conn, number=55)
     assert issue.task is not None
     assert issue.task.created_by_id == admin.pk  # sender 매핑 안 됨 → 프로젝트 첫 관리자
+    assert issue.task.assignee_id == member.pk
 
     project.owners.clear()
     payload["issue"]["number"] = 56
     signed(client, payload, "issues", "fallback-2")
     issue2 = RepoIssue.objects.get(connection=conn, number=56)
-    assert issue2.task is None  # 행위자를 못 정하면 태스크를 만들지 않는다
+    assert issue2.task is not None  # 관리자가 없어도 배정된 멤버가 행위자가 되어 막히지 않는다
+    assert issue2.task.created_by_id == member.pk
 
 
 def test_import_assignee_from_issue(gh, client, conn, admin, member):
     conn.auto_import = True
-    conn.assignee_default = "issue"
     conn.import_label = ""
-    conn.save(update_fields=["auto_import", "assignee_default", "import_label"])
+    conn.save(update_fields=["auto_import", "import_label"])
     GitHubIdentity.objects.create(user=member, github_id=42, login="member-gh")
     payload = {
         "action": "opened",

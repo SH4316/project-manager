@@ -664,7 +664,7 @@ def _find_task(conn, *texts):
 | `rule_commit` | `push`, 커밋 메시지 또는 브랜치로 태스크를 찾음 | `commits`에 추가. `:N`이 있으면 체크리스트 N번째를 체크 |
 | `rule_pr` | `pull_request opened`, 제목·본문·브랜치에 번호 | PR 필드 저장 + `transition(review)` |
 | `rule_merge` | `pull_request closed` && `merged` | `transition(done)` + `pr_state="merged"` |
-| `rule_issue` | `issues opened` + 라벨 일치 + `auto_import` | 태스크 생성 + 이슈 연결 |
+| `rule_issue` | `issues opened` + 라벨 일치 + `auto_import` + **GitHub를 연결한 조직 멤버가 배정됨** | 태스크 생성(담당자=배정된 멤버) + 이슈 연결. 배정 없으면 기록만 |
 | `rule_issue` | `issues closed` | 연결 태스크가 열려 있으면 `transition(done)` |
 
 상태 전환은 **반드시 `tasks.services.transition()`을 지난다.** 규칙이 직접 `status`를 쓰지 않는다.
@@ -686,30 +686,35 @@ def _apply(task, status, *, actor, actor_login, note=""):
 
 기한 없는 태스크를 진행 중으로 못 바꾸는 경우가 여기 걸린다. 브랜치 연결은 유지하고 이벤트 표에 "기한이 없어 진행 중으로 못 바꿈"이 남는다.
 
-### 이슈 자동 가져오기의 행위자와 담당자
+### 이슈 자동 가져오기의 문턱, 행위자, 담당자
 
-`Task.created_by`와 `Task.assignee`는 NOT NULL이다. 웹훅에는 PM 사용자가 없으므로 폴백을 정한다.
+**2026-09-14 개정.** 자동 가져오기는 **GitHub를 연결한 조직 멤버가 배정된 이슈만** 가져온다. 이슈는 저장소를
+볼 수 있는 누구나 열 수 있지만 배정은 협업자만 할 수 있다 — 이 문턱이 없으면 공개 저장소에서 이슈만 열어도
+PM에 태스크가 쌓인다. 배정되지 않은 이슈는 `RepoIssue`와 이벤트(`담당자 미배정 · 가져오지 않음`)만 남기고,
+저장소 탭에서 사람이 [태스크로 가져오기]를 누르면 그때는 누른 사람이 행위자다.
 
 ```python
+def _assigned_member(conn, issue):
+    """이슈에 배정된 사람이 GitHub를 연결한 조직 멤버면 그 사용자, 아니면 None."""
+    login = ((issue.get("assignee") or {}).get("login")) or ""
+    if not login:
+        return None
+    identity = GitHubIdentity.objects.filter(login__iexact=login).select_related("user").first()
+    if identity and identity.user.is_active and is_member(identity.user, conn.project.org):
+        return identity.user
+    return None
+
+
 def _import_actor(conn, payload):
-    """행위자: sender가 PM 사용자면 그 사람 → 프로젝트 첫 관리자 → 없으면 None(가져오지 않는다)."""
+    """행위자: sender가 PM 사용자면 그 사람 → 프로젝트 첫 관리자 → 없으면 None."""
     sender = _user_for_sender(payload)
     if sender is not None:
         return sender
     return conn.project.owners.filter(is_active=True).order_by("id").first()
-
-
-def _import_assignee(conn, issue, actor):
-    """담당자: 설정이 issue면 이슈 assignee의 PM 사용자 → 없으면 actor."""
-    if conn.assignee_default == "issue":
-        login = ((issue.get("assignee") or {}).get("login")) or ""
-        identity = GitHubIdentity.objects.filter(login__iexact=login).select_related("user").first()
-        if identity and identity.user.is_active and is_member(identity.user, conn.project.org):
-            return identity.user
-    return actor
 ```
 
-행위자를 못 정하면 태스크를 만들지 않고 `RepoIssue`만 남긴다. 저장소 탭에서 [태스크로 가져오기]를 누르면 그때는 누른 사람이 행위자다.
+담당자는 배정된 멤버다. 행위자는 `_import_actor(...) or member` — 배정된 멤버가 있는 한 행위자가 비어 막히는
+일은 없다. `RepoConnection.assignee_default` 열은 더 이상 읽지 않는다(설정 라운드에서 마이그레이션과 함께 지운다).
 
 ### 커밋 목록 상한
 

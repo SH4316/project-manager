@@ -594,17 +594,19 @@ def _import_actor(conn, payload):
     return conn.project.owners.filter(is_active=True).order_by("id").first()
 
 
-def _import_assignee(conn, issue, actor):
-    """담당자: 설정이 issue면 이슈 assignee의 PM 사용자 → 없으면 actor."""
-    if conn.assignee_default == "issue":
-        login = ((issue.get("assignee") or {}).get("login")) or ""
-        if login:
-            identity = (
-                GitHubIdentity.objects.filter(login__iexact=login).select_related("user").first()
-            )
-            if identity and identity.user.is_active and is_member(identity.user, conn.project.org):
-                return identity.user
-    return actor
+def _assigned_member(conn, issue):
+    """이슈에 배정된 사람이 GitHub를 연결한 조직 멤버면 그 사용자, 아니면 None.
+
+    자동 가져오기의 문턱이다. 이슈는 저장소를 볼 수 있는 누구나 열 수 있지만 배정은 협업자만
+    할 수 있다. 배정을 요구하지 않으면 공개 저장소에서 이슈만 열어도 PM에 태스크가 쌓인다.
+    """
+    login = ((issue.get("assignee") or {}).get("login")) or ""
+    if not login:
+        return None
+    identity = GitHubIdentity.objects.filter(login__iexact=login).select_related("user").first()
+    if identity and identity.user.is_active and is_member(identity.user, conn.project.org):
+        return identity.user
+    return None
 
 
 def _on_issues(conn, delivery, payload):
@@ -634,17 +636,21 @@ def _on_issues(conn, delivery, payload):
         if conn.import_label and conn.import_label not in labels:
             result = "라벨 불일치"
         else:
-            actor = _import_actor(conn, payload)
-            if actor is None:
-                # 행위자를 못 정하면 태스크를 만들지 않는다. 저장소 탭에서 손으로 가져온다.
-                result = "행위자 없음 · 가져오기 대기"
+            member = _assigned_member(conn, issue)
+            if member is None:
+                # 배정되지 않은 이슈는 자동으로 가져오지 않는다. 기록만 남기고, 필요하면
+                # 저장소 탭에서 사람이 [태스크로 가져오기]를 누른다.
+                result = "담당자 미배정 · 가져오지 않음"
             else:
+                # 행위자: sender가 PM 사용자면 그 사람 → 프로젝트 첫 관리자 → 배정된 멤버.
+                # 배정된 멤버가 있는 한 행위자가 비어 막히는 일은 없다.
+                actor = _import_actor(conn, payload) or member
                 task = create_task(
                     project=conn.project,
                     title=(issue.get("title") or "")[:200],
                     actor=actor,
                     source="gh",
-                    assignee=_import_assignee(conn, issue, actor),
+                    assignee=member,
                     description=(issue.get("body") or "")[:2000],
                     # GitHub 이슈에는 기한이 없다. create_task는 열린 태스크에 기한이나
                     # 사유 중 하나를 요구하므로 고정 사유를 채운다.

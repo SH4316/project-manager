@@ -51,6 +51,8 @@ class RepoConnection(models.Model):
     url = models.CharField(max_length=300)  # 사용자가 넣은 원문
     full_name = models.CharField(max_length=200)  # owner/repo
     import_label = models.CharField(max_length=50, default="task")
+    # ponytail: 더 이상 읽지 않는 열이다. 자동 가져오기는 배정된 멤버만 담당자로 삼으므로 선택지가
+    # 없어졌다. 설정 라운드(IMPL-PLAN-4)에서 마이그레이션과 함께 지운다.
     assignee_default = models.CharField(max_length=5, default="issue")  # issue | none
     auto_import = models.BooleanField(default=False)
     rule_issue = models.BooleanField(default=True)
