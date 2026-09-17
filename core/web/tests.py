@@ -1247,3 +1247,32 @@ def test_note_scope_filter_is_a_list_not_chips(logged, org, project, member):
     # 태그를 고른 상태로 범위를 바꿔도 태그가 유지된다.
     body = logged.get(f"/orgs/{org.pk}/notes?scope=all&tag=%EA%B8%B0%ED%9A%8D").content.decode()
     assert 'name="tag"' in body
+
+
+def test_archive_lives_in_project_settings_not_the_header(client, org, project, admin):
+    """보관·삭제는 설정 페이지에 둔다. 머리글의 ⋯ 메뉴는 목록/보드 토글 옆이라 잘못된 자리였다."""
+    client.force_login(admin)
+    head = client.get(f"/projects/{project.pk}").content.decode()
+    assert "프로젝트 보관" not in head
+    body = client.get(f"/projects/{project.pk}/settings").content.decode()
+    assert "프로젝트 보관" in body
+    assert "미완료까지 취소하고 보관" in body
+    assert "프로젝트 삭제" not in body  # 보관 전에는 지울 수 없다
+
+
+def test_settings_shows_restore_and_delete_once_archived(client, org, project, admin):
+    from projects.services import archive_project
+
+    client.force_login(admin)
+    archive_project(project, actor=admin)
+    body = client.get(f"/projects/{project.pk}/settings").content.decode()
+    assert "보관 해제" in body
+    assert "프로젝트 삭제" in body
+
+
+def test_project_settings_groups_share_one_card_with_the_save_button(client, project, admin):
+    """태스크 규칙·프로젝트 권한·알림은 한 번에 저장되는 한 벌이다 — 카드도 하나다."""
+    client.force_login(admin)
+    body = client.get(f"/projects/{project.pk}/settings").content.decode()
+    rules = body[body.index('<form method="post">') : body.index("설정 저장")]
+    assert rules.count('<section class="card') == 1

@@ -453,3 +453,6 @@ dialog { max-width: 640px; }
 .git-steps > li.done > span:first-of-type ~ span { color: var(--text-primary); }
 .git-commits { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .git-commits code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* 설정 한 장 안에 묶음이 여럿이다. 두 번째 제목부터 표와 붙지 않게 띄운다. */
+.settings-card h2 ~ h2 { margin-top: 18px; }

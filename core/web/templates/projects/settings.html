@@ -3,8 +3,10 @@
 {% include "projects/_tabs.html" %}
 {% if not editable %}<p class="muted t13">이 설정은 프로젝트 관리자만 고칠 수 있습니다.</p>{% endif %}
 <form method="post">{% csrf_token %}
+{# 태스크 규칙·프로젝트 권한·알림은 한 번에 저장되는 한 벌이다. 카드를 쪼개면 저장 버튼이
+   어느 묶음에 걸리는지 헷갈린다 — 한 장에 담고 버튼도 그 안에 둔다. #}
+<section class="card settings-card">
 {% for label, rows in groups %}
-<section class="card">
   <h2>{{ label }}</h2>
   <table class="grid">
     <thead><tr><th>항목</th><th>값</th></tr></thead>
@@ -44,9 +46,9 @@
     {% endfor %}
     </tbody>
   </table>
-</section>
 {% endfor %}
 {% if editable %}<button class="btn primary">설정 저장</button>{% endif %}
+</section>
 </form>
 
 {% if github_enabled and repo_state.state == "ok" %}
@@ -70,6 +72,44 @@
   <p class="muted t13">저장소 연결·해제와 이슈 가져오기는 <a href="{% url 'project_repo' project.pk %}">GitHub 탭</a>에서 합니다.</p>
   {% else %}
   <p class="muted t13">라벨 필터 {{ repo_state.conn.import_label|default:"없음" }} · 자동 가져오기 {% if repo_state.conn.auto_import %}켬{% else %}끔{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if is_admin %}
+<section class="card">
+  <h2>프로젝트 정리</h2>
+  {% if project.is_archived %}
+  <p class="muted t13">
+    {{ project.archived_at|date:"Y-m-d" }}에 보관했습니다. 보관된 프로젝트는 좌측 목록·프로젝트 화면·선택
+    목록에서 빠지고, 조직 개요에서 "보관 포함"을 켜야 보입니다.
+  </p>
+  <form method="post" action="{% url 'project_restore' project.pk %}">{% csrf_token %}
+    <button class="btn">보관 해제</button>
+  </form>
+  <hr>
+  <p class="muted t13">삭제는 되돌릴 수 없습니다. 태스크·마일스톤·문서가 함께 사라집니다.</p>
+  <form method="post" action="{% url 'project_delete' project.pk %}"
+        onsubmit="return prompt('되돌릴 수 없습니다. 확인을 위해 프로젝트 이름을 입력하세요.') === '{{ project.name|escapejs }}'">
+    {% csrf_token %}<button class="btn danger">프로젝트 삭제</button>
+  </form>
+  {% else %}
+  <p class="muted t13">
+    끝난 프로젝트는 보관해 숨깁니다. 좌측 목록과 프로젝트 화면에서 빠지고, 조직 개요에서
+    "보관 포함"을 켜면 다시 보입니다. 데이터는 지워지지 않습니다.
+  </p>
+  <div class="row wrap gap">
+    <form method="post" action="{% url 'project_archive' project.pk %}"
+          onsubmit="return confirm('보관할까요? 미완료 태스크가 있으면 거부됩니다.')">
+      {% csrf_token %}<button class="btn">프로젝트 보관</button>
+    </form>
+    <form method="post" action="{% url 'project_archive' project.pk %}"
+          onsubmit="return confirm('남은 미완료 태스크를 모두 취소하고 보관합니다. 계속할까요?')">
+      {% csrf_token %}<input type="hidden" name="cancel_open" value="1">
+      <button class="btn danger">미완료까지 취소하고 보관</button>
+    </form>
+  </div>
+  <p class="muted t13">삭제는 보관한 뒤에 할 수 있습니다.</p>
   {% endif %}
 </section>
 {% endif %}

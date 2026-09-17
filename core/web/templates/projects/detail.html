@@ -38,26 +38,6 @@
       <form method="get" class="row"><input type="hidden" name="view" value="{{ view }}">
         <label class="check muted t13"><input type="checkbox" name="include_closed" value="1"{% if include_closed %} checked{% endif %} onchange="this.form.requestSubmit()"> 완료·취소 포함</label>
       </form>
-      {% if is_admin %}
-        {# 목록/보드 토글 옆에 같은 모양으로 두면 뷰를 바꾸려다 프로젝트를 보관한다 #}
-        {% if project.is_archived %}
-        <form method="post" action="{% url 'project_restore' project.pk %}">{% csrf_token %}<button class="btn sm">복원</button></form>
-        <details class="menu">
-          <summary class="btn sm icon" aria-label="더보기" title="더보기">⋯</summary>
-          <div class="menu-list">
-            <form method="post" action="{% url 'project_delete' project.pk %}" onsubmit="return prompt('되돌릴 수 없습니다. 확인을 위해 프로젝트 이름을 입력하세요.') === '{{ project.name|escapejs }}'">{% csrf_token %}<button class="btn link danger">프로젝트 삭제</button></form>
-          </div>
-        </details>
-        {% else %}
-        <details class="menu">
-          <summary class="btn sm icon" aria-label="더보기" title="더보기">⋯</summary>
-          <div class="menu-list">
-            <form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('보관할까요? 미완료 태스크가 있으면 거부됩니다.')">{% csrf_token %}<button class="btn link danger">프로젝트 보관</button></form>
-            <form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('남은 미완료 태스크를 모두 취소하고 보관합니다. 계속할까요?')">{% csrf_token %}<input type="hidden" name="cancel_open" value="1"><button class="btn link danger">미완료까지 취소하고 보관</button></form>
-          </div>
-        </details>
-        {% endif %}
-      {% endif %}
     </div>
   </div>
   {% if view == 'board' %}
