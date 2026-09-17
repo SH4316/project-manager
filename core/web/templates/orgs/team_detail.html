@@ -11,7 +11,7 @@
     </div>
     <div class="row">
       <button type="button" class="btn" hx-get="{% url 'team_edit' team.pk %}" hx-target="#dialog" hx-swap="innerHTML">수정</button>
-      <form method="post" action="{% url 'team_delete' team.pk %}" onsubmit="return confirm('팀을 삭제할까요? 멤버와 프로젝트는 그대로 남습니다. GitHub 팀은 남습니다.')">{% csrf_token %}<button class="btn">삭제</button></form>
+      <form method="post" action="{% url 'team_delete' team.pk %}" onsubmit="return confirm('팀을 삭제할까요? 멤버와 프로젝트는 그대로 남습니다. GitHub 팀은 남습니다.')">{% csrf_token %}<button class="btn danger">삭제</button></form>
     </div>
   </div>
 </div>
@@ -22,7 +22,7 @@
   <p class="row">연결됨 · <span class="badge">@{{ gh_link.slug }}</span></p>
   <div class="row">
     <form method="post" action="{% url 'team_github_reconcile' team.pk %}">{% csrf_token %}<button class="btn sm">GitHub에 반영</button></form>
-    <form method="post" action="{% url 'team_github_unlink' team.pk %}">{% csrf_token %}<button class="btn sm">연결 해제</button></form>
+    <form method="post" action="{% url 'team_github_unlink' team.pk %}">{% csrf_token %}<button class="btn sm danger">연결 해제</button></form>
   </div>
   {% else %}
   <form method="post" action="{% url 'team_github_link' team.pk %}" class="row">{% csrf_token %}
@@ -45,7 +45,7 @@
     <tr>
       <td>{{ u.display_name }}</td>
       <td>{% if u.github %}@{{ u.github.login }}{% else %}<span class="badge">GitHub 미연결</span>{% endif %}</td>
-      <td><form method="post" action="{% url 'team_member_remove' team.pk u.pk %}">{% csrf_token %}<button class="btn sm">제거</button></form></td>
+      <td><form method="post" action="{% url 'team_member_remove' team.pk u.pk %}">{% csrf_token %}<button class="btn sm danger">제거</button></form></td>
     </tr>
     {% empty %}<tr><td colspan="3" class="muted">멤버가 없습니다.</td></tr>{% endfor %}
     </tbody>

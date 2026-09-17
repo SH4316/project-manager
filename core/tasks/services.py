@@ -20,7 +20,7 @@ LOCKED_FIELDS = {"assignee", "priority", "due_date", "no_due_reason", "project",
 EDITABLE = LOCKED_FIELDS | set(TEXT_FIELDS)
 TRACKED = ("assignee", "due_date", "project", "priority", "stop_reason")
 
-NO_DUE_FOR_DOING = "목표 기한이 없어서 진행 중으로 바꾸지 못했어요. 기한을 먼저 정해 주세요."
+NO_DUE_FOR_DOING = "목표 기한이 없어 진행 중으로 바꿀 수 없습니다. 기한을 먼저 정해 주세요."
 
 # 내 태스크 화면 필터 값. (코드, 화면 표기)
 DUE_FILTERS = [
@@ -38,7 +38,13 @@ STATUS_FILTERS = (
     + [("done_today", "오늘 완료"), ("done_7d", "지난 7일 완료")]
 )
 PRIORITY_FILTERS = [("", "모든 중요도")] + Task.TIER_LABELS
-GROUP_OPTIONS = [("due", "기한별"), ("project", "프로젝트별"), ("status", "상태별")]
+# "없음"을 명시적으로 둔다 — 눌린 버튼이 하나도 없는 상태를 "분류 안 함"으로 읽어내게 하지 않는다.
+GROUP_OPTIONS = [
+    ("due", "기한별"),
+    ("project", "프로젝트별"),
+    ("status", "상태별"),
+    ("none", "없음"),
+]
 SORT_OPTIONS = [("due", "기한"), ("priority", "중요도"), ("updated", "최근 수정")]
 
 

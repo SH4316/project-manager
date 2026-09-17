@@ -9,13 +9,13 @@ from common.dates import today_kst
 from common.errors import ConflictError, ServiceError
 from github.services import pr_compare_url, repo_state
 from github.writes import default_branch_name
+from projects.models import Project
 from tasks import services as ts
 from tasks.models import ChangeLog, ChecklistItem, Link
 
-from ..forms import LinkForm, TaskForm
+from ..forms import LinkForm
 from .common import (
     CONFLICT_MSG,
-    apply_service_error,
     due_full,
     due_label,
     history_rows,
@@ -39,8 +39,24 @@ def _git_ctx(request, task) -> dict:
             "issues": issues,
             "pr_url": pr_compare_url(link) if link and link.branch else None,
             "default_branch_name": default_branch_name(task) if rs["state"] == "ok" else "",
-        }
+        },
+        # 접힌 GitHub 블록의 한 줄 요약. 펼치지 않아도 연결 상태를 알 수 있어야 한다.
+        "gh_summary": _git_summary(rs, link),
     }
+
+
+def _git_summary(rs, link) -> str:
+    if rs["state"] == "none":
+        return "저장소 미연결"
+    if rs["state"] == "unlinked":
+        return "GitHub 계정 미연결"
+    if rs["state"] == "denied":
+        return "접근 권한 없음"
+    if link is None:
+        return "이슈·브랜치 없음"
+    parts = [f"이슈 #{link.issue_number}" if link.issue_number else "이슈 없음"]
+    parts.append(link.branch or "브랜치 없음")
+    return " · ".join(parts)
 
 
 def _panel_ctx(request, task, **extra):
@@ -58,6 +74,15 @@ def _panel_ctx(request, task, **extra):
         "link_form": LinkForm(),
         "notes": task.meeting_notes.all(),
         "org_notes": task.project.org.notes.all(),
+        # _refs.html은 패널 최초 렌더(_panel_ctx)와 조각 갱신(_refs) 양쪽에서 쓰인다.
+        # 한쪽에만 넣으면 새로고침 전에는 문서가 보이지 않는다.
+        "docs": task.docs.all(),
+        "project_docs": task.project.docs.exclude(tasks=task),
+        # 패널이 프로젝트·담당자까지 맡으므로 고를 대상을 함께 싣는다
+        "org_projects": Project.objects.filter(org=task.project.org, is_archived=False).order_by(
+            "name"
+        ),
+        "org_members": task.project.org.members.filter(is_active=True).order_by("display_name"),
         "history": history_rows(logs),
         "priorities": range(10, 0, -1),
         "due_label": due_label(task),
@@ -116,47 +141,43 @@ def task_row(request, task_id):
 
 
 @login_required
-def task_edit(request, task_id):
+@require_POST
+def task_meta(request, task_id):
+    """패널의 프로젝트·담당자·기한 미정 사유 인라인 수정.
+
+    편집 화면(/tasks/{id}/edit)이 하던 일을 패널이 그대로 맡는다. 표면마다 고칠 수 있는
+    필드가 다르면 사용자는 "어디서 고쳐야 저장되나"를 학습해야 한다.
+    """
     task = task_or_404(request.user, task_id)
-    initial = {
-        "project": task.project,
-        "title": task.title,
-        "assignee": task.assignee,
-        "priority": task.priority,
-        "due_date": task.due_date,
-        "no_due_reason": task.no_due_reason,
-        "description": task.description,
-        "done_when": task.done_when,
-        "next_action": task.next_action,
-        "version": task.version,
-    }
-    form = TaskForm(request.POST or None, org=task.project.org, initial=initial)
-    if request.method == "POST" and form.is_valid():
-        d = form.cleaned_data
-        changes = {
-            k: d[k]
-            for k in (
-                "project",
-                "title",
-                "assignee",
-                "priority",
-                "due_date",
-                "no_due_reason",
-                "description",
-                "done_when",
-                "next_action",
-            )
-        }
-        try:
-            ts.update_task(
-                task, changes, actor=request.user, source="web", expected_version=d["version"]
-            )
-            return redirect("task_detail", task_id=task.pk)
-        except ServiceError as e:
-            apply_service_error(form, e)
-        except ConflictError:
-            form.add_error(None, CONFLICT_MSG)
-    return render(request, "tasks/edit.html", {"form": form, "task": task})
+    org = task.project.org
+    changes = {}
+    if (pid := request.POST.get("project")) is not None:
+        project = Project.objects.filter(pk=pid, org=org, is_archived=False).first()
+        if project is None:
+            return _panel(request, task, error="그 프로젝트로 옮길 수 없습니다.")
+        changes["project"] = project
+    if (uid := request.POST.get("assignee")) is not None:
+        user = org.members.filter(pk=uid, is_active=True).first()
+        if user is None:
+            return _panel(request, task, error="그 사람에게 맡길 수 없습니다.")
+        changes["assignee"] = user
+    if (reason := request.POST.get("no_due_reason")) is not None:
+        changes["no_due_reason"] = reason
+    if not changes:
+        return _panel(request, task)
+    try:
+        task = ts.update_task(
+            task,
+            changes,
+            actor=request.user,
+            source="web",
+            expected_version=version_of(request),
+        )
+    except ServiceError as e:
+        return _panel(request, task, error=" ".join(e.errors.values()))
+    except ConflictError as e:
+        return _panel(request, e.latest, error=CONFLICT_MSG)
+    return trigger(_panel(request, task), "task-changed", task)
 
 
 @login_required
@@ -330,6 +351,9 @@ def _refs(request, task, error=None):
             "link_form": LinkForm(),
             "notes": task.meeting_notes.all(),
             "org_notes": task.project.org.notes.all(),
+            "docs": task.docs.all(),
+            # 이미 걸린 문서는 후보에서 뺀다 — 같은 것을 두 번 걸 이유가 없다
+            "project_docs": task.project.docs.exclude(tasks=task),
             "error": error,
             "link_open": bool(error),
         },

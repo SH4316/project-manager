@@ -35,7 +35,7 @@ def _gh_enabled_or_404():
 def org_github(request, org_id):
     _gh_enabled_or_404()
     org = org_or_404(request.user, org_id)
-    if denied := not_admin(request, org):
+    if denied := not_admin(request, org, "GitHub 연동"):
         return denied
     projects = org.projects.filter(is_archived=False).select_related("repo").order_by("name")
     return render(
@@ -56,7 +56,7 @@ def org_github(request, org_id):
 def github_install(request, org_id):
     _gh_enabled_or_404()
     org = org_or_404(request.user, org_id)
-    if denied := not_admin(request, org):
+    if denied := not_admin(request, org, "GitHub 연동"):
         return denied
     request.session["gh_install_org"] = org.pk
     state = secrets.token_urlsafe(16)
@@ -73,7 +73,7 @@ def github_installed(request):
         raise Http404
     org_id = request.session.pop("gh_install_org", None)
     org = org_or_404(request.user, org_id)
-    if denied := not_admin(request, org):
+    if denied := not_admin(request, org, "GitHub 연동"):
         return denied
     iid = request.GET.get("installation_id", "")
     if not iid.isdecimal():
@@ -137,6 +137,7 @@ def github_callback(request):
 @login_required
 @require_POST
 def github_refresh(request):
+    _gh_enabled_or_404()
     identity = getattr(request.user, "github", None)
     if identity is None:
         raise Http404
@@ -151,6 +152,7 @@ def github_refresh(request):
 @login_required
 @require_POST
 def github_unlink(request):
+    _gh_enabled_or_404()
     GitHubIdentity.objects.filter(user=request.user).delete()
     messages.success(request, "GitHub 연결을 끊었습니다.")
     return redirect("profile")
@@ -173,6 +175,7 @@ def _repo_teams(conn):
 
 @login_required
 def project_repo(request, project_id):
+    _gh_enabled_or_404()
     project = project_or_404(request.user, project_id)
     error = None
     if request.method == "POST":
@@ -203,6 +206,7 @@ def project_repo(request, project_id):
 @login_required
 @require_POST
 def repo_disconnect(request, project_id):
+    _gh_enabled_or_404()
     project = project_or_404(request.user, project_id)
     conn = getattr(project, "repo", None)
     if conn is not None:
@@ -214,6 +218,7 @@ def repo_disconnect(request, project_id):
 @login_required
 @require_POST
 def repo_settings(request, project_id):
+    _gh_enabled_or_404()
     project = project_or_404(request.user, project_id)
     conn = getattr(project, "repo", None)
     if conn is None:
@@ -230,6 +235,7 @@ def repo_settings(request, project_id):
 @login_required
 @require_POST
 def repo_issues_sync(request, project_id):
+    _gh_enabled_or_404()
     project = project_or_404(request.user, project_id)
     conn = getattr(project, "repo", None)
     if conn is None:
@@ -245,6 +251,7 @@ def repo_issues_sync(request, project_id):
 @login_required
 @require_POST
 def repo_issue_import(request, project_id, number):
+    _gh_enabled_or_404()
     project = project_or_404(request.user, project_id)
     conn = getattr(project, "repo", None)
     if conn is None:
@@ -277,6 +284,7 @@ def repo_issue_import(request, project_id, number):
 @require_POST
 def repo_event_link(request, project_id, event_id):
     """미매칭 이벤트(예: 번호 없는 커밋)를 손으로 태스크에 연결한다."""
+    _gh_enabled_or_404()
     project = project_or_404(request.user, project_id)
     conn = getattr(project, "repo", None)
     if conn is None:
@@ -297,6 +305,7 @@ def repo_event_link(request, project_id, event_id):
 @login_required
 @require_POST
 def git_issue(request, task_id):
+    _gh_enabled_or_404()
     task = task_or_404(request.user, task_id)
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
@@ -317,6 +326,7 @@ def git_issue(request, task_id):
 @login_required
 @require_POST
 def git_branch(request, task_id):
+    _gh_enabled_or_404()
     task = task_or_404(request.user, task_id)
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
@@ -333,6 +343,7 @@ def git_branch(request, task_id):
 @login_required
 @require_POST
 def git_unlink(request, task_id):
+    _gh_enabled_or_404()
     task = task_or_404(request.user, task_id)
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
@@ -347,6 +358,7 @@ def _gh_write_error(e) -> str:
 @login_required
 @require_POST
 def git_issue_create(request, task_id):
+    _gh_enabled_or_404()
     task = task_or_404(request.user, task_id)
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
@@ -360,6 +372,7 @@ def git_issue_create(request, task_id):
 @login_required
 @require_POST
 def git_branch_create(request, task_id):
+    _gh_enabled_or_404()
     task = task_or_404(request.user, task_id)
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
@@ -374,6 +387,7 @@ def git_branch_create(request, task_id):
 @login_required
 @require_POST
 def git_issue_close(request, task_id):
+    _gh_enabled_or_404()
     task = task_or_404(request.user, task_id)
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
@@ -381,11 +395,11 @@ def git_issue_close(request, task_id):
     # 여기로 올 수 있다. 404로 패널을 깨지 말고 왜 못 닫는지 알려준다.
     link = getattr(task, "git", None)
     if link is None or not link.issue_number:
-        return _panel(request, task, error="연결된 이슈가 없어요.")
+        return _panel(request, task, error="연결된 이슈가 없습니다.")
     if task.status != "done":
-        return _panel(request, task, error="태스크가 완료되기 전에는 이슈를 닫을 수 없어요.")
+        return _panel(request, task, error="태스크를 완료하기 전에는 이슈를 닫을 수 없습니다.")
     if link.issue_state != "open":
-        return _panel(request, task, error="이미 닫힌 이슈예요.")
+        return _panel(request, task, error="이미 닫힌 이슈입니다.")
     try:
         gh_writes.close_issue(task, actor=request.user)
     except (ServiceError, GitHubError) as e:

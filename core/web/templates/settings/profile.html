@@ -1,7 +1,8 @@
 {% extends "base.html" %}{% block title %}프로필{% endblock %}
 {% block main %}
+{% with settings_tab="profile" %}{% include "settings/_tabs.html" %}{% endwith %}
 <div class="card">
-  <h1 class="t24">프로필</h1>
+  <h2>프로필</h2>
   <form method="post" class="stack">{% csrf_token %}
     {% for f in form %}<label class="field">{{ f.label }}{{ f }}</label>{% for e in f.errors %}<div class="error">{{ e }}</div>{% endfor %}{% endfor %}
     <button class="btn primary">저장</button>
@@ -17,7 +18,7 @@
   {% endif %}
   {% if user.discord_user_id %}
   <p class="row">연결됨 · {{ user.discord_linked_at|date:"Y-m-d H:i" }}
-    <form method="post" action="{% url 'discord_unlink' %}">{% csrf_token %}<button class="btn sm">연결 해제</button></form>
+    <form method="post" action="{% url 'discord_unlink' %}">{% csrf_token %}<button class="btn sm danger">연결 해제</button></form>
   </p>
   <p class="muted t13">해제하면 DM 알림이 멈춥니다. Discord에서 봇에게 <code>연결해제</code>를 보내도 됩니다.</p>
   {% else %}
@@ -30,7 +31,7 @@
   <h2>GitHub 연결</h2>
   {% if user.github %}
   <p class="row">연결됨 · @{{ user.github.login }}
-    <form method="post" action="{% url 'github_unlink' %}">{% csrf_token %}<button class="btn sm">연결 해제</button></form>
+    <form method="post" action="{% url 'github_unlink' %}">{% csrf_token %}<button class="btn sm danger">연결 해제</button></form>
   </p>
   <p class="muted t13">접근 가능 저장소 {{ user.github.repos|length }}개
     {% if user.github.repos_checked_at %}· {{ user.github.repos_checked_at|date:"Y-m-d H:i" }} 확인{% endif %}</p>

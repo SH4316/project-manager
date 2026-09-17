@@ -343,7 +343,14 @@ def roadmap(org, today=None) -> dict:
             "from_project", "to_project"
         )
     )
-    return {"months": months, "rows": rows, "deps": deps, "hidden": hidden}
+    # 오늘이 창의 어디쯤인지 — 막대만 있으면 "지금 늦었는지"를 읽을 수 없다
+    return {
+        "months": months,
+        "rows": rows,
+        "deps": deps,
+        "hidden": hidden,
+        "today_pct": round((today - start).days / span * 100, 2),
+    }
 
 
 def parse_spec(raw: bytes, *, source: str) -> dict:

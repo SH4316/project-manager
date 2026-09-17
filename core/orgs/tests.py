@@ -76,11 +76,15 @@ def test_outsider_cannot_open_project_page(client, project, outsider):
     assert client.get(f"/projects/{project.pk}").status_code == 404
 
 
-def test_join_page_requires_login_then_joins(client, org, admin, outsider):
+def test_join_page_names_org_before_login_then_joins(client, org, admin, outsider):
     invite = create_invite(org, admin)
+    # 로그인 전에도 어느 조직 초대인지는 보여 준다 — 맨몸 로그인 화면은 링크의 뜻을 잃는다
     r = client.get(f"/join/{invite.token}")
-    assert r.status_code == 302
-    assert r.headers["Location"].startswith("/login?next=")
+    assert r.status_code == 200
+    assert org.name in r.content.decode()
+    # 로그인 전 POST로는 참여되지 않는다
+    assert client.post(f"/join/{invite.token}").status_code == 200
+    assert not OrgMembership.objects.filter(org=org, user=outsider).exists()
     client.login(username="outsider", password="pw12345678")
     r = client.post(f"/join/{invite.token}")
     assert r.status_code == 302

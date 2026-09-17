@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static %}<!doctype html>{% load rows %}
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{% static 'app.css' %}">
   <script src="{% static 'vendor/htmx.min.js' %}"></script>
 </head>
-<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-page-url="{% block page_url %}{{ page_url }}{% endblock %}">
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-page-url="{% block page_url %}{{ page_url }}{% endblock %}"{% if user.is_authenticated and current_org %} data-live="1"{% endif %}>
 <header class="header">
   {% if user.is_authenticated %}
   {# 조직 이름이 곧 전환 손잡이다. 열면 다른 조직과 새 조직 만들기가 나온다. #}
@@ -45,7 +45,7 @@
   <a class="btn sm tint" href="{% url 'today' %}?quick=1">빠른 추가</a>
   {% endif %}
   <details class="menu">
-    <summary class="avatar" aria-label="내 메뉴">{{ user.display_name|slice:":1" }}</summary>
+    <summary class="avatar" aria-label="내 메뉴" title="계정·설정">{{ user.display_name|initial }}<svg class="caret" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 4l3 3 3-3"/></svg></summary>
     <div class="menu-list">
       <span class="muted t13" style="padding:4px 10px">{{ user.display_name }}</span>
       <a href="{% url 'profile' %}">프로필</a>
@@ -70,7 +70,7 @@
       {% for p in nav_projects %}
       <a href="{% url 'project_detail' p.pk %}" title="{{ p.name }}"
          {% if p.pk == current_project_id %}aria-current="page"{% endif %}>
-        <span class="initial">{{ p.name|slice:":1" }}</span>
+        <span class="initial">{{ p.name|initial }}</span>
         <span class="label">{{ p.name }}</span>
         <span class="count t12 muted">{{ p.open_count }}</span>
       </a>
@@ -82,7 +82,11 @@
   {% endif %}
   <div class="layout{% block layout_class %}{% endblock %}">
     <main>
-      {% for m in messages %}<p class="{% if m.tags == 'error' %}error{% else %}muted{% endif %}">{{ m }}</p>{% endfor %}
+      {% for m in messages %}<div class="notice{% if m.tags == 'error' %} bad{% endif %}" role="status">
+        <span aria-hidden="true">{% if m.tags == 'error' %}⚠{% else %}ⓘ{% endif %}</span>
+        <span class="grow">{{ m }}</span>
+        <button type="button" class="btn link" data-action="dismiss" aria-label="닫기">✕</button>
+      </div>{% endfor %}
       {% block main %}{% endblock %}
     </main>
     <aside id="panel">{% block panel %}{% endblock %}</aside>

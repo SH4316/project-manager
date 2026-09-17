@@ -82,6 +82,74 @@ class FakeCore:
             return httpx.Response(201, json={**self.tasks[1], "id": 9, "number": "TASK-9"})
         if p == "/api/orgs/teams/1/members" and request.method == "POST":
             return httpx.Response(404, json={"detail": "사용자를 찾을 수 없습니다."})
+        if p == "/api/project-docs" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": 7,
+                            "project_id": 1,
+                            "project_name": "학식 API",
+                            "title": "설계 결정",
+                            "version": 2,
+                            "updated_at": "2026-09-16T00:00:00Z",
+                            "task_ids": [1],
+                        }
+                    ],
+                    "total": 1,
+                    "limit": 50,
+                    "offset": 0,
+                },
+            )
+        if p == "/api/project-docs/7" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "id": 7,
+                    "project_id": 1,
+                    "project_name": "학식 API",
+                    "title": "설계 결정",
+                    "body_md": "# 배경\n메뉴 누락을 줄인다",
+                    "version": 2,
+                    "updated_at": "2026-09-16T00:00:00Z",
+                    "task_ids": [1],
+                },
+            )
+        if p == "/api/project-docs" and request.method == "POST":
+            body = json.loads(request.content)
+            return httpx.Response(
+                201,
+                json={
+                    "id": 8,
+                    "project_id": body["project_id"],
+                    "project_name": "학식 API",
+                    "title": body["title"],
+                    "body_md": body.get("body_md", ""),
+                    "version": 1,
+                    "updated_by": "AI",
+                    "updated_source": "mcp",
+                    "task_ids": [],
+                },
+            )
+        if p == "/api/project-docs/7" and request.method == "PATCH":
+            body = json.loads(request.content)
+            if body["version"] != 2:
+                return httpx.Response(409, json={"detail": "conflict"})
+            return httpx.Response(
+                200,
+                json={
+                    "id": 7,
+                    "project_id": 1,
+                    "project_name": "학식 API",
+                    "title": body.get("title", "설계 결정"),
+                    "body_md": body.get("body_md", ""),
+                    "version": 3,
+                    "updated_by": "AI",
+                    "updated_source": "mcp",
+                    "task_ids": [1],
+                },
+            )
         if p == "/api/projects/404":
             return httpx.Response(404, text="<h1>Not Found</h1>")
         return httpx.Response(404, json={"detail": "x"})

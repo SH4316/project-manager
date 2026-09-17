@@ -62,7 +62,13 @@
     </form>
 
     <div class="row t13 muted" style="border-top:1px solid var(--border);padding-top:8px">
-      아무 곳이나 눌러 바로 씁니다. # 제목, - 목록, - [ ] 체크, &gt; 인용, --- 구분선, **굵게**, *기울임*, `코드`. Enter 새 줄, Backspace 합치기, 화살표로 이동. 자동 저장됩니다.
+      {# 한 줄에 12개를 욱여넣으면 아무도 읽지 않는다. 필요할 때 펼치게 둔다. #}
+      <details class="grow">
+        <summary>쓰는 법</summary>
+        <p class="t13 muted" style="margin-top:6px">아무 곳이나 눌러 바로 씁니다. 자동 저장됩니다.<br>
+          <code># 제목</code> · <code>- 목록</code> · <code>- [ ] 체크</code> · <code>&gt; 인용</code> · <code>---</code> 구분선 · <code>**굵게**</code> · <code>*기울임*</code> · <code>`코드`</code><br>
+          Enter 새 줄, Backspace 합치기, 화살표로 이동.</p>
+      </details>
       {% if can_delete %}<form method="post" action="{% url 'note_delete' note.pk %}" onsubmit="return confirm('이 회의록을 지울까요?')">{% csrf_token %}<button class="btn sm danger">삭제</button></form>{% endif %}
     </div>
   </section>

@@ -56,6 +56,11 @@ class LinkOut(Schema):
     kind: str
 
 
+class DocBrief(Schema):
+    id: int
+    title: str
+
+
 class TaskOut(TaskBriefOut):
     description: str
     done_when: str
@@ -71,6 +76,8 @@ class TaskOut(TaskBriefOut):
     checklist_done: int
     checklist_total: int
     links: list[LinkOut]
+    # 걸린 참고 문서. 본문은 /projects/{project_id}/docs/{id}에서 읽는다.
+    docs: list[DocBrief]
 
 
 class TaskCreateIn(Schema):

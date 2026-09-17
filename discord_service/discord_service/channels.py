@@ -64,7 +64,7 @@ async def link_channel(
         return _error_reply(e.response)
     except httpx.HTTPError as e:
         log.warning("core 호출 실패: %s", e)
-        return "지금은 처리하지 못했어요. 잠시 뒤 다시 보내 주세요."
+        return "지금은 처리할 수 없습니다. 잠시 뒤 다시 보내 주세요."
 
     existing = item["discord_channel_id"]
     if existing and guild.get_channel(int(existing)) is not None:
@@ -85,14 +85,14 @@ async def link_channel(
         return NO_PERMISSION
     except discord.HTTPException as e:
         log.warning("채널 생성 실패: %s", e)
-        return "채널을 만들지 못했어요. 잠시 뒤 다시 시도해 주세요."
+        return "채널을 만들지 못했습니다. 잠시 뒤 다시 시도해 주세요."
 
     try:
         await asyncio.to_thread(save, uid, item_id, str(channel.id))
     except Exception as e:  # noqa: BLE001
         log.warning("채널 되적기 실패, 되돌린다: %s", e)
         reply = _error_reply(e.response) if isinstance(e, httpx.HTTPStatusError) else None
-        reply = reply or "연결을 저장하지 못했어요."
+        reply = reply or "연결을 저장하지 못했습니다."
         try:
             await channel.delete(reason="산돌이: 연결 저장 실패로 되돌림")
         except discord.HTTPException:

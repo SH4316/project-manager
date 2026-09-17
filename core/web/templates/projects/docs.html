@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% block title %}{{ project.name }} · 문서{% endblock %}
+{% block main %}
+{% include "projects/_tabs.html" %}
+<div class="notes-columns">
+  <section class="card list">
+    <div class="card-head">
+      <h2>문서 <span class="muted">{{ docs|length }}</span></h2>
+      <div class="row">
+        <label class="btn sm">.md 올리기
+          <form method="post" action="{% url 'doc_upload' project.pk %}" enctype="multipart/form-data" style="display:none">
+            {% csrf_token %}
+            <input type="file" name="file" accept=".md,.markdown" onchange="this.form.requestSubmit()">
+          </form>
+        </label>
+        <form method="post" action="{% url 'doc_new' project.pk %}">{% csrf_token %}<button class="btn sm primary">새 문서</button></form>
+      </div>
+    </div>
+    {% for d in docs %}
+    <a class="note-item{% if doc.pk == d.pk %} sel{% endif %}" href="?doc={{ d.pk }}">
+      <b>{{ d.title }}</b>
+      <span class="muted t13">{% if d.updated_by %}{{ d.updated_by.display_name }}{% else %}{{ d.created_by.display_name }}{% endif %}{% if d.updated_source != "web" %} · {{ d.get_updated_source_display }}{% endif %} · v{{ d.version }} · {{ d.updated_at|date:"n/j" }}</span>
+    </a>
+    {% empty %}
+    <p class="muted t13">아직 문서가 없습니다. 기획·설계·운영 기록처럼 저장소 밖에서도 남겨야 하는 글을 여기에 씁니다.</p>
+    {% endfor %}
+    <p class="muted t13">문서는 이 프로젝트 안에만 있습니다. 올린 .md는 본문 텍스트만 읽어 저장하고, 파일과 이미지 첨부는 저장하지 않습니다.</p>
+  </section>
+
+  {% if doc %}
+  <section class="card" id="doc-editor">
+    <input class="title-input" data-note-field="title" value="{{ doc.title }}" aria-label="제목">
+    <div class="row t13 muted">
+      <span>만든 사람 {{ doc.created_by.display_name }}</span>
+      {% if doc.updated_by %}
+      <span>마지막 수정 {{ doc.updated_by.display_name }}{% if doc.updated_source != "web" %} <span class="badge">{{ doc.get_updated_source_display }}</span>{% endif %}</span>
+      {% endif %}
+      <span id="note-status" class="status" aria-live="polite">v{{ doc.version }} · {{ doc.updated_at|date:"n/j H:i" }}</span>
+    </div>
+    <div id="note-conflict" class="error" hidden>다른 사람이 먼저 수정했습니다. 새로고침한 뒤 다시 쓰세요.</div>
+
+    <form id="doc-form" method="post" action="{% url 'doc_save' doc.pk %}">{% csrf_token %}
+      <input type="hidden" name="field" value="body_md">
+      <input type="hidden" name="version" value="{{ doc.version }}">
+      <div id="doc" class="doc" data-url="{% url 'doc_save' doc.pk %}" data-version="{{ doc.version }}">
+        <div id="doc-body"></div>
+        <textarea id="doc-src" name="value" class="textarea" rows="16">{{ doc.body_md }}</textarea>
+      </div>
+      <button id="doc-submit" class="btn sm primary">저장</button>
+    </form>
+
+    <div class="row t13 muted" style="border-top:1px solid var(--border);padding-top:8px">
+      <details class="grow">
+        <summary>쓰는 법</summary>
+        <p class="t13 muted" style="margin-top:6px">아무 곳이나 눌러 바로 씁니다. 자동 저장됩니다.<br>
+          <code># 제목</code> · <code>- 목록</code> · <code>- [ ] 체크</code> · <code>&gt; 인용</code> · <code>---</code> 구분선 · <code>**굵게**</code> · <code>*기울임*</code> · <code>`코드`</code><br>
+          Enter 새 줄, Backspace 합치기, 화살표로 이동.</p>
+      </details>
+      {% if can_delete %}<form method="post" action="{% url 'doc_delete' doc.pk %}" onsubmit="return confirm('이 문서를 지울까요?')">{% csrf_token %}<button class="btn sm danger">삭제</button></form>{% endif %}
+    </div>
+  </section>
+  {% else %}
+  <section class="card">
+    <p class="muted">이 프로젝트의 문서를 여기에 모읍니다.</p>
+    <p class="muted t13">기획 배경, 설계 결정, 운영 절차, 용어 정리처럼 태스크 하나에 담기 어려운 글을 남기세요. GitHub 저장소를 연결하지 않아도 그대로 씁니다.</p>
+    <form method="post" action="{% url 'doc_new' project.pk %}">{% csrf_token %}<button class="btn primary">첫 문서 만들기</button></form>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -2,7 +2,7 @@
   <h2 class="t20">{% if team %}팀 수정{% else %}새 팀{% endif %}</h2>
   <label class="field">이름<input class="input" name="name" value="{{ form.name.value|default:'' }}" required autofocus></label>
   <p class="muted t12">이 팀을 나중에 GitHub 팀으로 만들 거면 로마자 이름을 권합니다. GitHub 주소는 한글을 담지 못해서
-    한글 이름은 <code>team</code>, <code>team-1</code>처럼 바뀝니다(화면에 보이는 이름은 그대로예요).</p>
+    한글 이름은 <code>team</code>, <code>team-1</code>처럼 바뀝니다(화면에 표시되는 이름은 그대로입니다).</p>
   <label class="field">목적<input class="input" name="purpose" value="{{ form.purpose.value|default:'' }}"></label>
   {% for e in form.non_field_errors %}<div class="error">{{ e }}</div>{% endfor %}
   {% for f in form %}{% for e in f.errors %}<div class="error">{{ f.label }}: {{ e }}</div>{% endfor %}{% endfor %}

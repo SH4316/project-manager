@@ -22,7 +22,7 @@
         <button class="btn sm primary">주소에서 불러오기</button>
         <label class="btn sm">파일<input type="file" name="file" accept=".json,application/json" hidden onchange="this.form.requestSubmit()"></label>
       </form>
-      <span class="t12 muted">{% if spec_obj %}{{ spec_obj.source_url }} · {{ spec_obj.fetched_at|date:"n/j H:i" }} 저장됨{% else %}아직 등록된 문서가 없습니다.{% endif %}</span>
+      <span class="t12 muted">{% if spec_obj %}{{ spec_obj.source_url }} · {{ spec_obj.fetched_at|date:"n/j H:i" }} 저장됨{% else %}아직 등록된 문서가 없습니다. 주소를 넣거나 openapi.json을 올리세요.{% endif %}</span>
     </div>
   </div>
   {% if error %}
@@ -30,16 +30,14 @@
   <p class="t12 muted">서버가 읽을 수 없는 주소(예: localhost)라면 파일로 올리세요.</p>
   {% endif %}
 </div>
+{% if api %}
 <section class="card">
   <div class="card-head">
     <input class="input auto" name="q" value="{{ q }}" placeholder="경로·요약 검색" aria-label="엔드포인트 검색"
            hx-get="{% url 'project_api' project.pk %}?part=endpoints" hx-target="#endpoints" hx-swap="outerHTML"
            hx-trigger="keyup changed delay:300ms">
   </div>
-  {% if api %}
   {% include "projects/_endpoints.html" %}
-  {% else %}
-  <p class="muted">이 프로젝트에 등록된 API 문서가 없습니다. 주소를 넣거나 openapi.json을 올리세요.</p>
-  {% endif %}
 </section>
+{% endif %}
 {% endblock %}

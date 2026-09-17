@@ -18,8 +18,8 @@ NEED_NUMBER = '태스크 번호가 필요해요. 예: `완료 12` (마감 알림
 NEED_CODE = "연결 코드가 필요해요. 웹 설정 → 프로필에서 [Discord 연결]을 누르면 나옵니다."
 NEED_EXTEND = "예: `연장 12 2026-09-20 QA 지연` (번호, 새 목표일, 사유)"
 BAD_DATE = "날짜 형식은 `2026-09-20` 처럼 보내 주세요."
-BUSY = "지금은 처리하지 못했어요. 잠시 뒤 다시 보내 주세요."
-TOO_FAST = "요청이 몰렸어요. 1분 뒤 다시 보내 주세요."
+BUSY = "지금은 처리할 수 없습니다. 잠시 뒤 다시 보내 주세요."
+TOO_FAST = "요청이 많습니다. 1분 뒤 다시 보내 주세요."
 
 # 발신자별 분당 한도. core의 처리량 제한(60/m)은 봇 계정 하나로 세므로 한 사람이
 # 다 쓰면 다른 사람 명령까지 429가 된다. DM과 슬래시가 같은 통을 쓴다.
@@ -148,11 +148,11 @@ def status_reply(core: CoreClient, did: str, num: int, status: str, reason: str)
 def _error_reply(r: httpx.Response) -> str:
     detail = _detail(r)
     if r.status_code == 404:
-        return detail or "찾을 수 없습니다. `연결` 이 필요할 수 있어요."
+        return detail or "찾을 수 없습니다. `연결`이 필요할 수 있습니다."
     if r.status_code == 403:
         return "권한이 없습니다."
     if r.status_code == 409:
-        return "방금 다른 곳에서 바뀌었어요. 다시 보내 주세요."
+        return "방금 다른 곳에서 변경되었습니다. 다시 보내 주세요."
     if r.status_code == 429:
         return TOO_FAST
     if r.status_code == 400:

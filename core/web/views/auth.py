@@ -1,10 +1,9 @@
 from django.contrib import messages
 from django.contrib.auth import login
-from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 
 from common.errors import ServiceError
-from orgs.services import join_by_token
+from orgs.services import invite_org, join_by_token
 
 from ..forms import SignupForm
 
@@ -25,8 +24,10 @@ def signup(request):
     return render(request, "auth/signup.html", {"form": form})
 
 
-@login_required
 def join(request, token):
+    if not request.user.is_authenticated:
+        # 초대받은 사람은 대개 계정이 없다. 맨몸 로그인 화면으로 보내면 무슨 링크였는지 잃는다.
+        return render(request, "auth/join.html", {"token": token, "org": invite_org(token)})
     if request.method == "POST":
         try:
             org = join_by_token(request.user, token)

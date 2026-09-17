@@ -1,8 +1,24 @@
 {% extends "base.html" %}{% block title %}조직 참여{% endblock %}
+
+{# 로그인 전: 좁은 인증 카드. 초대받은 사람은 대개 계정이 없으므로 가입이 주 행동이다. #}
+{% block auth %}
+<h1 class="t24">조직 참여</h1>
+{% if org %}
+<div class="notice"><span aria-hidden="true">ⓘ</span><span class="grow"><b>{{ org.name }}</b> 조직에 초대되었습니다.<br>로그인하거나 가입하면 바로 참여합니다.</span></div>
+<div class="stack">
+  <a class="btn primary" href="{% url 'signup' %}?next={{ request.path }}">가입하고 참여하기</a>
+  <a class="btn" href="{% url 'login' %}?next={{ request.path }}">이미 계정이 있습니다 · 로그인</a>
+</div>
+{% else %}
+<div class="notice bad">초대 링크가 유효하지 않거나 만료되었습니다. 초대한 사람에게 새 링크를 받으세요.</div>
+{% endif %}
+{% endblock %}
+
+{# 로그인 후: 셸 안에서 참여 확인 #}
 {% block main %}
 <div class="card">
   <h1 class="t24">조직 참여</h1>
-  {% if error %}<p class="error">{{ error }}</p>
+  {% if error %}<div class="notice bad">{{ error }}</div>
   {% else %}
   <p class="muted">초대 링크로 조직에 참여합니다.</p>
   <form method="post" class="row">{% csrf_token %}<button class="btn primary">조직에 참여하기</button></form>

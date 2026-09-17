@@ -4,8 +4,6 @@
 <div class="card">
   <div class="card-head">
     <div class="stack">
-      <a class="t13" href="{% url 'org_detail' project.org_id %}">{{ project.org.name }}</a>
-      <h1 class="t24">{{ project.name }}</h1>
       {% if project.purpose %}<p class="muted">{{ project.purpose }}</p>{% endif %}
       <div class="row t13">
         <span>관리자 {% for u in owners %}{{ u.display_name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="warning">미지정</span>{% endfor %}</span>
@@ -41,10 +39,16 @@
         <label class="check muted t13"><input type="checkbox" name="include_closed" value="1"{% if include_closed %} checked{% endif %} onchange="this.form.requestSubmit()"> 완료·취소 포함</label>
       </form>
       {% if is_admin %}
+        {# 목록/보드 토글 옆에 같은 모양으로 두면 뷰를 바꾸려다 프로젝트를 보관한다 #}
         {% if project.is_archived %}
         <form method="post" action="{% url 'project_restore' project.pk %}">{% csrf_token %}<button class="btn sm">복원</button></form>
         {% else %}
-        <form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('보관할까요? 미완료 태스크가 있으면 거부됩니다.')">{% csrf_token %}<button class="btn sm">보관</button></form>
+        <details class="menu">
+          <summary class="btn sm icon" aria-label="더보기" title="더보기">⋯</summary>
+          <div class="menu-list">
+            <form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('보관할까요? 미완료 태스크가 있으면 거부됩니다.')">{% csrf_token %}<button class="btn link danger">프로젝트 보관</button></form>
+          </div>
+        </details>
         {% endif %}
       {% endif %}
     </div>
@@ -56,9 +60,10 @@
   {% endif %}
 </section>
 <section class="card">
-  <h2>저장소·문서</h2>
+  <h2>참고 링크</h2>
   <ul class="links">{% for l in links %}<li class="row"><span class="badge">{{ l.get_kind_display }}</span><a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.title }}</a><form method="post" action="{% url 'link_delete' l.pk %}">{% csrf_token %}<button class="btn link danger">삭제</button></form></li>{% empty %}<li class="muted t13">링크 없음</li>{% endfor %}</ul>
-  <form method="post" action="{% url 'project_link_add' project.pk %}" class="row">{% csrf_token %}
+  <button type="button" class="btn sm" data-action="toggle" data-target="#link-form" data-alt="취소">＋ 링크 추가</button>
+  <form id="link-form" hidden method="post" action="{% url 'project_link_add' project.pk %}" class="row">{% csrf_token %}
     <select name="kind" class="select auto">{% for code, label in link_form.fields.kind.choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select>
     <input class="input" name="title" placeholder="제목" style="flex:1" required><input class="input" name="url" type="url" placeholder="https://" style="flex:2" required>
     <button class="btn sm">추가</button>

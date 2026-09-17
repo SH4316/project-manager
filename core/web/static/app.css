@@ -1,6 +1,6 @@
 :root {
   --bg-page: #EEF3F5; --bg-surface: #FFFFFF; --bg-secondary: #F5F8F9; --bg-fill: #F0F4F6;
-  --text-primary: #191F28; --text-secondary: #636D7A; --text-disabled: #B0B8C1; --border: #E5E8EB;
+  --text-primary: #191F28; --text-secondary: #4E5765; --text-disabled: #B0B8C1; --border: #E5E8EB;
   --primary: #1F6F82; --primary-pressed: #155463; --primary-bg: #E3F1F4; --on-primary: #FFFFFF;
   --danger: #C92A37; --danger-bg: #FEF0F1; --success: #12793F; --success-bg: #EDF9F2;
   --warning: #A85B00; --warning-bg: #FEF6EA;
@@ -55,9 +55,10 @@ p { margin: 0; }
 .menu > summary { list-style: none; cursor: pointer; }
 .menu > summary::-webkit-details-marker { display: none; }
 .avatar {
-  width: 36px; height: 36px; border-radius: 999px; background: var(--primary-bg); color: var(--primary);
-  display: inline-flex; align-items: center; justify-content: center; font-weight: 700;
+  min-width: 36px; height: 36px; padding: 0 8px; border-radius: 999px; background: var(--primary-bg); color: var(--primary);
+  display: inline-flex; align-items: center; justify-content: center; gap: 2px; font-weight: 700;
 }
+.menu[open] > .avatar { background: var(--primary); color: var(--on-primary); }
 .menu-list {
   position: absolute; right: 0; top: 44px; min-width: 180px; padding: 8px; display: flex; flex-direction: column;
   gap: 4px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
@@ -69,12 +70,17 @@ p { margin: 0; }
 }
 .menu-list a:hover, .menu-list button:hover { background: var(--bg-secondary); }
 /* 조직 전환: 로고 자리가 손잡이다. .menu-list는 오른쪽 정렬이라 왼쪽 변형만 덧붙인다. */
-.switcher > summary.logo { display: inline-flex; align-items: center; gap: 6px; }
+/* 로고 자리지만 손잡이다 — 눌리는 것처럼 보이게 테두리 없는 버튼 모양을 준다 */
+.switcher > summary.logo { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; margin-left: -8px; border-radius: 8px; }
+.switcher > summary.logo:hover { background: var(--bg-secondary); }
+.switcher[open] > summary.logo { background: var(--primary-bg); color: var(--primary); }
 .switcher > summary.logo > span { max-width: 15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.switcher .caret { flex: none; color: var(--text-secondary); transition: transform .12s ease; }
+.switcher .caret { flex: none; color: currentColor; transition: transform .12s ease; }
 .switcher[open] .caret { transform: rotate(180deg); }
 .menu-list.start { right: auto; left: 0; }
 .menu-list a[aria-current="true"] { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
+.menu-list a[aria-current="true"]::before { content: "✓ "; }
+.switcher .menu-list { min-width: 240px; }
 .menu-list .menu-new { margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; padding-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .switcher .caret { transition: none; } }
 .frame { display: flex; align-items: flex-start; }
@@ -101,7 +107,8 @@ aside#panel:empty { display: none; }
   overflow: auto; padding: 24px; background: rgba(25, 31, 40, .28);
 }
 .layout.wide aside#panel .panel { max-width: 820px; margin: 0 auto; padding: 32px; gap: 20px; }
-.layout.wide .panel-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px; }
+.layout.wide .panel-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 24px; }
+.page-head { display: flex; flex-direction: column; gap: 2px; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .tabs a { height: 44px; padding: 0 14px; display: inline-flex; align-items: center; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap; }
 .tabs a[aria-current="page"] { border-bottom-color: var(--primary); color: var(--primary); font-weight: 700; }
@@ -126,17 +133,45 @@ aside#panel:empty { display: none; }
 .btn.icon { width: 36px; padding: 0; }
 .btn.link { height: auto; padding: 0; border: 0; background: none; color: var(--primary); font-weight: 600; }
 .btn[aria-pressed="true"] { background: var(--primary-bg); border-color: var(--primary-bg); color: var(--primary); }
-.input, .select, .textarea {
+/* 되돌릴 수 없는 행동(삭제·제거·폐기·연결 해제)은 보조 버튼과 같은 모양이면 안 된다 */
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.danger:hover { background: var(--danger-bg); }
+.ellipsis { display: inline-block; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* 클래스 없이 렌더된 폼 위젯(Django 기본 출력)도 같은 모양이 되게 요소 선택자까지 함께 받는다 */
+.input, .select, .textarea,
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=submit]), select, textarea {
   width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg-surface); color: var(--text-primary);
 }
 .input.lg { height: 52px; font-size: 16px; }
+/* 폼은 읽기 좋은 폭까지만. 1300px짜리 중요도 셀렉트는 아무도 원하지 않는다 */
+form.stack { max-width: 640px; }
+/* 세로 스택 안에서 버튼이 전폭으로 늘어나면 보조 버튼이 주요 버튼처럼 보인다 */
+/* 세로 스택(카드 포함) 안에서 버튼이 전폭으로 늘어나면 보조 버튼이 주요 버튼처럼 보인다 */
+.stack > .btn, .stack > form > .btn, .card > .btn, .card > a.btn { align-self: flex-start; }
+main.layout .card .stack > .btn { align-self: stretch; }
 .select.auto { width: auto; }
-.textarea { height: auto; padding: 10px 12px; resize: vertical; }
-.input:focus, .select:focus, .textarea:focus { outline: 2px solid var(--primary-bg); border-color: var(--primary); }
+.textarea, textarea { height: auto; padding: 10px 12px; resize: vertical; }
+.input:focus, .select:focus, .textarea:focus,
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-bg); border-color: var(--primary); }
 label.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-secondary); }
 label.field > .input, label.field > .select, label.field > .textarea { color: var(--text-primary); }
+/* 도움말은 어느 필드에서나 같은 모양이어야 한다. Django가 붙이는 <ul>도 같이 받는다 */
+label.field .helptext, label.field ul { margin: 0; padding: 0; list-style: none; font-size: 12px; line-height: 16px; color: var(--text-secondary); }
 label.check { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; }
+
+/* 묶음·정렬 같은 버튼 묶음: 라벨을 앞에 달아 옆 필터 셀렉트와 구별한다 */
+.seg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.seg-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-right: 2px; }
+
+/* 안내·경고 배너: 회색 한 줄로 흘리면 왜 이 화면인지 못 읽는다 */
+.notice {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 12px 14px; border-radius: 8px; font-size: 14px;
+  background: var(--primary-bg); color: var(--primary); border: 1px solid transparent;
+}
+.notice .btn.link { color: inherit; flex: none; }
+.notice.bad { background: var(--danger-bg); color: var(--danger); }
 
 /* ---- 지표 ---- */
 .stats { display: flex; flex-wrap: wrap; gap: 8px 24px; }
@@ -169,7 +204,7 @@ ul.tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .task-row .next { font-size: 16px; line-height: 24px; font-weight: 600; }
 .task-row .proj { font-size: 12px; line-height: 16px; color: var(--text-secondary); }
 .task-row .title { font-size: 16px; line-height: 24px; font-weight: 600; }
-.task-row.closed .title { text-decoration: line-through; }
+.task-row.closed .title { text-decoration: line-through; font-weight: 500; color: var(--text-secondary); }
 .task-row .has-next .title { font-size: 14px; font-weight: 500; }
 .task-row .meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 13px; line-height: 19px; color: var(--text-secondary); }
 .badge {
@@ -178,8 +213,21 @@ ul.tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 }
 .badge.high { font-weight: 700; }
 .task-row .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 100%; }
-.due { font-size: 13px; line-height: 19px; white-space: nowrap; color: var(--text-secondary); }
-.due.overdue { color: var(--danger); }
+/* 기한은 언제나 같은 모양(테두리 배지)으로. 색과 테두리만 상태에 따라 바뀐다 */
+.due {
+  font-size: 12px; line-height: 18px; white-space: nowrap; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);
+}
+.due.overdue { color: var(--danger); border-color: var(--danger); font-weight: 700; }
+.due.today { color: var(--warning); border-color: var(--warning); font-weight: 700; }
+.due.none { border-style: dashed; }
+/* 상태 안내지 버튼이 아니다 — 테두리를 주면 눌러야 할 것처럼 보인다 */
+.auto-mark { font-size: 12px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; }
+/* 링크 복사는 보조 행동 — 마우스가 있는 화면에서는 행에 손을 올릴 때만 보인다 */
+@media (pointer: fine) {
+  .task-row [data-copy] { opacity: 0; transition: opacity .12s ease; }
+  .task-row:hover [data-copy], .task-row:focus-within [data-copy] { opacity: 1; }
+}
 .pill {
   height: 36px; padding: 0 10px; border-radius: 999px; border: 0; font-size: 13px; font-weight: 700; cursor: pointer;
   background: var(--bg-fill); color: var(--text-primary);
@@ -191,6 +239,8 @@ ul.tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .pill.done { background: #B9E6CB; color: #0B3D22; }
 .pill.sm { height: 24px; font-size: 12px; padding: 0 8px; }
 .pill:disabled { cursor: default; opacity: .7; }
+/* 읽기 전용 목록의 상태는 고를 수 없다 — 셀렉트 모양이면 안 된다 */
+.pill.static { display: inline-flex; align-items: center; cursor: default; }
 .today-btn.in { background: var(--bg-fill); color: var(--text-secondary); }
 .today-btn.auto { background: var(--primary-bg); border-color: var(--primary-bg); color: var(--primary); }
 
@@ -200,10 +250,13 @@ ul.tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .subgroup .head { display: flex; align-items: center; gap: 12px; }
 .subgroup .bar { flex: 1; }   /* 나머지는 아래 공용 .bar 규칙이 맡는다 */
 .subgroup ul.tasks { border-left: 2px solid var(--border); padding-left: 12px; }
+.subgroup.bare > .head { display: none; }
+.subgroup.bare ul.tasks { border-left: 0; padding-left: 0; }
 table.grid { width: 100%; border-collapse: collapse; }
 table.grid th, table.grid td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.grid th { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 table.grid .num { text-align: right; }
+table.grid code { overflow-wrap: anywhere; }
 .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; overflow-x: auto; }
 .board .col { display: flex; flex-direction: column; gap: 8px; }
 .board .col h3 { font-size: 15px; line-height: 22px; }
@@ -212,6 +265,7 @@ table.grid .num { text-align: right; }
 .panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .panel-bar { display: flex; align-items: center; gap: 8px; }
 .panel-bar .status { flex: 1; font-size: 13px; color: var(--text-secondary); }
+.panel-bar > a:first-child { margin-right: 4px; }
 .panel .number { font-size: 13px; color: var(--text-secondary); }
 .panel .title-input { width: 100%; padding: 0; border: 0; border-bottom: 1px solid transparent; background: none; font-size: 20px; line-height: 28px; font-weight: 600; }
 .panel .title-input:focus { outline: none; border-bottom-color: var(--primary); }
@@ -229,9 +283,15 @@ table.grid .num { text-align: right; }
 .notes { min-height: 120px; }
 .links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 details > summary { cursor: pointer; font-weight: 600; }
+.git-fold > summary { font-size: 13px; color: var(--text-secondary); font-weight: 600; }
+/* 표 안에서 펼치는 폼: 접힌 동안은 버튼 하나로만 보인다 */
+.link-fold > summary { list-style: none; display: inline-flex; }
+.link-fold > summary::-webkit-details-marker { display: none; }
+.link-fold[open] > summary { display: none; }
 .history { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .history .who { color: var(--text-secondary); }
 .focus h2 { font-size: 28px; line-height: 38px; }
+.focus .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 13px; color: var(--text-secondary); }
 .today-columns { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .today-columns > * { flex: 1 1 380px; }
 .today-columns > .schedule { flex: 1 1 280px; max-width: 360px; }
@@ -239,11 +299,18 @@ details > summary { cursor: pointer; font-weight: 600; }
 /* ---- 모달 · 칩 · 라디오 ---- */
 dialog { width: calc(100% - 32px); max-width: 520px; padding: 24px; border: 0; border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 8px 32px rgba(15,50,60,.2); }
 dialog::backdrop { background: rgba(15,50,60,.35); }
+dialog { max-height: calc(100vh - 64px); overflow: auto; }
+/* 긴 폼에서 저장 버튼이 스크롤 아래로 사라지지 않게 */
+dialog form.stack > .row:last-child { position: sticky; bottom: -24px; margin: 0 -24px -24px; padding: 16px 24px;
+  background: var(--bg-surface); border-top: 1px solid var(--border); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; align-items: center; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
 .chip input { display: none; }
-.chip:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
-.radios { display: flex; flex-direction: column; gap: 8px; }
+.chip:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); font-weight: 600; }
+.chip:has(input:checked)::before { content: "✓"; margin-right: 6px; }
+/* 상태 카드가 9개면 세로 한 줄로는 모달이 900px을 넘긴다 — 넓으면 2열로 */
+.radios { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 8px; }
+dialog { max-width: 640px; }
 .radio-card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .radio-card input { display: none; }
 .radio-card:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); }
@@ -266,16 +333,51 @@ dialog::backdrop { background: rgba(15,50,60,.35); }
 }
 @media (max-width: 700px) {
   .header { flex-wrap: wrap; height: auto; padding: 8px 12px; row-gap: 4px; }
-  .nav { order: 3; width: 100%; }
-  .frame { flex-direction: column; }
+  /* 탭이 늘어도 줄이 꺾이지 않게 가로 스크롤로 흘린다 */
+  .nav { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { flex: none; }
+  .tabs a { padding: 0 10px; }
+  /* 조직 전환 패널: 떠 있는 작은 상자 대신 헤더 폭을 채우는 판 */
+  .switcher > .menu-list { left: 0; right: 0; min-width: 0; }
+  /* 표는 카드 안에서 가로로 스크롤한다. 없으면 페이지 전체가 가로로 흔들린다.
+     양 끝 그림자로 "더 있다"를 알린다 — 스크롤 막대는 터치에서 안 보인다. */
+  table.grid {
+    display: block; overflow-x: auto;
+    background:
+      linear-gradient(to right, var(--bg-surface) 40%, transparent) left / 28px 100% no-repeat local,
+      linear-gradient(to left, var(--bg-surface) 40%, transparent) right / 28px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(15,50,60,.30), transparent) left / 16px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(15,50,60,.30), transparent) right / 16px 100% no-repeat scroll;
+  }
+  /* 세로 레일을 가로 한 줄로 눕힌다. 세로용 머리말(개수·접기)은 가로에선 뜻이 없다 */
+  .rail { flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible; }
+  .rail-head { display: none; }
+  /* 줄 전체가 함께 스크롤해야 "새 프로젝트"가 오른쪽 밖으로 잘려 나가지 않는다 */
+  .rail-list { flex-direction: row; flex-wrap: wrap; align-items: center; flex: none; max-height: none; overflow: visible; padding: 0; }
+  .rail-list > a { flex: none; height: 40px; }
+  .rail a .label { overflow: visible; max-width: none; }
+  .rail-new { flex: none; }
+  /* 상세 패널을 화면 전체로 덮으면 헤더가 사라져 돌아갈 길이 없어진다 — 흐름 안에 둔다 */
+  .layout.wide aside#panel { position: static; padding: 0; background: none; }
+  .layout.wide aside#panel .panel { min-height: 0; }
+  /* 넓은 패널(태스크 상세)도 좁은 화면에서는 전체 화면 시트로 */
+  .layout.wide aside#panel { inset: 0; padding: 0; }
+  .layout.wide aside#panel .panel { max-width: none; margin: 0; padding: 16px; border-radius: 0; min-height: 100%; }
+  /* align-items:flex-start가 남아 있으면 자식이 뷰포트가 아니라 내용 폭으로 부푼다 → 페이지가 가로로 흔들린다 */
+  .frame { flex-direction: column; align-items: stretch; }
   .rail { position: static; width: 100%; max-height: none; flex-direction: row; overflow-x: auto; padding: 8px 12px; gap: 4px; }
   .rail a { flex: none; }
   .layout { padding: 12px; }
-  .layout.has-panel aside#panel { position: fixed; inset: 0; z-index: 20; max-height: none; overflow: auto; }
-  .layout.has-panel .panel { border-radius: 0; min-height: 100%; }
+  /* 화면 전체를 덮으면 헤더가 가려져 돌아갈 길이 없다 — 좁은 화면에서는 흐름 안에 둔다 */
+  .layout.has-panel aside#panel { position: static; max-height: none; overflow: visible; }
   .tiles, .tiles.five { grid-template-columns: repeat(2, 1fr); }
   .pill, .btn.sm, .btn.icon { height: 40px; }
+  /* 배지 글자 수에 따라 줄바꿈이 달라지면 카드 높이가 제멋대로가 된다 */
+  .task-row { flex-direction: column; align-items: stretch; }
+  .task-row .actions { width: 100%; }
   .today-columns > .schedule { max-width: none; }
+  .card form.row > .input, .card form.row > .select { flex: 1 1 100%; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
@@ -288,16 +390,19 @@ dialog::backdrop { background: rgba(15,50,60,.35); }
 /* ---- 부하 현황 · 로드맵 (V2-04) ---- */
 .grow { flex: 1; min-width: 0; }
 .badge.danger { border-color: var(--danger); color: var(--danger); font-weight: 700; }
+.badge.ok { border-color: var(--success); color: var(--success); font-weight: 700; }
 .load-row { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; }
 .load-row .name { flex: 0 0 140px; font-size: 16px; font-weight: 600; color: var(--text-primary); text-decoration: none; }
 .load-row .grow { flex: 1 1 220px; min-width: 0; }
 .bar { height: 8px; border-radius: 999px; background: var(--bg-fill); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--primary); }
 .tag { padding: 0 8px; border-radius: 999px; background: var(--bg-fill); font-size: 12px; line-height: 22px; }
-.chip[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); text-decoration: none; }
+.chip[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); text-decoration: none; font-weight: 600; }
+.chip, .chip a { text-decoration: none; }
 .tl-head, .tl-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .tl-name { flex: 0 0 220px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .tl-track { flex: 1; min-width: 0; position: relative; height: 28px; display: grid; grid-template-columns: repeat(3, 1fr); font-size: 12px; color: var(--text-secondary); }
+.tl-today { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--danger); }
 .tl-bar { position: absolute; top: 4px; height: 20px; border-radius: 6px; background: var(--primary-bg); overflow: hidden; }
 .tl-bar.planned { background: var(--bg-fill); border: 1px dashed var(--text-disabled); }
 .tl-bar i { display: block; height: 100%; background: var(--primary); }
@@ -307,7 +412,10 @@ dialog::backdrop { background: rgba(15,50,60,.35); }
 .notes-columns { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .notes-columns > .list { flex: 1 1 320px; min-width: 0; }
 .notes-columns > .card:last-child { flex: 9999 1 420px; min-width: 0; }
-.note-item { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); text-align: left; cursor: pointer; }
+/* 목록 항목은 링크지만 문장 속 링크가 아니다 — 밑줄·링크색이면 카드가 글처럼 읽힌다 */
+.note-item { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); text-align: left; cursor: pointer; color: var(--text-primary); text-decoration: none; }
+.note-item:hover { background: var(--bg-secondary); }
+.note-item .muted { text-decoration: none; }
 .note-item.sel { box-shadow: inset 3px 0 0 var(--primary); }
 .doc { display: flex; flex-direction: column; min-height: 360px; padding: 8px 0; cursor: text; }
 .blk { padding: 2px 6px; font-size: 15px; line-height: 24px; display: flex; gap: 8px; align-items: baseline; }

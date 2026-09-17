@@ -13,6 +13,8 @@
   var lines = src.value.replace(/\r\n/g, "\n").split("\n");
   var version = Number(doc.dataset.version);
   var editing = -1, caret = null, timer = null, dead = false;
+  // 읽기 전용(거버넌스 보기 등): 같은 파서로 그리기만 하고 편집·저장은 하지 않는다.
+  var readonly = doc.dataset.readonly === "1";
 
   src.hidden = true;
   if (submit) submit.hidden = true;
@@ -102,7 +104,7 @@
   function render() {
     while (bodyEl.firstChild) bodyEl.removeChild(bodyEl.firstChild);
     for (var i = 0; i < lines.length; i++) {
-      bodyEl.appendChild(i === editing ? editor(lines[i], i) : block(lines[i], i));
+      bodyEl.appendChild(!readonly && i === editing ? editor(lines[i], i) : block(lines[i], i));
     }
     var ta = bodyEl.querySelector("textarea");
     if (ta) {
@@ -150,6 +152,7 @@
   }
 
   doc.addEventListener("click", function (e) {
+    if (readonly) return;
     if (e.target !== doc && e.target !== bodyEl) return;   // 빈 영역만
     if (lines.length && lines[lines.length - 1].trim() === "") {
       editing = lines.length - 1;
@@ -188,6 +191,7 @@
   }
 
   function save() {
+    if (readonly) return;
     clearTimeout(timer);
     timer = setTimeout(function () {
       src.value = lines.join("\n");

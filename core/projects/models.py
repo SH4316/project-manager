@@ -99,6 +99,41 @@ class ApiSpec(models.Model):
         return f"{self.project.name} API"
 
 
+class ProjectDoc(models.Model):
+    """프로젝트 전용 문서. GitHub의 README·Wiki 자리를 앱 안에서 대신한다.
+
+    회의록(notes.MeetingNote)과 나란한 구조지만 조직이 아니라 프로젝트에 매인다.
+    같은 블록 편집기(web/static/notes.js)를 쓰므로 저장 규약(X-Note-Version)도 같다.
+    """
+
+    # tasks.ChangeLog.SOURCES와 같은 코드를 쓴다. "discord"는 4자를 넘으므로 "dc"다.
+    SOURCES = [("web", "웹"), ("api", "API"), ("mcp", "AI"), ("dc", "Discord")]
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="docs")
+    title = models.CharField("제목", max_length=200, default="제목 없는 문서")
+    body_md = models.TextField("본문", blank=True)
+    version = models.PositiveIntegerField(default=1)
+    # 이 문서가 다루는 태스크. 같은 프로젝트의 태스크만 건다(docs.link_task가 검사한다).
+    tasks = models.ManyToManyField("tasks.Task", blank=True, related_name="docs")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    # 마지막으로 고친 사람과 경로. AI도 문서를 고치므로, 누가 언제 손댔는지 화면에서 보여야 한다.
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+", null=True, blank=True
+    )
+    updated_source = models.CharField(max_length=4, choices=SOURCES, default="web")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # 만든 순서로 고정한다. 수정할 때마다 목록이 뒤집히면 문서를 다시 찾기 어렵다.
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return self.title
+
+
 class ProjectDependency(models.Model):
     from_project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="dependencies")
     to_project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="dependents")

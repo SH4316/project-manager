@@ -2,10 +2,19 @@
 {% block main %}
 <div class="card">
   <h1 class="t24">내 조직</h1>
-  <ul class="links">
-    {% for o in orgs %}<li><a href="{% url 'org_detail' o.pk %}">{{ o.name }}</a> <span class="muted t13">{{ o.purpose }}</span></li>
-    {% empty %}<li class="muted">아직 조직에 속해 있지 않습니다. 초대 링크가 필요합니다.</li>{% endfor %}
-  </ul>
+  <table class="grid">
+    <thead><tr><th>조직</th><th>내 역할</th><th class="num">프로젝트</th><th class="num">멤버</th></tr></thead>
+    <tbody>
+    {% for o in orgs %}
+    <tr>
+      <td><a href="{% url 'org_detail' o.pk %}">{{ o.name }}</a>{% if o.purpose %}<div class="muted t13">{{ o.purpose }}</div>{% endif %}</td>
+      <td class="t13">{% if o.pk in admin_org_ids %}관리자{% else %}멤버{% endif %}</td>
+      <td class="num">{{ o.project_count }}</td>
+      <td class="num">{{ o.member_count }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="4" class="muted">아직 조직에 속해 있지 않습니다. 초대 링크가 필요합니다.</td></tr>{% endfor %}
+    </tbody>
+  </table>
   <a class="btn" href="{% url 'org_new' %}">조직 만들기</a>
 </div>
 {% endblock %}

@@ -53,6 +53,12 @@ def revoke_invite(invite, actor):
         invite.save(update_fields=["revoked_at"])
 
 
+def invite_org(token: str):
+    """로그인 전에도 "어느 조직 초대인지"만 알려 준다. 참여는 join_by_token이 한다."""
+    invite = Invite.objects.select_related("org").filter(token=token).first()
+    return invite.org if invite and invite.is_usable else None
+
+
 @transaction.atomic
 def join_by_token(user, token: str) -> Organization:
     invite = Invite.objects.select_for_update().select_related("org").filter(token=token).first()

@@ -150,26 +150,90 @@ def test_project_inline_task_create(logged, project, member):
 
 
 def test_me_team_view_read_only(logged, task):
+    """보기 전용이면 상태는 고를 수 없는 정적 배지로 그린다(비활성 셀렉트가 아니다)."""
     body = logged.get("/me?member=0").content.decode()
     assert "보기 전용" in body
-    assert "disabled" in body
+    assert 'class="pill todo static"' in body
+    assert 'class="pill todo"' not in body  # 셀렉트 모양의 상태는 없다
 
 
-def test_me_group_buttons_toggle_off(logged, task):
+def test_panel_edits_project_and_assignee_inline(logged, task, admin, org):
+    """표면마다 고칠 수 있는 필드가 다르면 안 된다 — 패널이 프로젝트·담당자까지 맡는다."""
+    from projects.services import create_project
+
+    other = create_project(org=org, name="다른 프로젝트", actor=admin, owners=[admin])
+    r = logged.post(
+        f"/tasks/{task.pk}/meta",
+        {"version": task.version, "project": other.pk},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    task.refresh_from_db()
+    assert task.project == other
+
+    r = logged.post(
+        f"/tasks/{task.pk}/meta",
+        {"version": task.version, "assignee": admin.pk},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    task.refresh_from_db()
+    assert task.assignee == admin
+
+
+def test_panel_meta_rejects_outside_org(logged, task, outsider):
+    r = logged.post(
+        f"/tasks/{task.pk}/meta",
+        {"version": task.version, "assignee": outsider.pk},
+        headers=HX,
+    )
+    assert r.status_code == 200
+    assert "맡길 수 없습니다" in r.content.decode()
+    task.refresh_from_db()
+    assert task.assignee != outsider
+
+
+def test_task_edit_page_is_gone(logged, task):
+    """편집 화면은 패널에 흡수됐다. 남아 있으면 같은 필드를 두 곳에서 고치게 된다."""
+    assert logged.get(f"/tasks/{task.pk}/edit").status_code == 404
+
+
+def test_events_stream_reports_changes(logged, task, member):
+    """/events는 방금 바뀐 태스크 id를 흘려보낸다 — 실시간 반영의 유일한 출처."""
+    from tasks.services import update_text
+    from web.views import events as ev
+
+    update_text(task, "title", "다른 사람이 고친 제목", actor=member)
+    r = logged.get("/events")
+    assert r.status_code == 200
+    assert r["Content-Type"] == "text/event-stream"
+    assert r["X-Accel-Buffering"] == "no"
+    # 스트림을 통째로 돌리면 STREAM_SECONDS만큼 걸린다. 피드 함수만 직접 확인한다.
+    since = task.updated_at - timedelta(seconds=1)
+    assert task.pk in [pk for pk, _ in ev._changed_since(task.project.org, since)]
+    r.close()
+
+
+def test_events_needs_login(client):
+    assert client.get("/events").status_code == 302
+
+
+def test_me_group_buttons_mark_one(logged, task):
+    """묶음은 '없음'까지 포함해 항상 하나만 눌려 있다(눌림 없음 = 분류 없음이 아니다)."""
     pressed = 'aria-pressed="true"'
 
     def group_row(body):
         return body.split('aria-label="묶음"')[1].split('aria-label="정렬"')[0]
 
-    # 기본·오타는 기한별. 눌린 버튼은 다시 누르면 "none"을 보낸다
+    # 기본·오타는 기한별
     for url in ("/me?member=0", "/me?member=0&group=nonsense"):
         body = logged.get(url).content.decode()
         assert group_row(body).count(pressed) == 1
-        assert 'value="none" aria-pressed="true">기한별' in body
+        assert 'value="due" aria-pressed="true">기한별' in body
         assert "<h2>기한 초과 <" in body and "<h2>미완료 <" not in body
     body = logged.get("/me?member=0&group=none").content.decode()
-    assert pressed not in group_row(body)
-    assert 'value="due" aria-pressed="false">기한별' in body
+    assert group_row(body).count(pressed) == 1
+    assert 'value="none" aria-pressed="true">없음' in body
     assert "<h2>미완료 <" in body and "<h2>기한 초과 <" not in body
 
 
@@ -396,7 +460,7 @@ def test_admin_pages_explain_to_members(logged, org):
     r = logged.get(f"/orgs/{org.pk}/teams")
     assert r.status_code == 302 and r.url == f"/orgs/{org.pk}"
     page = logged.get(r.url)
-    assert page.status_code == 200 and "조직 관리자만 볼 수 있어요" in page.content.decode()
+    assert page.status_code == 200 and "조직 관리자만 접근할 수 있습니다" in page.content.decode()
 
 
 def test_webhook_routes_are_gone(as_admin, org):
@@ -881,3 +945,110 @@ def test_dialog_opened_directly_gets_the_shell(logged, project):
     assert "app.css" in body and "프로젝트 수정" in body
     frag = logged.get(f"/projects/{project.pk}/edit", headers={"HX-Request": "true"})
     assert "app.css" not in frag.content.decode()
+
+
+# ---------- 프로젝트 문서 화면 ----------
+
+
+def test_docs_tab_is_always_there(logged, project, settings):
+    """GitHub를 붙이지 않아도 문서 탭은 있어야 한다 — 기록할 곳이 사라지면 안 된다."""
+    settings.GITHUB_ENABLED = False
+    body = logged.get(f"/projects/{project.pk}").content.decode()
+    assert f"/projects/{project.pk}/docs" in body
+    assert f"/projects/{project.pk}/repo" not in body  # GitHub 탭만 사라진다
+
+
+def test_doc_new_then_edit_through_the_screen(logged, project, member):
+    r = logged.post(f"/projects/{project.pk}/docs/new")
+    assert r.status_code == 302 and "?doc=" in r.headers["Location"]
+    doc_id = r.headers["Location"].split("?doc=")[1]
+
+    r = logged.post(f"/docs/{doc_id}/save", {"field": "title", "value": "운영 절차", "version": 1})
+    assert r.status_code == 204 and r["X-Note-Version"] == "2"
+
+    body = logged.get(f"/projects/{project.pk}/docs?doc={doc_id}").content.decode()
+    assert "운영 절차" in body
+
+
+def test_doc_save_reports_conflict(logged, project):
+    doc_id = logged.post(f"/projects/{project.pk}/docs/new").headers["Location"].split("?doc=")[1]
+    logged.post(f"/docs/{doc_id}/save", {"field": "body_md", "value": "먼저", "version": 1})
+    r = logged.post(f"/docs/{doc_id}/save", {"field": "body_md", "value": "나중", "version": 1})
+    assert r.status_code == 409
+
+
+def test_doc_is_hidden_from_other_orgs(client, project, outsider):
+    from projects.docs import create_doc
+
+    doc = create_doc(project=project, actor=project.created_by)
+    client.login(username="outsider", password="pw12345678")
+    assert client.get(f"/projects/{project.pk}/docs").status_code == 404
+    assert client.post(f"/docs/{doc.pk}/save", {"field": "title", "value": "x"}).status_code == 404
+
+
+def test_docs_first_one_opens_by_default(logged, project):
+    from projects.docs import create_doc
+
+    create_doc(project=project, actor=project.created_by, title="개요", body_md="배경")
+    body = logged.get(f"/projects/{project.pk}/docs").content.decode()
+    assert 'id="doc-editor"' in body and "개요" in body
+
+
+# ---------- GitHub를 끈 상태 ----------
+
+
+def test_github_screens_404_when_disabled(logged, project, task, settings):
+    """켜져 있지 않으면 404다. 예전에는 PEM을 읽으려다 500이 났다."""
+    settings.GITHUB_ENABLED = False
+    assert logged.get(f"/projects/{project.pk}/repo").status_code == 404
+    assert logged.post(f"/projects/{project.pk}/repo/settings").status_code == 404
+    assert logged.post(f"/tasks/{task.pk}/git/branch").status_code == 404
+    assert logged.post(f"/tasks/{task.pk}/git/issue").status_code == 404
+
+
+def test_task_panel_works_without_github(logged, task, settings):
+    settings.GITHUB_ENABLED = False
+    body = logged.get(f"/tasks/{task.pk}").content.decode()
+    assert "GitHub" not in body
+    for must_stay in ("진행 메모", "체크리스트", "참고 자료", "완료 조건"):
+        assert must_stay in body
+
+
+def test_task_refs_can_link_a_project_doc(logged, project, task):
+    from projects.docs import create_doc
+
+    doc = create_doc(project=project, actor=project.created_by, title="설계 결정")
+    r = logged.post(f"/tasks/{task.pk}/docs/link", {"doc": doc.pk}, headers=HX)
+    assert r.status_code == 200
+    body = r.content.decode()
+    assert "설계 결정" in body and "문서" in body
+    assert list(task.docs.all()) == [doc]
+
+    # 이미 걸린 문서는 후보 셀렉트에 다시 나오지 않는다
+    assert "프로젝트 문서에서 고르기…" not in body
+
+    r = logged.post(f"/tasks/{task.pk}/docs/{doc.pk}/unlink", headers=HX)
+    assert r.status_code == 200
+    assert not task.docs.exists()
+
+
+def test_task_panel_shows_linked_docs_on_first_render(logged, project, task):
+    """_refs.html은 패널 최초 렌더와 조각 갱신 양쪽에서 쓰인다 — 한쪽만 채우면 새로고침 전까지 안 보인다."""
+    from projects.docs import create_doc, link_task
+
+    doc = create_doc(project=project, actor=project.created_by, title="설계 결정")
+    link_task(doc, task, project.created_by)
+    body = logged.get(f"/tasks/{task.pk}").content.decode()
+    assert "설계 결정" in body
+
+
+def test_task_refs_rejects_doc_from_another_project(logged, project, org, admin, task):
+    from projects.docs import create_doc
+    from projects.services import create_project
+
+    other = create_project(org=org, name="다른 프로젝트", actor=admin, owners=[admin])
+    doc = create_doc(project=other, actor=admin, title="남의 문서")
+    r = logged.post(f"/tasks/{task.pk}/docs/link", {"doc": doc.pk}, headers=HX)
+    assert r.status_code == 200
+    assert "같은 프로젝트의 태스크여야 합니다." in r.content.decode()
+    assert not task.docs.exists()

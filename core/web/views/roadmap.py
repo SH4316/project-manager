@@ -76,6 +76,7 @@ def roadmap(request, org_id):
             "tab": "roadmap",
             "is_admin": can_admin(request.user, org),
             "months": data["months"],
+            "today_pct": data["today_pct"],
             "rows": data["rows"],
             "deps": data["deps"],
             "hidden": data["hidden"],
