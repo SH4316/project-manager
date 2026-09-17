@@ -207,14 +207,30 @@ def update_project(
 
 
 @transaction.atomic
-def archive_project(project, *, actor, source="web", token=None):
-    """미완료 태스크가 있으면 ServiceError. errors['tasks']에 'TASK-1, TASK-2' 형식."""
+def archive_project(project, *, actor, source="web", token=None, cancel_open=False):
+    """미완료 태스크가 있으면 ServiceError. errors['tasks']에 'TASK-1, TASK-2' 형식.
+
+    `cancel_open=True`면 그 미완료를 **취소로 닫고** 보관한다. 그만두기로 한 프로젝트에는
+    손대지 않은 태스크가 남기 마련이라, 그것 때문에 숨길 수 없으면 보관이 쓸모없어진다.
+    지우지 않고 취소로 닫는 이유는 이력이 남아야 하기 때문이다.
+    """
     from tasks.models import Task
+    from tasks.services import transition
 
     require_level(actor, project, effective("project.archive_by", org=project.org), "project")
     open_tasks = list(Task.objects.filter(project=project, status__in=Task.OPEN).order_by("id"))
-    if open_tasks:
+    if open_tasks and not cancel_open:
         raise ServiceError({"tasks": ", ".join(t.number for t in open_tasks)})
+    for task in open_tasks:
+        transition(
+            task,
+            "cancelled",
+            actor=actor,
+            source=source,
+            token=token,
+            reason="프로젝트를 보관하면서 함께 취소했습니다.",
+            expected_version=task.version,
+        )
     if project.is_archived:
         return project
     Project.objects.filter(pk=project.pk).update(

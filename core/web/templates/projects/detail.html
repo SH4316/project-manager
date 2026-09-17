@@ -53,6 +53,7 @@
           <summary class="btn sm icon" aria-label="더보기" title="더보기">⋯</summary>
           <div class="menu-list">
             <form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('보관할까요? 미완료 태스크가 있으면 거부됩니다.')">{% csrf_token %}<button class="btn link danger">프로젝트 보관</button></form>
+            <form method="post" action="{% url 'project_archive' project.pk %}" onsubmit="return confirm('남은 미완료 태스크를 모두 취소하고 보관합니다. 계속할까요?')">{% csrf_token %}<input type="hidden" name="cancel_open" value="1"><button class="btn link danger">미완료까지 취소하고 보관</button></form>
           </div>
         </details>
         {% endif %}

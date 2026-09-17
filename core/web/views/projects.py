@@ -251,14 +251,21 @@ def task_create(request, project_id):
 @require_POST
 def project_archive(request, project_id):
     project = project_or_404(request.user, project_id)
+    cancel_open = request.POST.get("cancel_open") == "1"
     try:
-        archive_project(project, actor=request.user, source="web")
-        messages.success(request, "프로젝트를 보관했습니다.")
+        archive_project(project, actor=request.user, source="web", cancel_open=cancel_open)
+        messages.success(
+            request,
+            "미완료 태스크를 취소하고 프로젝트를 보관했습니다."
+            if cancel_open
+            else "프로젝트를 보관했습니다.",
+        )
     except ServiceError as e:
         msg = e.errors.get("tasks")
         messages.error(
             request,
-            f"미완료 태스크가 있어 보관할 수 없습니다: {msg}"
+            f"미완료 태스크가 있어 보관할 수 없습니다: {msg}. "
+            f"함께 취소하고 보관하려면 [미완료까지 취소하고 보관]을 쓰세요."
             if msg
             else " ".join(e.errors.values()),
         )

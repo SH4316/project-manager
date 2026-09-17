@@ -634,3 +634,31 @@ def test_doc_records_who_edited_and_how(project, member, admin):
 def test_doc_create_has_body_ceiling(project, member):
     with pytest.raises(ServiceError):
         create_doc(project=project, actor=member, body_md="가" * 300_000)
+
+
+def test_archive_can_cancel_leftover_tasks(org, project, admin, member):
+    """그만두기로 한 프로젝트에는 손대지 않은 태스크가 남는다. 그것 때문에 숨길 수 없으면
+    보관이 쓸모없어진다 — 취소로 닫고 보관한다(지우지 않는다)."""
+    from tasks.models import Task
+    from tasks.services import create_task
+
+    from .services import archive_project
+
+    task = create_task(
+        project=project,
+        title="남은 일",
+        actor=admin,
+        source="web",
+        assignee=member,
+        no_due_reason="미정",
+    )
+    with pytest.raises(ServiceError) as e:
+        archive_project(project, actor=admin)
+    assert task.number in e.value.errors["tasks"]
+
+    archive_project(project, actor=admin, cancel_open=True)
+    project.refresh_from_db()
+    task.refresh_from_db()
+    assert project.is_archived
+    assert task.status == "cancelled"
+    assert Task.objects.filter(pk=task.pk).exists()  # 지우지 않았다
