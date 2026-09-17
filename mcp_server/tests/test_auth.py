@@ -1,6 +1,7 @@
 import pytest
 
 from mcp_server.auth import TokenMiddleware, current_token, extract_from_scope, require_token
+from mcp_server.server import security_settings
 
 TOKEN = "pm_abcdefghijklmnopqrstuvwxyz"
 
@@ -48,3 +49,19 @@ async def test_middleware_rewrites_path_and_sets_token():
     assert seen["path"] == "/mcp"
     assert seen["token"] == TOKEN
     assert current_token.get() is None
+
+
+def test_security_settings_keeps_loopback_and_adds_proxy_host():
+    s = security_settings(" mcp.example.com , 10.0.0.2:8081 ")
+    assert "127.0.0.1:*" in s.allowed_hosts
+    assert "mcp.example.com" in s.allowed_hosts and "10.0.0.2:8081" in s.allowed_hosts
+    assert "https://mcp.example.com" in s.allowed_origins
+
+
+def test_security_settings_empty_is_loopback_only():
+    assert security_settings("").allowed_hosts == [
+        "127.0.0.1",
+        "127.0.0.1:*",
+        "localhost",
+        "localhost:*",
+    ]

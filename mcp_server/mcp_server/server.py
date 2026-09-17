@@ -1,4 +1,7 @@
+import os
+
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from .auth import require_token
 from .core_client import Core, CoreError
@@ -16,7 +19,27 @@ INSTRUCTIONS = """산돌이 조직 업무 관리 도구.
 - 진행 메모(notes)는 태스크당 한 덩어리 텍스트다. 덧붙일 때는 append_note를 쓴다. update_task(notes=...)는 통째로 바꾼다.
 """
 
-mcp = FastMCP("sandol-pm", instructions=INSTRUCTIONS, stateless_http=True, json_response=True)
+def security_settings(extra: str) -> TransportSecuritySettings:
+    """Host 허용 목록. SDK의 DNS 리바인딩 보호는 기본이 루프백뿐이라, 앞단 프록시를 거치면
+    Host가 그 도메인이라 421로 막힌다. MCP_ALLOWED_HOSTS에 쉼표로 그 도메인을 넣는다."""
+    hosts = [h.strip() for h in extra.split(",") if h.strip()]
+    return TransportSecuritySettings(
+        allowed_hosts=["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*", *hosts],
+        allowed_origins=[
+            "http://127.0.0.1:*",
+            "http://localhost:*",
+            *(f"https://{h}" for h in hosts),
+        ],
+    )
+
+
+mcp = FastMCP(
+    "sandol-pm",
+    instructions=INSTRUCTIONS,
+    stateless_http=True,
+    json_response=True,
+    transport_security=security_settings(os.environ.get("MCP_ALLOWED_HOSTS", "")),
+)
 
 
 def _core() -> Core:
