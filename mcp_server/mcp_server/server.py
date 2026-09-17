@@ -10,6 +10,9 @@ INSTRUCTIONS = """산돌이 조직 업무 관리 도구.
 - 조직마다 개발 거버넌스(태스크 쪼개기·기한·중요도·상태·팀 운영 규칙, AI에게 허용한 범위)가 있다.
   태스크를 만들거나 기한·담당·중요도·상태를 바꾸거나 팀을 건드리기 전에 get_governance로 그 조직의
   규칙을 읽고 그대로 따른다. 거버넌스와 아래 기본 규칙이 어긋나면 거버넌스가 우선이다.
+- 쓰기 작업 전에는 get_governance와 함께 get_settings로 그 조직의 설정(AI 정책 포함)도 읽는다.
+- 설정이 막은 일은 절대 우회하지 않는다. AI가 스스로 풀 수 있는 제약은 제약이 아니다 — 그럴 땐
+  사람에게 넘긴다.
 - 프로젝트마다 문서(list_docs·get_doc)가 있다. 기획 배경·설계 결정·운영 절차가 거기 있으니,
   그 프로젝트의 일을 판단하기 전에 관련 문서를 읽는다. 태스크에 걸린 문서는 get_task의 docs에 나온다.
 - 문서는 create_doc·update_doc으로 고칠 수 있다. 결정이 바뀌면 문서를 먼저 고치고 태스크를 움직인다.
@@ -22,6 +25,7 @@ INSTRUCTIONS = """산돌이 조직 업무 관리 도구.
 - 중요도는 1~10 정수. 8~10 높음, 4~7 중간, 1~3 낮음.
 - 진행 메모(notes)는 태스크당 한 덩어리 텍스트다. 덧붙일 때는 append_note를 쓴다. update_task(notes=...)는 통째로 바꾼다.
 """
+
 
 def security_settings(extra: str) -> TransportSecuritySettings:
     """Host 허용 목록. SDK의 DNS 리바인딩 보호는 기본이 루프백뿐이라, 앞단 프록시를 거치면
@@ -212,6 +216,14 @@ def get_governance(org_id: int) -> dict:
     """그 조직의 개발 거버넌스 본문(마크다운). 쓰기 작업 전에 먼저 읽는다.
     is_default가 True면 조직이 아직 고치지 않은 기본안이다. 결과: {text, is_default}"""
     return _core().get(f"/api/orgs/{org_id}/governance")
+
+
+@mcp.tool()
+def get_settings(org_id: int) -> dict:
+    """그 조직에 지금 적용 중인 설정(AI 정책 포함). 쓰기 작업 전에 get_governance와 함께 읽는다.
+    결과: {values(실효 설정 전부), specs(키·형·기본값·선택지 설명), locked(조직이 잠근 키)}.
+    이 도구는 읽기 전용이다 — 설정에 막힌 일은 우회하지 말고 사람에게 넘긴다."""
+    return _core().get(f"/api/orgs/{org_id}/settings")
 
 
 @mcp.tool()

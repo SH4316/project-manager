@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 import pytest
@@ -10,24 +11,48 @@ from discord_service.store import Store
 
 OPEN = ("todo", "doing", "paused", "blocked", "review")
 BOT_PREFIX = "/api/integrations/discord/"
-CHANNEL = "999"  # 조직 채널 id (DISCORD_CHANNEL_ID)
+CHANNEL = "999"  # 조직 채널 id
 
 
 def member(i=2, did="111", name="팀원"):
     return {"id": i, "display_name": name, "discord_user_id": did}
 
 
-def task(i, due, status="todo", stop_reason="", assignee=None):
+def org(org_id=1, name="산돌이", guild_id="", channel_id=CHANNEL, settings=None):
+    """§8.4 `GET /api/integrations/discord/orgs` 항목 하나."""
+    return {
+        "org_id": org_id,
+        "name": name,
+        "guild_id": guild_id,
+        "channel_id": channel_id,
+        "settings": settings or {},
+    }
+
+
+def notify_member(did="111", notify_dm=True, notify_kinds=None, notify_hour=-1):
+    """§4.6 `GET .../orgs/{id}/members` 항목 하나."""
+    return {
+        "discord_user_id": did,
+        "notify_dm": notify_dm,
+        "notify_kinds": list(notify_kinds)
+        if notify_kinds is not None
+        else ["d3", "d1", "d0", "overdue"],
+        "notify_hour": notify_hour,
+    }
+
+
+def task(i, due, status="todo", stop_reason="", assignee=None, project=None, stopped_at=""):
     return {
         "id": i,
         "number": f"TASK-{i}",
         "title": f"할 일 {i}",
-        "project": {"id": 1, "name": "학식 API", "org_id": 1},
+        "project": project or {"id": 1, "name": "학식 API", "org_id": 1, "discord_channel_id": ""},
         "assignee": member() if assignee is None else assignee,
         "status": status,
         "priority": 5,
         "due_date": due,
         "stop_reason": stop_reason,
+        "stopped_at": stopped_at,
         "next_action": "",
         "url": f"http://pm/tasks/{i}",
     }
@@ -86,7 +111,9 @@ class FakeCore:
     404·403·409·429·400 중 하나로 바꾸면 그 상태와 `bot_detail`(한국어 문구)로 답한다.
     """
 
-    def __init__(self, tasks: list[dict], weekly: dict | None = None):
+    def __init__(
+        self, tasks: list[dict], weekly: dict | None = None, orgs: list[dict] | None = None
+    ):
         self.tasks = {t["id"]: t for t in tasks}
         self.weekly_data = weekly
         self.status_reports = []
@@ -99,6 +126,13 @@ class FakeCore:
         self.channel_save_fail = False
         self.channels = {"team": "", "project": ""}
         self.next_id = 100
+        # 다중 조직(§8.4). 손 안 대면 조직 하나(org_id=1)에 설정 없음 — 옛 단일 조직과 동작이 같다.
+        self.orgs_data = [org()] if orgs is None else list(orgs)
+        self.org_members_data: dict[int, list[dict]] = {}
+        self.project_owners_data: dict[int, list[dict]] = {}
+        self.org_admins_data: dict[int, list[dict]] = {}
+        self.org_channels: dict[str, str] = {}  # guild_id -> channel_id (/알림채널)
+        self.weekly_by_org: dict[int, dict] = {}  # 비어 있으면 weekly_data(단일 조직 시절과 같다)
 
     # --- 조회 도움말 ---
     def paths(self) -> list[str]:
@@ -107,10 +141,17 @@ class FakeCore:
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path == "/api/tasks":
-            items = [t for t in self.tasks.values() if t["status"] in OPEN]
-            due_to = request.url.params.get("due_to")
-            if due_to:
-                items = [t for t in items if t["due_date"] and t["due_date"] <= due_to]
+            org_param = request.url.params.get("org")
+            updated_since = request.url.params.get("updated_since")
+            if updated_since is not None:
+                items = list(self.tasks.values())  # channels_post: 상태 무관 전부
+            else:
+                items = [t for t in self.tasks.values() if t["status"] in OPEN]
+                due_to = request.url.params.get("due_to")
+                if due_to:
+                    items = [t for t in items if t["due_date"] and t["due_date"] <= due_to]
+            if org_param is not None:
+                items = [t for t in items if t["project"].get("org_id") == int(org_param)]
             return httpx.Response(
                 200, json={"items": items, "total": len(items), "limit": 200, "offset": 0}
             )
@@ -118,7 +159,20 @@ class FakeCore:
             t = self.tasks.get(int(path.rsplit("/", 1)[1]))
             return httpx.Response(200, json=t) if t else httpx.Response(404, json={"detail": "x"})
         if path == "/api/reports/weekly":
-            return httpx.Response(200, json=self.weekly_data)
+            org_param = int(request.url.params.get("org", 0))
+            data = self.weekly_by_org.get(org_param, self.weekly_data)
+            return httpx.Response(200, json=data)
+        if path == "/api/integrations/discord/orgs":
+            return httpx.Response(200, json=self.orgs_data)
+        m = re.fullmatch(r"/api/integrations/discord/orgs/(\d+)/members", path)
+        if m:
+            return httpx.Response(200, json=self.org_members_data.get(int(m.group(1)), []))
+        m = re.fullmatch(r"/api/integrations/discord/orgs/(\d+)/admins", path)
+        if m:
+            return httpx.Response(200, json=self.org_admins_data.get(int(m.group(1)), []))
+        m = re.fullmatch(r"/api/integrations/discord/projects/(\d+)/owners", path)
+        if m:
+            return httpx.Response(200, json=self.project_owners_data.get(int(m.group(1)), []))
         if path == BOT_PREFIX + "status":
             self.status_reports.append(json.loads(request.content))
             return httpx.Response(204)
@@ -176,6 +230,15 @@ class FakeCore:
             )
         if cmd == "mytasks":
             return httpx.Response(200, json=[t for t in self.tasks.values() if t["status"] in OPEN])
+        if cmd == "orgs/channel":
+            if not self.admin:
+                return httpx.Response(
+                    400, json={"detail": {"org": "조직 관리자만 할 수 있습니다."}}
+                )
+            self.org_channels[body["guild_id"]] = body["channel_id"]
+            return httpx.Response(
+                200, json={"guild_id": body["guild_id"], "channel_id": body["channel_id"]}
+            )
         if cmd == "tasks":
             if not body.get("due_date") and not body.get("no_due_reason"):
                 return httpx.Response(

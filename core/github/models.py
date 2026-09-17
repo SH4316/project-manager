@@ -79,6 +79,9 @@ class RepoIssue(models.Model):
     title = models.CharField(max_length=300)
     state = models.CharField(max_length=6, default="open")  # open | closed
     assignee_login = models.CharField(max_length=100, blank=True)
+    author_login = models.CharField(max_length=100, blank=True)
+    # 이슈 뷰어에서 본문을 읽고 판단할 수 있게 담는다. 길면 잘라 둔다 — 전문은 GitHub 링크로 간다.
+    body = models.TextField(blank=True)
     labels = models.JSONField(default=list, blank=True)
     task = models.ForeignKey(
         "tasks.Task", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

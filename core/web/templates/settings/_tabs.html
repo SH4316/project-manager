@@ -2,6 +2,7 @@
 <div class="page-head"><h1 class="t24">설정</h1></div>
 <nav class="tabs" aria-label="설정 메뉴">
   <a href="{% url 'profile' %}" {% if settings_tab == "profile" %}aria-current="page"{% endif %}>프로필</a>
+  <a href="{% url 'preferences' %}" {% if settings_tab == "preferences" %}aria-current="page"{% endif %}>환경설정</a>
   <a href="{% url 'tokens' %}" {% if settings_tab == "tokens" %}aria-current="page"{% endif %}>API 토큰</a>
   {% if user.is_staff %}<a href="{% url 'ops' %}" {% if settings_tab == "ops" %}aria-current="page"{% endif %}>운영 상태</a>{% endif %}
 </nav>

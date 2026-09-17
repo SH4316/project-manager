@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("projects", "0007_projectdoc_updated_by_projectdoc_updated_source"),
     ]

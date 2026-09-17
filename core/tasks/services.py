@@ -5,10 +5,11 @@ from django.db.models import Max, Q
 from django.utils import timezone
 
 from accounts.models import IdempotencyKey, User
-from common.dates import kst_day_range, today_kst, week_bounds
+from common.dates import kst_day_range, overdue_before, today_kst, week_bounds
 from common.errors import ConflictError, ServiceError
-from orgs.services import is_member, orgs_of
-from projects.services import project_stats
+from orgs.services import ai_denied, is_admin, is_member, orgs_of
+from orgs.settings import effective
+from projects.services import is_owner, project_stats
 
 from .models import ChangeLog, ChecklistItem, Link, Task, TodayItem
 
@@ -92,6 +93,14 @@ def _require_member(actor, project):
         raise ServiceError({"project": "이 조직의 멤버가 아닙니다."})
 
 
+def _ai_check(org, key: str, action: str, source: str, field: str):
+    """source가 mcp일 때만 본다. ai.enabled가 꺼졌거나 그 키가 deny면 ServiceError."""
+    if source != "mcp":
+        return
+    if not effective("ai.enabled", org=org) or effective(key, org=org) == "deny":
+        raise ServiceError({field: ai_denied(action)})
+
+
 def _validate(
     *,
     project,
@@ -102,6 +111,8 @@ def _validate(
     no_due_reason,
     stop_reason,
     title,
+    actor,
+    source,
     check_assignee=True,
 ):
     """check_assignee=False면 담당자가 조직의 활성 멤버인지 보지 않는다.
@@ -109,6 +120,8 @@ def _validate(
     담당자를 바꾸지 않는 수정에는 이 검사를 걸지 않는다. 담당자가 조직에서 빠지거나
     비활성이 되면(멤버 관리 화면의 [제거]) 그 태스크의 중요도·기한조차 못 고치게 되고,
     화면에는 이미 나간 사람 이름이 담긴 오류만 나온다.
+
+    actor·source는 `task.priority_cap`(등급 판정)과 `ai.priority_cap`(source=="mcp")에 쓴다.
     """
     errors = {}
     if not title or not title.strip():
@@ -121,10 +134,24 @@ def _validate(
         errors["assignee"] = "담당자는 이 조직의 활성 멤버여야 합니다."
     if not isinstance(priority, int) or isinstance(priority, bool) or not 1 <= priority <= 10:
         errors["priority"] = "중요도는 1~10 사이의 정수여야 합니다."
+    else:
+        cap = effective("task.priority_cap", org=project.org, project=project)
+        if (
+            cap
+            and priority > cap
+            and not (is_owner(actor, project) or is_admin(actor, project.org))
+        ):
+            errors["priority"] = f"중요도 {cap} 초과는 프로젝트 관리자만 정할 수 있습니다."
+        ai_cap = effective("ai.priority_cap", org=project.org)
+        if source == "mcp" and ai_cap and priority > ai_cap:
+            errors["priority"] = f"AI는 중요도 {ai_cap}을(를) 넘겨 지정할 수 없습니다."
     if status == "doing" and due_date is None:
         errors["due_date"] = NO_DUE_FOR_DOING
-    elif status in Task.OPEN and due_date is None and not (no_due_reason or "").strip():
-        errors["no_due_reason"] = "기한이 없으면 사유를 입력하세요."
+    elif status in Task.OPEN and due_date is None:
+        if effective("task.due_required", org=project.org, project=project):
+            errors["due_date"] = "기한을 반드시 정해야 합니다. 기한 미정 사유로 대신할 수 없습니다."
+        elif not (no_due_reason or "").strip():
+            errors["no_due_reason"] = "기한이 없으면 사유를 입력하세요."
     reason = (stop_reason or "").strip()
     if status == "blocked" and not reason:
         errors["stop_reason"] = "막힘 사유를 입력하세요."
@@ -176,12 +203,13 @@ def create_task(
     description="",
     done_when="",
     next_action="",
-    priority=5,
+    priority=None,
     due_date=None,
     no_due_reason="",
     idempotency_key=None,
 ) -> Task:
     _require_member(actor, project)
+    _ai_check(project.org, "ai.create_task", "태스크 만들기", source, "title")
     if idempotency_key:
         idempotency_key = idempotency_key[:100]
         hit = IdempotencyKey.objects.filter(
@@ -190,6 +218,13 @@ def create_task(
         if hit:
             return Task.objects.get(pk=hit.target_id)
     assignee = assignee or actor
+    if priority is None:
+        priority = effective("task.default_priority", org=project.org, project=project)
+    if (
+        effective("task.require_done_when", org=project.org, project=project)
+        and not (done_when or "").strip()
+    ):
+        raise ServiceError({"done_when": "완료 조건을 입력해야 합니다."})
     _validate(
         project=project,
         assignee=assignee,
@@ -199,6 +234,8 @@ def create_task(
         no_due_reason=no_due_reason,
         stop_reason="",
         title=title,
+        actor=actor,
+        source=source,
     )
     task = Task.objects.create(
         project=project,
@@ -220,13 +257,14 @@ def create_task(
     return task
 
 
-def update_text(task, field: str, value: str, *, actor) -> Task:
+def update_text(task, field: str, value: str, *, actor, source: str = "web") -> Task:
     """제목·설명·완료 조건·다음 행동·진행 메모 자동 저장. version·ChangeLog를 건드리지 않는다.
     # ponytail: 부속 텍스트는 last-write-wins. 동시 편집 보호가 필요해지면 필드별 갱신 시각 비교로.
     """
     _require_member(actor, task.project)
     if field not in TEXT_FIELDS:
         raise ServiceError({field: "수정할 수 없는 항목입니다."})
+    _ai_check(task.project.org, "ai.edit_text", "본문 고치기", source, field)
     value = value or ""
     if field == "title":
         value = value.strip()
@@ -241,19 +279,43 @@ def update_text(task, field: str, value: str, *, actor) -> Task:
 
 @transaction.atomic
 def update_task(
-    task, changes: dict, *, actor, source, token=None, expected_version: int, external_actor=""
+    task,
+    changes: dict,
+    *,
+    actor,
+    source,
+    token=None,
+    expected_version: int,
+    external_actor="",
+    reason: str = "",
 ) -> Task:
-    """팀 데이터 필드는 version 검사 후 갱신·이력 기록. TEXT_FIELDS는 update_text로 보낸다."""
+    """팀 데이터 필드는 version 검사 후 갱신·이력 기록. TEXT_FIELDS는 update_text로 보낸다.
+
+    reason: 담당자·기한 변경 사유. 조직 설정이 요구할 때만 필수이고, 있으면 이력 note에 남는다.
+    """
     _require_member(actor, task.project)
     unknown = set(changes) - EDITABLE
     if unknown:
         raise ServiceError({k: "수정할 수 없는 항목입니다." for k in sorted(unknown)})
     for f in TEXT_FIELDS:
         if f in changes:
-            update_text(task, f, changes[f], actor=actor)
+            update_text(task, f, changes[f], actor=actor, source=source)
     changes = {f: v for f, v in changes.items() if f in LOCKED_FIELDS}
     if not changes:
         return task
+    reason = (reason or "").strip()[:300]
+    if "assignee" in changes:
+        _ai_check(task.project.org, "ai.change_assignee", "담당자 바꾸기", source, "assignee")
+        needs = effective("task.assignee_change_reason", org=task.project.org, project=task.project)
+        if needs and not reason:
+            raise ServiceError({"reason": "담당자 변경 사유를 입력하세요."})
+    if "due_date" in changes:
+        _ai_check(task.project.org, "ai.change_due", "기한 바꾸기", source, "due_date")
+        needs = effective("task.due_change_reason", org=task.project.org, project=task.project)
+        if needs and not reason:
+            raise ServiceError({"reason": "기한 변경 사유를 입력하세요."})
+    if "priority" in changes:
+        _ai_check(task.project.org, "ai.change_priority", "중요도 바꾸기", source, "priority")
     new = {f: changes.get(f, getattr(task, f)) for f in LOCKED_FIELDS}
     if "project" in changes:
         _require_member(actor, new["project"])
@@ -270,6 +332,8 @@ def update_task(
         no_due_reason=new["no_due_reason"],
         stop_reason=new["stop_reason"],
         title=task.title,
+        actor=actor,
+        source=source,
         check_assignee="assignee" in changes,
     )
     old = {f: getattr(task, f) for f in LOCKED_FIELDS}
@@ -279,7 +343,17 @@ def update_task(
     _apply(task, expected_version, fields)
     for f in TRACKED:
         if f in fields:
-            _log(task, f, old[f], fields[f], actor, source, token, external_actor=external_actor)
+            _log(
+                task,
+                f,
+                old[f],
+                fields[f],
+                actor,
+                source,
+                token,
+                note=reason,
+                external_actor=external_actor,
+            )
     return task
 
 
@@ -302,6 +376,7 @@ def transition(
     - paused·blocked 밖으로 나가면 stop_reason·stopped_at 초기화.
     - done 진입 시 completed_at=now. 재개·취소 시 completed_at=None.
     - 재개 사유(reason)는 선택. 있으면 이력 note에 남는다.
+    - 재개·취소 사유 필수, 동시 진행 한도, 검토 대기 필수는 조직 설정이 켜야 걸린다(§4.1).
     """
     _require_member(actor, task.project)
     labels = dict(Task.STATUSES)
@@ -316,11 +391,55 @@ def transition(
                 "먼저 시작 전이나 진행 중으로 다시 여세요."
             }
         )
+    org = task.project.org
+    reopening = task.is_closed and new_status in ("todo", "doing")
+    closing = new_status in ("done", "cancelled")
+    if reopening:
+        _ai_check(org, "ai.reopen_task", "완료·취소 되돌리기", source, "status")
+    elif closing:
+        _ai_check(org, "ai.close_task", "완료·취소 처리", source, "status")
+    else:
+        _ai_check(org, "ai.transition_open", "미완료 상태 바꾸기", source, "status")
     reason = (reason or "").strip()[:300]
+    if reopening and effective("task.reopen_reason_required", org=org, project=task.project):
+        if not reason:
+            raise ServiceError({"reason": "재개 사유를 입력하세요."})
     if new_status == "doing" and task.due_date is None:
         raise ServiceError({"due_date": NO_DUE_FOR_DOING})
+    if new_status == "doing":
+        limit = effective("task.doing_limit", org=org)
+        if limit and effective("task.doing_limit_mode", org=org) == "block":
+            doing = (
+                Task.objects.filter(assignee=task.assignee, project__org=org, status="doing")
+                .exclude(pk=task.pk)
+                .count()
+            )
+            if doing >= limit:
+                raise ServiceError(
+                    {
+                        "status": f"동시 진행 한도 {limit}건을 넘었습니다. 다른 태스크를 먼저 정리해 주세요."
+                    }
+                )
     if new_status == "blocked" and not reason:
         raise ServiceError({"stop_reason": "막힘 사유를 입력하세요."})
+    if new_status == "cancelled":
+        if effective("task.cancel_reason_required", org=org, project=task.project) and not reason:
+            raise ServiceError({"reason": "취소 사유를 입력하세요."})
+    if new_status == "done":
+        if (
+            effective("task.review_required", org=org, project=task.project)
+            and task.status != "review"
+        ):
+            raise ServiceError({"status": "검토 대기를 거쳐야 완료할 수 있습니다."})
+        if (
+            task.status == "review"
+            and actor is not None
+            and actor == task.assignee
+            and not effective("task.self_review", org=org, project=task.project)
+        ):
+            raise ServiceError(
+                {"status": "본인이 담당한 태스크는 본인이 검토를 완료 처리할 수 없습니다."}
+            )
     fields = {"status": new_status}
     if new_status in Task.STOPPED:
         fields["stop_reason"] = reason or (task.stop_reason if task.is_stopped else "")
@@ -388,6 +507,7 @@ def extend_due(
     """목표일 연장. 기한이 없던 태스크는 목표일 정하기. 새 날짜는 현 기한보다 뒤, 사유 필수.
     이력에 'due_date' 행 하나, note='연장: 사유'. 진행 메모는 건드리지 않는다."""
     _require_member(actor, task.project)
+    _ai_check(task.project.org, "ai.change_due", "기한 바꾸기", source, "due_date")
     if not task.is_open:
         raise ServiceError({"due_date": "완료·취소된 태스크의 기한은 바꿀 수 없습니다."})
     if new_date is None:
@@ -444,9 +564,12 @@ def delete_link(link, *, actor):
 
 
 @transaction.atomic
-def replace_checklist(task, items: list[dict], *, actor) -> list[ChecklistItem]:
+def replace_checklist(
+    task, items: list[dict], *, actor, source: str = "web"
+) -> list[ChecklistItem]:
     """items: [{'text': str, 'is_done': bool}, ...]. 전체 교체."""
     _require_member(actor, task.project)
+    _ai_check(task.project.org, "ai.edit_text", "본문 고치기", source, "checklist")
     cleaned = []
     for i, item in enumerate(items):
         text = (item.get("text") or "").strip()
@@ -644,7 +767,12 @@ def today_view(user, day: date | None = None) -> dict:
         ).count(),
         "my_open": my_open.count(),
         "due_today": my_open.filter(due_date=day).count(),
-        "overdue": my_open.filter(due_date__lt=day).count(),
+        # 조직별 유예를 보므로 쿼리셋 필터가 아니라 파이썬에서 task.project.org별로 판정한다.
+        "overdue": sum(
+            1
+            for t in my_open
+            if t.due_date is not None and t.due_date < overdue_before(t.project.org)
+        ),
         "review": my_open.filter(status="review").count(),
         "blocked": my_open.filter(status="blocked").count(),
     }
@@ -664,7 +792,8 @@ def today_view(user, day: date | None = None) -> dict:
 def _due_preds(today: date) -> dict:
     monday, sunday = week_bounds(today)
     return {
-        "overdue": lambda t: t.due_date is not None and t.due_date < today,
+        # 초과는 today가 아니라 조직별 유예(task.overdue_grace_days)를 더한 기준일로 본다.
+        "overdue": lambda t: t.due_date is not None and t.due_date < overdue_before(t.project.org),
         "today": lambda t: t.due_date == today,
         "week": lambda t: t.due_date is not None and today < t.due_date <= sunday,
         "this_week": lambda t: t.due_date is not None and monday <= t.due_date <= sunday,

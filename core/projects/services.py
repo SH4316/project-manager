@@ -12,7 +12,8 @@ from django.utils import timezone
 
 from common.dates import fmt_md, today_kst
 from common.errors import ConflictError, ServiceError
-from orgs.services import is_member, require_admin
+from orgs.services import is_admin, is_member, require_admin
+from orgs.settings import SPECS, clean, display, effective, locked_keys
 
 from .models import ApiSpec, Milestone, Project, ProjectDependency
 
@@ -58,6 +59,24 @@ def _ids(users) -> str:
     return ",".join(str(pk) for pk in sorted(u.pk for u in users))
 
 
+def is_owner(user, project) -> bool:
+    return project.owners.filter(pk=user.pk).exists()
+
+
+def require_level(actor, project, level: str, key: str):
+    """level: member|owner|admin. 부족하면 ServiceError({key: ...}).
+
+    조직 관리자는 항상 통과한다. member는 이미 다른 곳에서 멤버 여부를 검사하므로
+    여기서는 더 볼 것이 없다.
+    """
+    if is_admin(actor, project.org):
+        return
+    if level == "admin":
+        raise ServiceError({key: "이 작업은 조직 관리자만 할 수 있습니다."})
+    if level == "owner" and not is_owner(actor, project):
+        raise ServiceError({key: "이 작업은 프로젝트 관리자만 할 수 있습니다."})
+
+
 def _validate(org, name, owners, status):
     errors = {}
     if not name or not name.strip():
@@ -87,8 +106,12 @@ def create_project(
 ):
     if not is_member(actor, org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    if effective("project.create_by", org=org) == "admin" and not is_admin(actor, org):
+        raise ServiceError({"org": "프로젝트 생성은 조직 관리자만 할 수 있습니다."})
     owners = list(owners)
     teams = list(teams)
+    if effective("project.owner_required", org=org) and not owners:
+        raise ServiceError({"owners": "프로젝트 관리자가 최소 1명 있어야 합니다."})
     _validate(org, name, owners, status)
     for t in teams:
         if t.org_id != org.pk:
@@ -120,8 +143,18 @@ def update_project(
     unknown = set(changes) - EDITABLE
     if unknown:
         raise ServiceError({k: "수정할 수 없는 항목입니다." for k in sorted(unknown)})
+    if {"name", "purpose", "teams"} & set(changes):
+        require_level(actor, project, effective("project.edit_by", org=project.org), "name")
+    if "status" in changes:
+        require_level(actor, project, effective("project.status_by", org=project.org), "status")
     old_owners = list(project.owners.all())
     new_owners = list(changes.get("owners", old_owners))
+    if (
+        "owners" in changes
+        and not new_owners
+        and effective("project.owner_required", org=project.org)
+    ):
+        raise ServiceError({"owners": "프로젝트 관리자가 최소 1명 있어야 합니다."})
     old_teams = list(project.teams.all())
     new_teams = list(changes.get("teams", old_teams))
     new = {f: changes.get(f, getattr(project, f)) for f in ("name", "purpose", "status")}
@@ -170,7 +203,7 @@ def archive_project(project, *, actor, source="web", token=None):
     """미완료 태스크가 있으면 ServiceError. errors['tasks']에 'TASK-1, TASK-2' 형식."""
     from tasks.models import Task
 
-    require_admin(actor, project.org)
+    require_level(actor, project, effective("project.archive_by", org=project.org), "project")
     open_tasks = list(Task.objects.filter(project=project, status__in=Task.OPEN).order_by("id"))
     if open_tasks:
         raise ServiceError({"tasks": ", ".join(t.number for t in open_tasks)})
@@ -186,7 +219,7 @@ def archive_project(project, *, actor, source="web", token=None):
 
 @transaction.atomic
 def restore_project(project, *, actor, source="web", token=None):
-    require_admin(actor, project.org)
+    require_level(actor, project, effective("project.archive_by", org=project.org), "project")
     if not project.is_archived:
         return project
     Project.objects.filter(pk=project.pk).update(
@@ -194,6 +227,53 @@ def restore_project(project, *, actor, source="web", token=None):
     )
     project.refresh_from_db()
     _log(project, "is_archived", True, False, actor, source, token)
+    return project
+
+
+def _display_or_default(key: str, value) -> str:
+    if value is None:
+        value = SPECS[key].default
+    return display(key, value)
+
+
+@transaction.atomic
+def set_project_settings(project, data: dict, *, actor, source="web", token=None) -> Project:
+    """저장소 규칙 등 프로젝트 설정을 통째로 교체한다. 조직이 잠근 키는 거부한다."""
+    require_level(actor, project, effective("project.settings_by", org=project.org), "settings")
+    cleaned = clean("project", data)
+    locked = locked_keys(project.org)
+    bad = {k: "조직에서 잠근 설정입니다." for k in cleaned if k in locked}
+    if bad:
+        raise ServiceError(bad)
+    old = project.settings or {}
+    for key in sorted(set(old) | set(cleaned)):
+        old_v, new_v = old.get(key), cleaned.get(key)
+        if old_v == new_v:
+            continue
+        _log(
+            project,
+            key,
+            _display_or_default(key, old_v),
+            _display_or_default(key, new_v),
+            actor,
+            source,
+            token,
+        )
+    project.settings = cleaned
+    project.save(update_fields=["settings"])
+    return project
+
+
+def set_governance_extra(project, text: str, *, actor) -> Project:
+    """프로젝트 전용 거버넌스 추가 문단. 프로젝트 설정 편집과 같은 등급 검사를 쓴다."""
+    require_level(
+        actor, project, effective("project.settings_by", org=project.org), "governance_extra"
+    )
+    text = (text or "").strip()
+    if len(text) > 5000:
+        raise ServiceError({"governance_extra": "5000자를 넘을 수 없습니다."})
+    project.governance_extra = text
+    project.save(update_fields=["governance_extra"])
     return project
 
 
@@ -244,6 +324,7 @@ def _validate_milestone(name, target_date, start_date, status) -> dict:
 def create_milestone(*, project, name, target_date, actor, start_date=None, status="planned"):
     if not is_member(actor, project.org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    require_level(actor, project, effective("project.roadmap_by", org=project.org), "roadmap")
     errors = _validate_milestone(name, target_date, start_date, status)
     if errors:
         raise ServiceError(errors)
@@ -261,6 +342,7 @@ def update_milestone(ms, changes: dict, *, actor):
     """마일스톤에는 version이 없다(동시 편집이 문제가 될 만큼 자주 고치지 않는다)."""
     if not is_member(actor, ms.project.org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    require_level(actor, ms.project, effective("project.roadmap_by", org=ms.project.org), "roadmap")
     name = changes.get("name", ms.name)
     target_date = changes.get("target_date", ms.target_date)
     start_date = changes.get("start_date", ms.start_date)
@@ -279,12 +361,16 @@ def update_milestone(ms, changes: dict, *, actor):
 def delete_milestone(ms, actor):
     if not is_member(actor, ms.project.org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    require_level(actor, ms.project, effective("project.roadmap_by", org=ms.project.org), "roadmap")
     ms.delete()
 
 
 def create_dependency(*, from_project, to_project, actor, note="", is_blocking=False):
     if not is_member(actor, from_project.org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    require_level(
+        actor, from_project, effective("project.roadmap_by", org=from_project.org), "roadmap"
+    )
     if to_project.org_id != from_project.org_id:
         raise ServiceError({"to_project": "같은 조직의 프로젝트만 연결할 수 있습니다."})
     if to_project.pk == from_project.pk:
@@ -305,6 +391,12 @@ def create_dependency(*, from_project, to_project, actor, note="", is_blocking=F
 def delete_dependency(dep, actor):
     if not is_member(actor, dep.from_project.org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
+    require_level(
+        actor,
+        dep.from_project,
+        effective("project.roadmap_by", org=dep.from_project.org),
+        "roadmap",
+    )
     dep.delete()
 
 

@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% block title %}환경설정{% endblock %}
+{% block main %}
+{% with settings_tab="preferences" %}{% include "settings/_tabs.html" %}{% endwith %}
+<div class="card">
+  <h2>환경설정</h2>
+  <form method="post">{% csrf_token %}
+  <table class="grid">
+    <thead><tr><th>항목</th><th>값</th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.spec.label }}{% if row.spec.help %}<div class="muted t12">{{ row.spec.help }}</div>{% endif %}</td>
+      <td>
+        {% if row.spec.kind == "bool" %}
+          <input type="checkbox" name="{{ row.spec.key }}" {% if row.value %}checked{% endif %}>
+        {% elif row.spec.kind == "int" %}
+          <input class="input" type="number" name="{{ row.spec.key }}" value="{{ row.value }}" min="{{ row.spec.lo }}" max="{{ row.spec.hi }}" style="width:6em">
+        {% elif row.spec.kind == "choice" %}
+          <select class="select" name="{{ row.spec.key }}">
+            {% for code, clabel in row.spec.choices %}<option value="{{ code }}" {% if code == row.value %}selected{% endif %}>{{ clabel }}</option>{% endfor %}
+          </select>
+        {% elif row.spec.kind == "set" %}
+          <div class="stack t13">
+          {% for code, clabel in row.spec.choices %}
+            <label class="row"><input type="checkbox" name="{{ row.spec.key }}" value="{{ code }}" {% if code in row.value %}checked{% endif %}> {{ clabel }}</label>
+          {% endfor %}
+          </div>
+        {% else %}
+          <input class="input" name="{{ row.spec.key }}" value="{{ row.value }}">
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <button class="btn primary">저장</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.db.models import F
+from django.utils.dateparse import parse_datetime
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -45,6 +46,7 @@ def list_tasks(
     due_from: date | None = None,
     due_to: date | None = None,
     q: str | None = None,
+    updated_since: str | None = None,
     include_archived: bool = False,
     limit: int = 50,
     offset: int = 0,
@@ -71,6 +73,13 @@ def list_tasks(
         qs = qs.filter(due_date__lte=due_to)
     if q:
         qs = qs.filter(title__icontains=q)
+    if updated_since:
+        # 채널 게시가 이전 틱 이후 바뀐 것만 받아 상태를 비교한다. 상태를 가리지 않는다 —
+        # 방금 done으로 넘어간 것도 봐야 '완료' 사건을 만들 수 있다.
+        moment = parse_datetime(updated_since)
+        if moment is None:
+            raise HttpError(400, "updated_since는 ISO 8601 시각이어야 합니다.")
+        qs = qs.filter(updated_at__gt=moment)
     if not include_archived:
         qs = qs.filter(project__is_archived=False)
     limit, offset = clamp_page(limit, offset)

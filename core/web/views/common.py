@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import User
-from common.dates import fmt_md, today_kst
+from common.dates import fmt_md, overdue_before, today_kst
 from common.errors import ServiceError
 from orgs.models import Organization
 from orgs.services import is_admin, is_member, orgs_of
@@ -140,17 +140,22 @@ def version_of(request) -> int:
 # ---------- 표시 문자열 ----------
 
 
+def _overdue(task) -> bool:
+    """유예를 적용한 초과 여부. `Task.is_overdue`는 사실이고, 화면은 조직 설정을 본다."""
+    return bool(task.due_date) and task.due_date < overdue_before(task.project.org)
+
+
 def due_label(task) -> str:
     """행 우측 기한 라벨: '오늘 마감' / '9월 12일' / '기한 미정', 초과면 ' 초과'."""
     if not task.due_date:
         return "기한 미정"
     label = "오늘 마감" if task.due_date == today_kst() else fmt_md(task.due_date)
-    return label + " 초과" if task.is_overdue else label
+    return label + " 초과" if _overdue(task) else label
 
 
 def due_class(task) -> str:
     """기한 배지의 변형. 색과 테두리는 이 한 곳에서만 정한다."""
-    if task.is_overdue:
+    if _overdue(task):
         return "overdue"
     if not task.due_date:
         return "none"
@@ -161,7 +166,7 @@ def due_full(task) -> str:
     """패널 목표일 블록: '2026년 9월 12일 (초과)' / '기한 미정 · 사유'."""
     if task.due_date:
         return f"{task.due_date.year}년 {fmt_md(task.due_date)}" + (
-            " (초과)" if task.is_overdue else ""
+            " (초과)" if _overdue(task) else ""
         )
     return "기한 미정" + (f" · {task.no_due_reason}" if task.no_due_reason else "")
 

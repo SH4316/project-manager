@@ -29,13 +29,40 @@ def classify(task: dict, today: date) -> str | None:
     return None
 
 
-def run_deadlines(core: CoreClient, bot: Bot, store: Store, org_id: int, today: date) -> dict:
-    """하루 1회. 담당자별 개인 DM으로 보낸다.
+def run_deadlines(
+    core: CoreClient,
+    bot: Bot,
+    store: Store,
+    org_id: int,
+    today: date,
+    *,
+    hour: int | None = None,
+    org_hour: int | None = None,
+    channel_id: str | None = None,
+    notify: dict[str, dict] | None = None,
+) -> dict:
+    """조직 하나, 하루 한 묶음(또는 시각 한 묶음). 담당자별 개인 DM으로 보낸다.
 
     한 사람이 하루에 받는 DM은 종류당 1건, 최대 4건이다(D-3·D-1·당일·기한 초과).
     태스크마다 한 통씩 보내면 아침에 DM 폭탄이 되고 Discord Developer Policy의
     '원치 않는 반복 DM'에 걸린다.
+
+    `hour`가 주어지면(다중 조직 스케줄러가 시각별로 부른다) 그 시각이 자기 시각인 사람만
+    추린다 — 개인 설정 `user.notify_hour`가 있으면 그 시각, 없으면 `org_hour`(조직 설정
+    `notify.send_hour`, 그것도 없으면 config 기본값). `hour=None`이면(단발 CLI·기존 호출)
+    시각을 가리지 않고 전원을 훑는다.
+
+    `notify`는 `discord_user_id -> {"notify_dm": bool, "notify_hour": int|None}`(§4.6). 없는
+    사람·빈 dict는 "켜져 있고 조직 시각을 따른다"로 본다(설정 이전과 동작이 같다).
+    `notify_dm=False`인 사람은 자리를 잡지 않고 건너뛰되 실패가 아니라 `opted_out`으로 센다
+    — 본인이 끈 것이라 /ops를 빨갛게 만들 일이 아니다.
+
+    # ponytail: notify.deadline_kinds(조직이 끈 종류)·overdue_repeat·quiet_weekend·
+    # overdue_grace_days는 여기서 다시 걸러내지 않는다. core가 candidates 목록을 만들 때
+    # 이미 반영했다고 믿는다(§4.5 유예는 core 몫). discord_service가 직접 걸러야 하는 게
+    # 밝혀지면 이 함수에 파라미터를 하나 더 받는 선에서 끝난다 — 구조는 이미 그 모양이다.
     """
+    notify = notify or {}
     today_s = today.isoformat()
     result = {
         "sent": 0,
@@ -43,6 +70,7 @@ def run_deadlines(core: CoreClient, bot: Bot, store: Store, org_id: int, today: 
         "failed": 0,
         "unknown": 0,
         "unlinked": 0,
+        "opted_out": 0,
         # 자리를 놓아준 것들. 하루 1회 문턱(claim_daily)을 다시 열어야 실제로 재시도된다.
         "open_failed": 0,
         "recheck_failed": 0,
@@ -71,7 +99,13 @@ def run_deadlines(core: CoreClient, bot: Bot, store: Store, org_id: int, today: 
                     unlinked_names.append(name)
                 log.warning("Discord 미연결이라 DM을 못 보낸다: %s", assignee.get("display_name"))
                 continue
-            key = f"{kind}:{uid}"
+            pref = notify.get(did) or {}
+            if pref.get("notify_dm") is False:
+                result["opted_out"] += 1
+                continue
+            if hour is not None and _effective_hour(pref, org_hour, hour) != hour:
+                continue  # 이 사람 시각이 아니다. 그 시각 틱에서 다시 훑는다
+            key = f"{org_id}:{kind}:{uid}"
             if not store.claim(0, key, today_s):
                 result["skipped"] += 1
                 continue
@@ -91,13 +125,30 @@ def run_deadlines(core: CoreClient, bot: Bot, store: Store, org_id: int, today: 
                 result["skipped"] += 1
                 continue
             live.sort(key=lambda x: (x["due_date"], x["id"]))
-            _send_dm(bot, store, did, deadline_message(kind, live, today_s), key, today_s, result)
+            _send_dm(
+                bot,
+                store,
+                did,
+                deadline_message(kind, live, today_s),
+                key,
+                today_s,
+                result,
+                org_id,
+                channel_id,
+            )
 
     result["unlinked_names"] = unlinked_names
     return result
 
 
-def _send_dm(bot, store, did, text, key, day, result):
+def _effective_hour(pref: dict, org_hour: int | None, fallback: int) -> int:
+    h = pref.get("notify_hour")
+    if h is None or h < 0:
+        return org_hour if org_hour is not None else fallback
+    return h
+
+
+def _send_dm(bot, store, did, text, key, day, result, org_id, channel_id):
     try:
         bot.send_dm(did, text)
         store.mark(0, key, day, "sent")
@@ -112,7 +163,7 @@ def _send_dm(bot, store, did, text, key, day, result):
         store.mark(0, key, day, "failed", str(e))
         result["failed"] += 1
         log.error("DM 거부: %s %s", key, e)
-        _notify_channel_once(bot, store, did, day)
+        _notify_channel_once(bot, store, did, day, org_id, channel_id)
     except UnknownResult as e:
         store.mark(0, key, day, "unknown", str(e))
         result["unknown"] += 1
@@ -123,13 +174,14 @@ def _send_dm(bot, store, did, text, key, day, result):
         log.error("발송 실패: %s: %s", key, e)
 
 
-def _notify_channel_once(bot, store, did, day):
+def _notify_channel_once(bot, store, did, day, org_id, channel_id):
     """DM이 막힌 사람에게는 조직 채널로 하루 한 번만 알린다. 태스크 내용은 넣지 않는다."""
-    if not store.claim(0, f"dmblocked:{did}", day):
+    key = f"{org_id}:dmblocked:{did}"
+    if not store.claim(0, key, day):
         return
     try:
-        bot.send_channel(dm_blocked_message({"discord_user_id": did}))
-        store.mark(0, f"dmblocked:{did}", day, "sent")
+        bot.send_channel(dm_blocked_message({"discord_user_id": did}), channel_id)
+        store.mark(0, key, day, "sent")
     except Exception as e:  # noqa: BLE001
-        store.mark(0, f"dmblocked:{did}", day, "failed", str(e))
+        store.mark(0, key, day, "failed", str(e))
         log.error("DM 거부 통보 실패: %s", e)

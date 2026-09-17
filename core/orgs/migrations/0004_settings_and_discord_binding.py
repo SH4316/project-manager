@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("orgs", "0003_team_discord_channel"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

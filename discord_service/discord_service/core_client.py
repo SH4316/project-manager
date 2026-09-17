@@ -42,6 +42,60 @@ class CoreClient:
         r.raise_for_status()
         return r.json()
 
+    def updated_tasks(self, org_id: int, since: str) -> list[dict]:
+        """`since`(ISO datetime) 뒤로 `updated_at`이 바뀐 태스크 전부. 상태·완료 여부를 가리지
+        않는다(open_tasks와 달리 done·cancelled로 막 넘어간 것도 봐야 channels_post가 '완료'
+        사건을 만들 수 있다)."""
+        items, offset = [], 0
+        while True:
+            params = {"org": org_id, "updated_since": since, "limit": 200, "offset": offset}
+            r = self.http.get("/api/tasks", params=params)
+            r.raise_for_status()
+            data = r.json()
+            items.extend(data["items"])
+            offset += data["limit"]
+            if offset >= data["total"]:
+                return items
+
+    def project_owners(self, project_id: int) -> list[dict]:
+        """그 프로젝트의 프로젝트 관리자(`Project.owners`) 목록. escalate.py가 DM 대상을 정할 때 쓴다."""
+        r = self.http.get(f"/api/integrations/discord/projects/{project_id}/owners")
+        r.raise_for_status()
+        return r.json()
+
+    def org_admins(self, org_id: int) -> list[dict]:
+        """조직 관리자 목록. 프로젝트 관리자가 0명일 때 escalate.py의 대체 수신자."""
+        r = self.http.get(f"/api/integrations/discord/orgs/{org_id}/admins")
+        r.raise_for_status()
+        return r.json()
+
+    # --- 다중 조직(§8.4). 행위자 없이 봇 토큰(CORE_TOKEN) 자체로 인가된다 ---
+
+    def orgs(self) -> list[dict]:
+        """이 봇에 바인딩된 조직 전부. 길드·채널·실효 알림 설정(settings)을 함께 받는다.
+
+        `[{"org_id": 1, "name": "산돌이", "guild_id": "123", "channel_id": "456",
+          "settings": {"notify.send_hour": 9, ...}}]`. 캐시(5분)는 scheduler의 몫이다.
+        """
+        r = self.http.get("/api/integrations/discord/orgs")
+        r.raise_for_status()
+        return r.json()
+
+    def org_members(self, org_id: int) -> list[dict]:
+        """그 조직 멤버 + 개인 알림 설정. `{"discord_user_id", "notify_dm", "notify_kinds",
+        "notify_hour"}`가 항목마다 실린다(연결 안 한 사람은 discord_user_id가 없다).
+        """
+        r = self.http.get(f"/api/integrations/discord/orgs/{org_id}/members")
+        r.raise_for_status()
+        return r.json()
+
+    def set_org_channel(self, did: str, guild_id: str, channel_id: str) -> dict:
+        """`/알림채널`이 부른다. 실행자가 그 길드에 바인딩된 조직의 관리자가 아니면 core가 거절한다."""
+        return self._bot(
+            "/orgs/channel",
+            {"discord_user_id": did, "guild_id": guild_id, "channel_id": channel_id},
+        )
+
     # --- 봇 명령 (행위자는 연결된 사람. core가 discord_user_id로 찾는다) ---
 
     def _bot(self, path: str, body: dict) -> dict:

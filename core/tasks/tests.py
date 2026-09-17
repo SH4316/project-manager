@@ -38,6 +38,11 @@ from tasks.services import (
 pytestmark = pytest.mark.django_db
 
 
+def _set(org, **settings):
+    org.settings = settings
+    org.save(update_fields=["settings"])
+
+
 def _logs(task, field=None):
     qs = ChangeLog.objects.filter(target_type="task", target_id=task.pk)
     return qs.filter(field=field) if field else qs
@@ -707,4 +712,359 @@ def test_removed_member_does_not_freeze_their_tasks(task, project, member, admin
         )
     assert "assignee" in e.value.errors
     t = update_task(t, {"assignee": admin}, actor=admin, source="web", expected_version=t.version)
+    assert t.assignee == admin
+
+
+# ---------- IMPL-PLAN-4 §4.1 태스크 규칙 ----------
+
+
+def test_priority_cap_blocks_member_allows_owner(project, member, admin, org):
+    """project.owners=[admin]이므로 admin은 프로젝트 관리자다."""
+    _set(org, **{"task.priority_cap": 5})
+    with pytest.raises(ServiceError) as e:
+        create_task(
+            project=project,
+            title="상한 초과",
+            actor=member,
+            source="web",
+            due_date=today_kst(),
+            priority=8,
+        )
+    assert "priority" in e.value.errors
+    t = create_task(
+        project=project,
+        title="관리자는 됨",
+        actor=admin,
+        source="web",
+        due_date=today_kst(),
+        priority=8,
+    )
+    assert t.priority == 8
+
+
+def test_priority_cap_default_off(project, member):
+    t = create_task(
+        project=project,
+        title="기본값",
+        actor=member,
+        source="web",
+        due_date=today_kst(),
+        priority=10,
+    )
+    assert t.priority == 10
+
+
+def test_due_required_blocks_no_due_reason(project, member, org):
+    _set(org, **{"task.due_required": True})
+    with pytest.raises(ServiceError) as e:
+        create_task(
+            project=project, title="기한 필수", actor=member, source="web", no_due_reason="미정"
+        )
+    assert "due_date" in e.value.errors
+
+
+def test_ai_priority_cap_blocks_mcp_only(project, member, org):
+    _set(org, **{"ai.priority_cap": 6})
+    with pytest.raises(ServiceError) as e:
+        create_task(
+            project=project,
+            title="AI 상한",
+            actor=member,
+            source="mcp",
+            due_date=today_kst(),
+            priority=9,
+        )
+    assert "priority" in e.value.errors
+    t = create_task(
+        project=project,
+        title="웹은 통과",
+        actor=member,
+        source="web",
+        due_date=today_kst(),
+        priority=9,
+    )
+    assert t.priority == 9
+
+
+def test_require_done_when(project, member, org):
+    _set(org, **{"task.require_done_when": True})
+    with pytest.raises(ServiceError) as e:
+        create_task(
+            project=project, title="완료조건 필요", actor=member, source="web", due_date=today_kst()
+        )
+    assert "done_when" in e.value.errors
+    t = create_task(
+        project=project,
+        title="완료조건 있음",
+        actor=member,
+        source="web",
+        due_date=today_kst(),
+        done_when="다 됐다",
+    )
+    assert t.done_when == "다 됐다"
+
+
+def test_default_priority_from_settings(project, member, org):
+    _set(org, **{"task.default_priority": 3})
+    t = create_task(
+        project=project, title="기본 중요도", actor=member, source="web", due_date=today_kst()
+    )
+    assert t.priority == 3
+
+
+def test_doing_limit_block_mode(project, member, org):
+    _set(org, **{"task.doing_limit": 1, "task.doing_limit_mode": "block"})
+    a = create_task(project=project, title="a", actor=member, source="web", due_date=today_kst())
+    b = create_task(project=project, title="b", actor=member, source="web", due_date=today_kst())
+    transition(a, "doing", actor=member, source="web", expected_version=1)
+    with pytest.raises(ServiceError) as e:
+        transition(b, "doing", actor=member, source="web", expected_version=1)
+    assert "status" in e.value.errors
+
+
+def test_doing_limit_warn_mode_does_not_block(project, member, org):
+    _set(org, **{"task.doing_limit": 1, "task.doing_limit_mode": "warn"})
+    a = create_task(project=project, title="a", actor=member, source="web", due_date=today_kst())
+    b = create_task(project=project, title="b", actor=member, source="web", due_date=today_kst())
+    transition(a, "doing", actor=member, source="web", expected_version=1)
+    t = transition(b, "doing", actor=member, source="web", expected_version=1)
+    assert t.status == "doing"
+
+
+def test_review_required(task, member, org):
+    _set(org, **{"task.review_required": True})
+    t = transition(task, "doing", actor=member, source="web", expected_version=1)
+    with pytest.raises(ServiceError) as e:
+        transition(t, "done", actor=member, source="web", expected_version=t.version)
+    assert "status" in e.value.errors
+    t = transition(t, "review", actor=member, source="web", expected_version=t.version)
+    t = transition(t, "done", actor=member, source="web", expected_version=t.version)
+    assert t.status == "done"
+
+
+def test_self_review_off_blocks_own_review(task, member, admin, org):
+    _set(org, **{"task.review_required": True, "task.self_review": False})
+    t = transition(task, "doing", actor=member, source="web", expected_version=1)
+    t = transition(t, "review", actor=member, source="web", expected_version=t.version)
+    with pytest.raises(ServiceError) as e:
+        transition(t, "done", actor=member, source="web", expected_version=t.version)
+    assert "status" in e.value.errors
+    t = transition(t, "done", actor=admin, source="web", expected_version=t.version)
+    assert t.status == "done"
+
+
+def test_reopen_reason_required(task, member, org):
+    _set(org, **{"task.reopen_reason_required": True})
+    t = transition(task, "done", actor=member, source="web", expected_version=1)
+    with pytest.raises(ServiceError) as e:
+        transition(t, "todo", actor=member, source="web", expected_version=t.version)
+    assert "reason" in e.value.errors
+    t = transition(
+        t, "todo", actor=member, source="web", reason="다시 봐야 함", expected_version=t.version
+    )
+    assert t.status == "todo"
+
+
+def test_cancel_reason_required(task, member, org):
+    _set(org, **{"task.cancel_reason_required": True})
+    with pytest.raises(ServiceError) as e:
+        transition(task, "cancelled", actor=member, source="web", expected_version=1)
+    assert "reason" in e.value.errors
+    t = transition(
+        task, "cancelled", actor=member, source="web", reason="필요 없어짐", expected_version=1
+    )
+    assert t.status == "cancelled"
+
+
+def test_assignee_change_reason_required(task, member, admin, org):
+    _set(org, **{"task.assignee_change_reason": True})
+    with pytest.raises(ServiceError) as e:
+        update_task(task, {"assignee": admin}, actor=member, source="web", expected_version=1)
+    assert "reason" in e.value.errors
+    t = update_task(
+        task, {"assignee": admin}, actor=member, source="web", reason="휴가", expected_version=1
+    )
+    assert t.assignee == admin
+    assert _logs(t, "assignee").last().note == "휴가"
+
+
+def test_due_change_reason_required(task, member, org):
+    _set(org, **{"task.due_change_reason": True})
+    new_due = today_kst() + timedelta(days=1)
+    with pytest.raises(ServiceError) as e:
+        update_task(task, {"due_date": new_due}, actor=member, source="web", expected_version=1)
+    assert "reason" in e.value.errors
+    t = update_task(
+        task,
+        {"due_date": new_due},
+        actor=member,
+        source="web",
+        reason="일정 조정",
+        expected_version=1,
+    )
+    assert t.due_date == new_due
+
+
+def test_overdue_grace_days_delays_counts(project, member, org):
+    create_task(
+        project=project,
+        title="살짝 지남",
+        actor=member,
+        source="web",
+        due_date=today_kst() - timedelta(days=2),
+    )
+    assert today_view(member)["counts"]["overdue"] == 1
+    _set(org, **{"task.overdue_grace_days": 3})
+    assert today_view(member)["counts"]["overdue"] == 0
+
+
+# ---------- IMPL-PLAN-4 §4.4 AI 정책 (source == "mcp"에만) ----------
+
+
+def test_ai_create_task_deny_blocks_mcp_only(project, member, org):
+    _set(org, **{"ai.create_task": "deny"})
+    with pytest.raises(ServiceError):
+        create_task(
+            project=project, title="AI 생성", actor=member, source="mcp", due_date=today_kst()
+        )
+    t = create_task(
+        project=project, title="웹 생성", actor=member, source="web", due_date=today_kst()
+    )
+    assert t.title == "웹 생성"
+
+
+def test_ai_edit_text_deny_blocks_update_text_and_checklist(task, member, org):
+    _set(org, **{"ai.edit_text": "deny"})
+    with pytest.raises(ServiceError):
+        update_text(task, "notes", "메모", actor=member, source="mcp")
+    t = update_text(task, "notes", "메모", actor=member, source="web")
+    assert t.notes == "메모"
+    with pytest.raises(ServiceError):
+        replace_checklist(task, [{"text": "a"}], actor=member, source="mcp")
+    items = replace_checklist(task, [{"text": "a"}], actor=member, source="web")
+    assert len(items) == 1
+
+
+def test_ai_change_assignee_deny(task, member, admin, org):
+    _set(org, **{"ai.change_assignee": "deny"})
+    with pytest.raises(ServiceError):
+        update_task(task, {"assignee": admin}, actor=member, source="mcp", expected_version=1)
+    t = update_task(task, {"assignee": admin}, actor=member, source="web", expected_version=1)
+    assert t.assignee == admin
+
+
+def test_ai_change_due_deny_update_task_and_extend_due(task, member, org):
+    _set(org, **{"ai.change_due": "deny"})
+    new_due = today_kst() + timedelta(days=1)
+    with pytest.raises(ServiceError):
+        update_task(task, {"due_date": new_due}, actor=member, source="mcp", expected_version=1)
+    t = update_task(task, {"due_date": new_due}, actor=member, source="web", expected_version=1)
+    assert t.due_date == new_due
+    with pytest.raises(ServiceError):
+        extend_due(
+            t,
+            new_due + timedelta(days=1),
+            "사유",
+            actor=member,
+            source="mcp",
+            expected_version=t.version,
+        )
+    t = extend_due(
+        t,
+        new_due + timedelta(days=1),
+        "사유",
+        actor=member,
+        source="web",
+        expected_version=t.version,
+    )
+    assert t.due_date == new_due + timedelta(days=1)
+
+
+def test_ai_change_priority_deny(task, member, org):
+    _set(org, **{"ai.change_priority": "deny"})
+    with pytest.raises(ServiceError):
+        update_task(task, {"priority": 8}, actor=member, source="mcp", expected_version=1)
+    t = update_task(task, {"priority": 8}, actor=member, source="web", expected_version=1)
+    assert t.priority == 8
+
+
+def test_ai_transition_open_deny(task, member, org):
+    _set(org, **{"ai.transition_open": "deny"})
+    with pytest.raises(ServiceError):
+        transition(task, "doing", actor=member, source="mcp", expected_version=1)
+    t = transition(task, "doing", actor=member, source="web", expected_version=1)
+    assert t.status == "doing"
+
+
+def test_ai_close_task_deny(task, member, org):
+    _set(org, **{"ai.close_task": "deny"})
+    with pytest.raises(ServiceError):
+        transition(task, "done", actor=member, source="mcp", expected_version=1)
+    t = transition(task, "done", actor=member, source="web", expected_version=1)
+    assert t.status == "done"
+
+
+def test_ai_reopen_task_deny(task, member, org):
+    _set(org, **{"ai.reopen_task": "deny"})
+    t = transition(task, "done", actor=member, source="web", expected_version=1)
+    with pytest.raises(ServiceError):
+        transition(t, "todo", actor=member, source="mcp", expected_version=t.version)
+    t = transition(t, "todo", actor=member, source="web", expected_version=t.version)
+    assert t.status == "todo"
+
+
+def test_ai_enabled_off_blocks_all_mcp_writes(project, member, org):
+    _set(org, **{"ai.enabled": False})
+    with pytest.raises(ServiceError):
+        create_task(
+            project=project, title="AI 꺼짐", actor=member, source="mcp", due_date=today_kst()
+        )
+    t = create_task(
+        project=project, title="웹은 됨", actor=member, source="web", due_date=today_kst()
+    )
+    assert t.title == "웹은 됨"
+
+
+def test_ai_denied_never_fires_for_non_mcp_source_or_actor_none(project, member, org):
+    """모든 ai.*가 deny·꺼짐이어도 mcp가 아닌 source는 절대 걸리지 않는다. GitHub 웹훅(actor=None)도."""
+    _set(
+        org,
+        **{
+            "ai.enabled": False,
+            "ai.create_task": "deny",
+            "ai.edit_text": "deny",
+            "ai.change_assignee": "deny",
+            "ai.change_due": "deny",
+            "ai.change_priority": "deny",
+            "ai.transition_open": "deny",
+            "ai.close_task": "deny",
+            "ai.reopen_task": "deny",
+        },
+    )
+    for src in ("web", "dc", "api", "gh"):
+        t = create_task(
+            project=project, title=f"{src} 통과", actor=member, source=src, due_date=today_kst()
+        )
+        assert t.title == f"{src} 통과"
+    t2 = transition(t, "doing", actor=None, source="gh", expected_version=t.version)
+    assert t2.status == "doing"
+
+
+def test_default_settings_regression_full_lifecycle(project, member, admin):
+    """설정을 전혀 건드리지 않은 조직은 이번 라운드로 기존 흐름이 그대로 통과한다."""
+    t = create_task(
+        project=project,
+        title="기본값 회귀",
+        actor=member,
+        source="web",
+        due_date=today_kst(),
+        priority=10,
+    )
+    assert t.priority == 10
+    t = transition(t, "doing", actor=member, source="web", expected_version=t.version)
+    t = transition(t, "done", actor=member, source="web", expected_version=t.version)
+    assert t.status == "done"
+    t = transition(t, "todo", actor=member, source="web", expected_version=t.version)
+    assert t.status == "todo"
+    t = update_task(t, {"assignee": admin}, actor=member, source="web", expected_version=t.version)
     assert t.assignee == admin

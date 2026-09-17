@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 from common.errors import ConflictError, ServiceError
@@ -621,6 +622,8 @@ def _on_issues(conn, delivery, payload):
             "title": (issue.get("title") or "")[:300],
             "state": "closed" if action == "closed" else "open",
             "assignee_login": ((issue.get("assignee") or {}).get("login")) or "",
+            "author_login": ((issue.get("user") or {}).get("login")) or "",
+            "body": (issue.get("body") or "")[:5000],
             "labels": labels,
         },
     )
@@ -703,11 +706,76 @@ def sync_issues(conn) -> int:
                 "title": item["title"][:300],
                 "state": "open",
                 "assignee_login": ((item.get("assignee") or {}).get("login")) or "",
+                "author_login": ((item.get("user") or {}).get("login")) or "",
+                "body": (item.get("body") or "")[:5000],
                 "labels": [lb["name"] for lb in item.get("labels", []) if isinstance(lb, dict)],
             },
         )
     conn.issues.filter(state="open").exclude(number__in=seen).update(state="closed")
     return len(seen)
+
+
+def import_issue(issue, actor, *, source="web"):
+    """이슈를 내 태스크로. 이미 가져온 이슈면 그 태스크를 그대로 돌려준다.
+
+    저장소 탭과 조직 이슈 뷰어가 같은 함수를 부른다 — 두 곳에서 각자 만들면 링크를 거는 방식이
+    갈라진다. GitHub 이슈에는 기한이 없으므로 고정 사유를 채운다(`create_task`가 열린 태스크에
+    기한이나 사유 중 하나를 요구한다).
+    """
+    if issue.task_id is not None:
+        return issue.task
+    conn = issue.connection
+    task = create_task(
+        project=conn.project,
+        title=issue.title[:200],
+        actor=actor,
+        source=source,
+        assignee=actor,
+        description=(issue.body or "")[:2000],
+        no_due_reason="GitHub 이슈로 가져옴",
+    )
+    issue.task = task
+    issue.save(update_fields=["task"])
+    link, _ = TaskGitLink.objects.get_or_create(task=task, defaults={"connection": conn})
+    link.connection = conn
+    link.issue_number = issue.number
+    link.issue_title = issue.title
+    link.issue_state = issue.state
+    link.save(update_fields=["connection", "issue_number", "issue_title", "issue_state"])
+    return task
+
+
+def org_issues(org, *, repo_id=None, imported=None, query=""):
+    """조직에 연결된 저장소 전부의 열린 이슈. 이슈 뷰어가 쓴다.
+
+    프로젝트 저장소 탭은 저장소 하나만 보여 준다. 사람은 "내가 지금 무엇을 가져갈 수 있나"를
+    조직 단위로 보고 싶어 하므로 한 화면에 모은다.
+    """
+    qs = (
+        RepoIssue.objects.filter(connection__project__org=org, state="open")
+        .select_related("connection", "connection__project", "task")
+        .order_by("connection__full_name", "-number")
+    )
+    if repo_id:
+        qs = qs.filter(connection_id=repo_id)
+    if imported is True:
+        qs = qs.exclude(task=None)
+    elif imported is False:
+        qs = qs.filter(task=None)
+    if query:
+        qs = qs.filter(Q(title__icontains=query) | Q(body__icontains=query))
+    return qs
+
+
+def sync_org_issues(org) -> int:
+    """조직의 모든 연결 저장소를 한 번에 새로 고친다. 실패한 저장소는 건너뛴다."""
+    total = 0
+    for conn in RepoConnection.objects.filter(project__org=org).select_related("project"):
+        try:
+            total += sync_issues(conn)
+        except (ServiceError, GitHubError):
+            continue
+    return total
 
 
 def pr_compare_url(link) -> str:

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import discord
 import httpx
-from conftest import FakeCore, make_core, task
+from conftest import FakeCore, make_core, org, task
 from discord import app_commands
 from discord.app_commands import Choice
 
@@ -23,11 +23,12 @@ UNLINKED_DETAIL = "연결되지 않은 Discord 계정입니다. 웹 설정 → �
 
 
 class FakeInteraction:
-    def __init__(self, uid=DID, guild=None):
+    def __init__(self, uid=DID, guild=None, channel_id=555):
         self.user = SimpleNamespace(id=int(uid))
         if guild is not None:  # 길드 인터랙션의 user는 권한이 실린 Member
             self.user.guild_permissions = discord.Permissions(manage_channels=True)
         self.guild = guild
+        self.channel = SimpleNamespace(id=channel_id)
         self.deferred: bool | None = None  # defer(ephemeral=?) 값
         self.sent: list[tuple[str, bool]] = []  # (본문, ephemeral)
         self.response = SimpleNamespace(defer=self._defer, send_message=self._direct)
@@ -92,6 +93,7 @@ def test_all_commands_are_guild_scoped_with_the_shared_vocabulary():
         "상태",
         "팀채널",
         "프로젝트채널",
+        "알림채널",
     }
     assert tree.get_commands(guild=None) == []
     vocab = {"번호", "프로젝트", "팀", "담당자", "기한", "기한미정사유", "중요도", "상태", "사유"}
@@ -339,6 +341,48 @@ def test_channel_commands_are_guild_only_and_check_the_invoker_first():
     run(_cmd(tree, "팀채널").callback(i, team=1))
     assert i.sent == [("서버 채널에서 실행해 주세요.", True)]
     assert fake.calls == []
+
+
+def test_alert_channel_requires_manage_channels_before_calling_core():
+    fake = _fake()
+    tree = _tree(fake)
+    i = FakeInteraction(guild=SimpleNamespace(id=1))
+    i.user.guild_permissions = discord.Permissions.none()
+    run(_cmd(tree, "알림채널").callback(i))
+    assert i.sent == [("Discord 서버에서 채널 관리 권한이 있어야 합니다.", True)]
+    assert fake.calls == []
+
+
+def test_alert_channel_refuses_when_guild_is_unbound():
+    fake = _fake()
+    fake.orgs_data = [org(1, guild_id="999999")]  # GUILD(id=1)과 다른 길드에만 바인딩됨
+    tree = _tree(fake)
+    i = FakeInteraction(guild=SimpleNamespace(id=1))
+    run(_cmd(tree, "알림채널").callback(i))
+    assert i.sent == [("이 서버는 아직 조직에 연결되지 않았습니다.", True)]
+    assert fake.calls == []
+
+
+def test_alert_channel_saves_the_invoking_channel():
+    fake = _fake()
+    fake.orgs_data = [org(1, guild_id="1")]
+    tree = _tree(fake)
+    i = FakeInteraction(guild=SimpleNamespace(id=1), channel_id=777)
+    run(_cmd(tree, "알림채널").callback(i))
+    assert fake.calls == [
+        ("orgs/channel", {"discord_user_id": DID, "guild_id": "1", "channel_id": "777"})
+    ]
+    assert i.reply == "이 채널(<#777>)을 이 서버 조직의 알림 채널로 저장했습니다."
+
+
+def test_alert_channel_relays_core_refusal_for_non_org_admin():
+    fake = _fake()
+    fake.orgs_data = [org(1, guild_id="1")]
+    fake.admin = False
+    tree = _tree(fake)
+    i = FakeInteraction(guild=SimpleNamespace(id=1))
+    run(_cmd(tree, "알림채널").callback(i))
+    assert i.reply == "조직 관리자만 할 수 있습니다."
 
 
 def test_dm_commands_still_work_unchanged():

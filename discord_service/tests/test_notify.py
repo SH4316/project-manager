@@ -19,9 +19,7 @@ def _cfg(tmp_path):
     return Config(
         core_url="http://core",
         core_token="pm_test",
-        org_id=1,
         bot_token="botsecret",
-        channel_id=CHANNEL,
         tz=KST,
         send_hour=9,
         weekly_weekday=0,
@@ -34,6 +32,11 @@ def _cfg(tmp_path):
 
 def _kinds(store) -> list[str]:
     return sorted(r["kind"] for r in store.recent()["sent"])
+
+
+def _org_kind(kind: str) -> str:
+    """notify.py는 org를 앞에 붙인다(§8.4) — 태스크에 안 매인 키(kind:uid)만 그렇다."""
+    return f"1:{kind}"
 
 
 def test_classify():
@@ -68,7 +71,7 @@ def test_same_kind_same_assignee_is_one_dm(store, fake_bot, bot):
     assert r["sent"] == 1
     assert len(fake_bot.messages) == 1
     assert "TASK-1" in fake_bot.sent[0] and "TASK-2" in fake_bot.sent[0]
-    assert _kinds(store) == ["d1:2"]
+    assert _kinds(store) == [_org_kind("d1:2")]
 
 
 def test_each_assignee_gets_their_own_dm(store, fake_bot, bot):
@@ -79,7 +82,7 @@ def test_each_assignee_gets_their_own_dm(store, fake_bot, bot):
     r = run_deadlines(core, bot, store, 1, TODAY)
     assert r["sent"] == 2
     assert fake_bot.dm("111") and fake_bot.dm("222")
-    assert _kinds(store) == ["overdue:2", "overdue:3"]
+    assert _kinds(store) == [_org_kind("overdue:2"), _org_kind("overdue:3")]
 
     r2 = run_deadlines(core, bot, store, 1, TODAY)
     assert r2["sent"] == 0
@@ -133,8 +136,8 @@ def test_blocked_dm_fails_once_and_notifies_channel(store, fake_bot, bot):
     assert fake_bot.attempts("dm-111") == 1  # 재시도하지 않는다
     assert fake_bot.dm("222")  # 다른 담당자는 정상
     rows = {row["kind"]: row for row in store.recent()["sent"]}
-    assert rows["d1:2"]["status"] == "failed"
-    assert "50007" in rows["d1:2"]["last_error"]
+    assert rows[_org_kind("d1:2")]["status"] == "failed"
+    assert "50007" in rows[_org_kind("d1:2")]["last_error"]
 
     notices = fake_bot.to(CHANNEL)
     assert len(notices) == 1
@@ -299,6 +302,52 @@ def test_released_alerts_reopen_the_day_and_are_retried(
     second = tick(cfg, core, bot, store, now)[0]  # 같은 날 다시 훑는다
     assert second["sent"] == 1
     assert fake_bot.dm("111")
+
+
+def test_opted_out_member_is_not_sent_and_not_counted_as_skipped(store, fake_bot, bot):
+    """notify_dm이 꺼진 사람은 실패도 skipped도 아니라 opted_out이다(§4.5)."""
+    core = make_core(FakeCore([task(1, "2026-09-10")]))
+    r = run_deadlines(core, bot, store, 1, TODAY, notify={"111": {"notify_dm": False}})
+    assert r["sent"] == 0 and r["skipped"] == 0 and r["opted_out"] == 1
+    assert fake_bot.messages == []
+
+
+def test_personal_hour_overrides_org_default(store, fake_bot, bot):
+    """user.notify_hour가 있으면 그 사람 묶음은 그 시각에만 나간다(§4.6)."""
+    core = make_core(FakeCore([task(1, "2026-09-10")]))
+    notify = {"111": {"notify_dm": True, "notify_hour": 14}}
+    r9 = run_deadlines(core, bot, store, 1, TODAY, hour=9, org_hour=9, notify=notify)
+    assert r9["sent"] == 0 and fake_bot.messages == []  # 아직 이 사람의 시각이 아니다
+    r14 = run_deadlines(core, bot, store, 1, TODAY, hour=14, org_hour=9, notify=notify)
+    assert r14["sent"] == 1
+
+
+def test_two_orgs_scheduled_together_do_not_mix_deadline_dms(tmp_path, store, fake_bot, bot):
+    """조직 둘이 같은 봇에 붙어도 마감 DM이 섞이지 않는다(§8.4)."""
+    from conftest import org
+
+    fake = FakeCore(
+        [
+            task(1, "2026-09-10"),  # org 1, 담당자 111
+            task(
+                2,
+                "2026-09-10",
+                assignee=OTHER,
+                project={"id": 2, "name": "다른 조직 일", "org_id": 2, "discord_channel_id": ""},
+            ),
+        ],
+        orgs=[org(1, "산돌이", channel_id="111ch"), org(2, "이웃 조직", channel_id="222ch")],
+    )
+    cfg = _cfg(tmp_path)
+    now = datetime(2026, 9, 9, 10, tzinfo=KST)
+    results = tick(cfg, make_core(fake), bot, store, now)
+
+    by_org = {r["org_id"]: r for r in results if r["job"] == "deadline"}
+    assert by_org[1]["sent"] == 1 and by_org[2]["sent"] == 1
+    assert sorted(fake_bot.dm("111") + fake_bot.dm("222")) == sorted(fake_bot.sent)
+    # 자리도 조직마다 따로다
+    assert _org_kind("d1:2") in _kinds(store)  # org 1
+    assert "2:d1:3" in _kinds(store)  # org 2, 담당자 id=3(OTHER)
 
 
 def test_reopening_the_day_is_bounded(tmp_path, store, fake_bot, bot, monkeypatch):

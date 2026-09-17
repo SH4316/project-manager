@@ -16,6 +16,7 @@ from tasks.models import ChangeLog, ChecklistItem, Link
 from ..forms import LinkForm
 from .common import (
     CONFLICT_MSG,
+    due_class,
     due_full,
     due_label,
     history_rows,
@@ -86,6 +87,7 @@ def _panel_ctx(request, task, **extra):
         "history": history_rows(logs),
         "priorities": range(10, 0, -1),
         "due_label": due_label(task),
+        "due_class": due_class(task),  # 초과 유예(task.overdue_grace_days)를 본 판정이다
         "due_full": due_full(task),
         "extend_min": task.due_date + timedelta(days=1) if task.due_date else today_kst(),
         "desc_rows": max(2, -(-len(task.description) // 40)),

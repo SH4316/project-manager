@@ -7,6 +7,7 @@ from accounts.models import User
 from accounts.services import (
     issue_link_code,
     link_discord,
+    set_user_settings,
     unlink_discord,
     user_by_discord_id,
 )
@@ -105,6 +106,22 @@ def test_unlink_then_link_again(admin):
 
     link_discord(issue_link_code(admin), "222")
     assert user_by_discord_id("222") == admin
+
+
+# ---------- 개인 설정 ----------
+
+
+def test_set_user_settings_cleans_and_strips_default(admin):
+    set_user_settings(admin, {"user.notify_dm": False})
+    admin.refresh_from_db()
+    assert admin.settings == {"user.notify_dm": False}
+
+    set_user_settings(admin, {"user.notify_dm": True})  # 기본값으로 되돌리면 지워진다
+    admin.refresh_from_db()
+    assert admin.settings == {}
+
+    with pytest.raises(ServiceError):
+        set_user_settings(admin, {"no.such.key": 1})
 
 
 def test_user_by_discord_id_needs_a_proven_active_link(admin):

@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from common.errors import ServiceError
@@ -11,6 +12,7 @@ from github import writes as gh_writes
 from orgs import services as osv
 from orgs.governance import governance_text
 from orgs.models import Invite, OrgMembership
+from orgs.settings import GROUPS, SPECS, display, effective, enforced, locked_keys, specs_for
 from projects.services import project_stats
 from reports.services import org_status
 
@@ -253,5 +255,99 @@ def org_governance(request, org_id):
             "is_admin": is_admin,
             "error": error,
             "tab": "governance",
+            "enforced_rows": enforced(org),
+        },
+    )
+
+
+# ---------- 설정 (IMPL-PLAN-4 §7) ----------
+
+
+def _settings_from_post(post, specs):
+    """체크박스가 꺼진 bool은 폼에 안 실려 오므로 레지스트리를 돌며 False로 채운다."""
+    data = {}
+    for spec in specs:
+        if spec.kind == "bool":
+            data[spec.key] = spec.key in post
+        elif spec.kind == "set":
+            data[spec.key] = post.getlist(spec.key)
+        elif spec.key in post:
+            data[spec.key] = post[spec.key]
+    return data
+
+
+def _org_settings_history(org):
+    from tasks.models import ChangeLog
+
+    extra_labels = {"_locked": "프로젝트가 바꿀 수 있는 항목"}
+    logs = (
+        ChangeLog.objects.filter(target_type="org", target_id=org.pk)
+        .select_related("actor")
+        .order_by("-created_at")[:20]
+    )
+    rows = []
+    for log in logs:
+        spec = SPECS.get(log.field)
+        at = timezone.localtime(log.created_at)
+        rows.append(
+            {
+                "field": spec.label if spec else extra_labels.get(log.field, log.field),
+                "from": log.old_value,
+                "to": log.new_value,
+                "time": f"{at.month}월 {at.day}일 {at:%H:%M}",
+                "actor": log.actor.display_name if log.actor else (log.external_actor or "GitHub"),
+                "source": log.get_source_display(),
+            }
+        )
+    return rows
+
+
+@login_required
+def org_settings(request, org_id):
+    """조직 설정. 관리자가 고치고 멤버는 읽기만 한다 — "왜 진행 중으로 못 바꾸지"의 답이 여기 있다."""
+    org = org_or_404(request.user, org_id)
+    is_admin = can_admin(request.user, org)
+    specs = specs_for("org")
+    if request.method == "POST" and is_admin:
+        try:
+            osv.set_org_settings(org, _settings_from_post(request.POST, specs), request.user)
+            unlocked = {
+                spec.key
+                for spec in specs
+                if spec.overridable and request.POST.get(f"unlock__{spec.key}") == "on"
+            }
+            osv.set_locks(
+                org,
+                [spec.key for spec in specs if spec.overridable and spec.key not in unlocked],
+                request.user,
+            )
+            messages.success(request, "조직 설정을 저장했습니다.")
+        except ServiceError as e:
+            messages.error(request, " ".join(e.errors.values()))
+        return redirect("org_settings", org_id=org.pk)
+    locked = locked_keys(org)
+    groups = []
+    for code, label in GROUPS:
+        rows = [
+            {
+                "spec": s,
+                "value": effective(s.key, org=org),
+                "display": display(s.key, effective(s.key, org=org)),
+                "unlocked": s.key not in locked,
+            }
+            for s in specs
+            if s.group == code
+        ]
+        if rows:
+            groups.append((label, rows))
+    return render(
+        request,
+        "orgs/settings.html",
+        {
+            "org": org,
+            "is_admin": is_admin,
+            "groups": groups,
+            "history": _org_settings_history(org),
+            "tab": "settings",
         },
     )

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
@@ -5,16 +6,21 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from common.errors import ConflictError, ServiceError
+from orgs.settings import GROUPS, effective, locked_keys, specs_for
+from orgs.settings import display as org_display
 from projects.models import Project
 from projects.services import (
     SPEC_MAX,
     archive_project,
     create_project,
     fetch_spec,
+    is_owner,
     parse_spec,
     project_stats,
     restore_project,
     set_api_spec,
+    set_governance_extra,
+    set_project_settings,
     spec_view,
     update_project,
 )
@@ -324,3 +330,71 @@ def project_api(request, project_id):
     if request.GET.get("part") == "endpoints":
         return render(request, "projects/_endpoints.html", ctx)
     return render(request, "projects/api.html", ctx)
+
+
+def _can_edit_project_settings(user, project) -> bool:
+    if can_admin(user, project.org):
+        return True
+    level = effective("project.settings_by", org=project.org)
+    if level == "admin":
+        return False
+    if level == "owner":
+        return is_owner(user, project)
+    return True
+
+
+@login_required
+def project_settings(request, project_id):
+    """프로젝트 설정. 저장소 규칙·거버넌스 추가 문단을 같은 화면에 둔다. IMPL-PLAN-4 §7."""
+    from .orgs import _settings_from_post
+
+    project = project_or_404(request.user, project_id)
+    editable = _can_edit_project_settings(request.user, project)
+    locked = locked_keys(project.org)
+    specs = specs_for("project")
+    if request.method == "POST" and editable:
+        try:
+            if request.POST.get("action") == "governance_extra":
+                set_governance_extra(
+                    project, request.POST.get("governance_extra", ""), actor=request.user
+                )
+                messages.success(request, "프로젝트 거버넌스를 저장했습니다.")
+            else:
+                data = _settings_from_post(request.POST, [s for s in specs if s.key not in locked])
+                set_project_settings(project, data, actor=request.user, source="web")
+                messages.success(request, "프로젝트 설정을 저장했습니다.")
+        except ServiceError as e:
+            messages.error(request, " ".join(e.errors.values()))
+        return redirect("project_settings", project_id=project.pk)
+    groups = []
+    for code, label in GROUPS:
+        rows = [
+            {
+                "spec": s,
+                "value": effective(s.key, org=project.org, project=project),
+                "display": org_display(s.key, effective(s.key, org=project.org, project=project)),
+                "locked": s.key in locked,
+            }
+            for s in specs
+            if s.group == code
+        ]
+        if rows:
+            groups.append((label, rows))
+    repo_state = None
+    if settings.GITHUB_ENABLED:
+        from github import services as gh_services
+
+        repo_state = gh_services.repo_state(request.user, project)
+    return render(
+        request,
+        "projects/settings.html",
+        {
+            "project": project,
+            "tab": "settings",
+            "editable": editable,
+            "is_admin": can_admin(request.user, project.org),
+            "groups": groups,
+            "governance_extra": project.governance_extra,
+            "repo_state": repo_state,
+        },
+    )

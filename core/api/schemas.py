@@ -21,6 +21,8 @@ class ProjectBrief(Schema):
     id: int
     name: str
     org_id: int
+    # 프로젝트 채널 게시(IMPL-PLAN-4 §4.5)가 목적지를 여기서 읽는다.
+    discord_channel_id: str = ""
 
 
 class TaskBriefOut(Schema):
@@ -33,6 +35,9 @@ class TaskBriefOut(Schema):
     priority: int
     due_date: date | None
     stop_reason: str
+    # 막힘·검토 에스컬레이션이 경과일을 재는 기준.
+    stopped_at: datetime | None = None
+    updated_at: datetime | None = None
     next_action: str
     url: str
 
@@ -87,7 +92,7 @@ class TaskCreateIn(Schema):
     description: str = ""
     done_when: str = ""
     next_action: str = ""
-    priority: Priority = 5
+    priority: Priority | None = None  # 없으면 조직 설정의 기본 중요도
     due_date: date | None = None
     no_due_reason: str = ""
     checklist: list[ChecklistItemIn] | None = None
@@ -324,7 +329,7 @@ class DiscordTaskCreateIn(Schema):
     title: str
     due_date: date | None = None
     no_due_reason: str = ""
-    priority: int = 5
+    priority: int | None = None  # 없으면 조직 설정의 기본 중요도
     assignee_id: int | None = None
 
 

@@ -12,12 +12,21 @@ def task_brief(t) -> dict:
         "id": t.pk,
         "number": t.number,
         "title": t.title,
-        "project": {"id": t.project_id, "name": t.project.name, "org_id": t.project.org_id},
+        "project": {
+            "id": t.project_id,
+            "name": t.project.name,
+            "org_id": t.project.org_id,
+            # 프로젝트 채널 게시(IMPL-PLAN-4 §4.5)가 목적지를 여기서 읽는다.
+            "discord_channel_id": t.project.discord_channel_id,
+        },
         "assignee": user_brief(t.assignee),
         "status": t.status,
         "priority": t.priority,
         "due_date": t.due_date.isoformat() if t.due_date else None,
         "stop_reason": t.stop_reason,
+        # 막힘·검토 에스컬레이션이 경과일을 재는 기준.
+        "stopped_at": t.stopped_at.isoformat() if t.stopped_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
         "next_action": t.next_action,
         "url": f"{settings.SITE_URL}/tasks/{t.pk}",
     }

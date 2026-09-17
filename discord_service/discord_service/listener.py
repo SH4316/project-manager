@@ -32,16 +32,26 @@ def run(cfg, core: CoreClient):
     seen: dict[str, list[float]] = {}
 
     tree = app_commands.CommandTree(client)
-    guild = discord.Object(id=int(cfg.guild_id)) if cfg.guild_id else None
-    if guild is not None:
-        register(tree, guild, cfg, core, seen)
+    # 다중 조직(§8.4): 바인딩된 길드 전부에 등록한다. 길드가 늘면 다음 기동에 반영된다
+    # (길드 범위 동기화라 매 기동마다 core.orgs()를 한 번만 읽는다 — 실시간으로 새 길드를
+    # 잡으려면 주기적 재동기화가 필요한데, 조직 연결은 자주 있는 일이 아니라 배보다 배꼽이
+    # 크다. 재배포·재기동으로 충분하다).
+    try:
+        orgs = core.orgs()
+    except Exception:  # noqa: BLE001
+        orgs = []
+        log.exception("조직 목록을 못 읽어 슬래시 명령을 등록하지 않습니다 (DM 명령만 동작)")
+    guilds = [discord.Object(id=int(o["guild_id"])) for o in orgs if o.get("guild_id")]
+    if guilds:
+        for guild in guilds:
+            register(tree, guild, cfg, core, seen)
     else:
-        log.warning("DISCORD_GUILD_ID 가 없어 슬래시 명령을 등록하지 않습니다 (DM 명령만 동작)")
+        log.warning("바인딩된 Discord 서버가 없어 슬래시 명령을 등록하지 않습니다 (DM 명령만 동작)")
 
     async def setup_hook():
         # 길드 범위 동기화는 즉시 반영된다(전역은 최대 1시간). on_ready는 재접속마다 다시
         # 불리므로 거기서 하면 매번 API를 때린다.
-        if guild is not None:
+        for guild in guilds:
             await tree.sync(guild=guild)
 
     client.setup_hook = setup_hook

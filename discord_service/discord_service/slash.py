@@ -20,7 +20,7 @@ import httpx
 from discord import app_commands
 from discord.app_commands import Choice
 
-from .channels import link_channel
+from .channels import NOT_A_MANAGER, can_manage_channels, link_channel
 from .commands import (
     BAD_DATE,
     TOO_FAST,
@@ -31,6 +31,7 @@ from .commands import (
     link_reply,
     note_reply,
     parse_date,
+    set_org_channel_reply,
     status_reply,
     today_reply,
     too_fast,
@@ -48,6 +49,7 @@ AUTOCOMPLETE_TIMEOUT = 2.5  # 3초 안에 반환해야 한다. 넘기면 빈 목
 MAX_CHOICES = 25  # Discord 상한. 상위 25개만 주고 더 입력하면 필터가 좁혀진다
 NO_MENTION = discord.AllowedMentions.none()
 STATUS_CHOICES = [Choice(name=label, value=code) for code, label in STATUS.items()]
+NOT_CONNECTED = "이 서버는 아직 조직에 연결되지 않았습니다."
 
 # 자동완성 캐시. (discord_user_id, 종류) → (만료 시각, 목록). 미연결·비멤버도 빈 목록으로
 # 캐시해 타자마다 404를 받으러 가지 않는다.
@@ -320,5 +322,42 @@ def register(tree: app_commands.CommandTree, guild, cfg, core: CoreClient, seen:
         interaction: discord.Interaction, project: int, category: str | None = None
     ):
         await channel_cmd(interaction, "project", project, category)
+
+    # --- §8.4: 조직 알림 채널 지정 ---
+
+    @tree.command(
+        name="알림채널",
+        description="이 채널을 이 서버 조직의 알림 채널로 지정합니다 (PM 조직 관리자)",
+        guild=guild,
+    )
+    @app_commands.guild_only()
+    async def alert_channel(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        uid = str(interaction.user.id)
+        if too_fast(seen, uid, time.monotonic()):
+            reply = TOO_FAST
+        elif interaction.guild is None:
+            reply = "서버 채널에서 실행해 주세요."
+        elif not can_manage_channels(interaction.user):
+            reply = NOT_A_MANAGER
+        else:
+            # 등록 자체가 바인딩된 길드로 좁혀 있지만(listener.run), 기동 뒤 바인딩이 풀렸을
+            # 수도 있으니 부르는 시점에 한 번 더 본다 — 값싸고(캐시 없이 한 번) 정직하다.
+            try:
+                orgs = await asyncio.to_thread(core.orgs)
+            except httpx.HTTPError:
+                orgs = []
+            if not any(str(o.get("guild_id")) == str(interaction.guild.id) for o in orgs):
+                reply = NOT_CONNECTED
+            else:
+                reply = await asyncio.to_thread(
+                    guarded,
+                    set_org_channel_reply,
+                    core,
+                    uid,
+                    str(interaction.guild.id),
+                    str(interaction.channel.id),
+                )
+        await send(interaction, reply)
 
     return cache

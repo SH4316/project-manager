@@ -182,14 +182,39 @@ def org_members(request, org_id: int):
                 "display_name": u.display_name,
                 "discord_user_id": u.discord_user_id,
                 "role": m.role,
-                "notify": {
-                    "notify_dm": org_settings.effective("user.notify_dm", user=u),
-                    "notify_kinds": list(org_settings.effective("user.notify_kinds", user=u)),
-                    "notify_hour": org_settings.effective("user.notify_hour", user=u),
-                },
+                "notify_dm": org_settings.effective("user.notify_dm", user=u),
+                "notify_kinds": list(org_settings.effective("user.notify_kinds", user=u)),
+                "notify_hour": org_settings.effective("user.notify_hour", user=u),
             }
         )
     return out
+
+
+def _people(users) -> list[dict]:
+    return [
+        {"id": u.pk, "display_name": u.display_name, "discord_user_id": u.discord_user_id}
+        for u in users
+    ]
+
+
+@router.get("/projects/{int:project_id}/owners", response=list[dict])
+def project_owners(request, project_id: int):
+    """프로젝트 관리자. 막힘·검토 에스컬레이션 DM의 1차 수신자다."""
+    project = Project.objects.filter(pk=project_id).first()
+    if project is None:
+        raise HttpError(404, "프로젝트를 찾을 수 없습니다.")
+    return _people(project.owners.filter(is_active=True).order_by("display_name"))
+
+
+@router.get("/orgs/{int:org_id}/admins", response=list[dict])
+def org_admins(request, org_id: int):
+    """조직 관리자. 프로젝트 관리자가 0명일 때의 대체 수신자다."""
+    rows = (
+        OrgMembership.objects.filter(org_id=org_id, role="admin", user__is_active=True)
+        .select_related("user")
+        .order_by("user__display_name")
+    )
+    return _people([m.user for m in rows])
 
 
 @router.post("/orgs/channel", response=dict)

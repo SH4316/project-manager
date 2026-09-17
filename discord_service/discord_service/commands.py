@@ -108,7 +108,14 @@ def unlink_reply(core: CoreClient, did: str) -> str:
 
 
 def today_reply(core: CoreClient, did: str) -> str:
-    return today_message(core.today(did))
+    view = core.today(did)
+    # DM은 그 사람의 모든 조직을 본다(§8.4). 조직이 둘 이상 섞여 있을 때만 줄마다 조직 이름을
+    # 붙인다 — 조직이 하나면(대부분) 지금까지와 문구가 완전히 같다.
+    org_ids = {t["project"]["org_id"] for t in view["items"] if t.get("project")}
+    org_names = None
+    if len(org_ids) > 1:
+        org_names = {o["org_id"]: o["name"] for o in core.orgs()}
+    return today_message(view, org_names)
 
 
 def done_reply(core: CoreClient, did: str, num: int) -> str:
@@ -132,6 +139,12 @@ def update_reply(core: CoreClient, did: str, num: int, changes: dict) -> str:
         return "바꿀 항목을 하나 이상 넣어 주세요."
     t = core.update_task(did, num, changes)["task"]
     return f"{_head(t)} — 수정했습니다.\n{t['url']}"
+
+
+def set_org_channel_reply(core: CoreClient, did: str, guild_id: str, channel_id: str) -> str:
+    """`/알림채널`이 부른다. core가 PM 조직 관리자 여부를 판정한다(길드 권한은 호출 전에 확인됨)."""
+    core.set_org_channel(did, guild_id, channel_id)
+    return f"이 채널(<#{channel_id}>)을 이 서버 조직의 알림 채널로 저장했습니다."
 
 
 def note_reply(core: CoreClient, did: str, num: int, text: str) -> str:

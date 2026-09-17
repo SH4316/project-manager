@@ -4,6 +4,7 @@ from django.utils import timezone
 from common.errors import ServiceError
 
 from .models import Invite, Organization, OrgMembership, Team, TeamMembership
+from .settings import LOCKED, SPECS, clean, display, effective
 
 # ---------- 조직 ----------
 
@@ -26,6 +27,85 @@ def require_admin(user, org):
         raise ServiceError({"org": "조직 관리자만 할 수 있습니다."})
 
 
+def ai_denied(action: str) -> str:
+    return f"이 조직 설정에서 AI의 {action}이 꺼져 있어요. 사람이 웹에서 해 주세요."
+
+
+def _check_ai_manage_teams(org, source: str):
+    """source가 mcp인데 AI 정책이 팀 관리를 막아 뒀으면 거부한다."""
+    if source != "mcp":
+        return
+    if not effective("ai.enabled", org=org) or effective("ai.manage_teams", org=org) == "deny":
+        raise ServiceError({"ai": ai_denied("팀 만들고 사람 넣기")})
+
+
+def _display_setting(key: str, value) -> str:
+    """이력에 남기는 사람이 읽는 문구. 값이 없으면(=기본값) 기본값을 보여 준다."""
+    if key == LOCKED:
+        return ", ".join(sorted(value or [])) or "없음"
+    spec = SPECS[key]
+    return display(key, spec.default if value is None else value)
+
+
+@transaction.atomic
+def set_org_settings(org, data: dict, actor) -> Organization:
+    """조직 설정을 통째로 교체한다(병합이 아니다 — 키 없음 = 기본값이 규칙이기 때문이다).
+
+    바뀐 키마다 이력을 남긴다.
+    """
+    require_admin(actor, org)
+    cleaned = clean("org", data, allow_locked=True)
+    old = org.settings or {}
+    if old != cleaned:
+        from tasks.models import ChangeLog
+
+        for key in set(old) | set(cleaned):
+            old_v, new_v = old.get(key), cleaned.get(key)
+            if old_v == new_v:
+                continue
+            ChangeLog.objects.create(
+                target_type="org",
+                target_id=org.pk,
+                field=key,
+                old_value=_display_setting(key, old_v),
+                new_value=_display_setting(key, new_v),
+                actor=actor,
+                source="web",
+            )
+    org.settings = cleaned
+    org.save(update_fields=["settings"])
+    return org
+
+
+@transaction.atomic
+def set_locks(org, keys: list[str], actor) -> Organization:
+    """덮어쓸 수 있는(overridable) 항목만 잠근다. 그 밖의 키는 조용히 걸러진다."""
+    require_admin(actor, org)
+    old = org.settings or {}
+    old_locked = old.get(LOCKED) or []
+    new_locked = clean("org", {LOCKED: keys}, allow_locked=True).get(LOCKED, [])
+    if old_locked != new_locked:
+        from tasks.models import ChangeLog
+
+        ChangeLog.objects.create(
+            target_type="org",
+            target_id=org.pk,
+            field=LOCKED,
+            old_value=_display_setting(LOCKED, old_locked),
+            new_value=_display_setting(LOCKED, new_locked),
+            actor=actor,
+            source="web",
+        )
+    new_settings = dict(old)
+    if new_locked:
+        new_settings[LOCKED] = new_locked
+    else:
+        new_settings.pop(LOCKED, None)
+    org.settings = new_settings
+    org.save(update_fields=["settings"])
+    return org
+
+
 @transaction.atomic
 def create_org(name: str, purpose: str, actor) -> Organization:
     name = name.strip()
@@ -38,12 +118,19 @@ def create_org(name: str, purpose: str, actor) -> Organization:
     return org
 
 
-def create_invite(org, actor, days: int = 7) -> Invite:
+def create_invite(org, actor, days: int | None = None) -> Invite:
     require_admin(actor, org)
+    if days is None:
+        days = effective("org.invite_days", org=org)
     if not 1 <= days <= 90:
         raise ServiceError({"days": "만료일은 1~90일 사이여야 합니다."})
     expires_at = timezone.now() + timezone.timedelta(days=days)
-    return Invite.objects.create(org=org, created_by=actor, expires_at=expires_at)
+    return Invite.objects.create(
+        org=org,
+        created_by=actor,
+        expires_at=expires_at,
+        max_uses=effective("org.invite_max_uses", org=org),
+    )
 
 
 def revoke_invite(invite, actor):
@@ -63,6 +150,8 @@ def invite_org(token: str):
 def join_by_token(user, token: str) -> Organization:
     invite = Invite.objects.select_for_update().select_related("org").filter(token=token).first()
     if invite is None or not invite.is_usable:
+        raise ServiceError({"token": "초대 링크가 유효하지 않거나 만료되었습니다."})
+    if invite.max_uses > 0 and invite.use_count >= invite.max_uses:
         raise ServiceError({"token": "초대 링크가 유효하지 않거나 만료되었습니다."})
     _, created = OrgMembership.objects.get_or_create(
         org=invite.org, user=user, defaults={"role": "member"}
@@ -84,8 +173,10 @@ def change_role(membership, role: str, actor):
 
 
 def set_tags(membership, tags, actor):
-    """스킬 태그. 관리자만 고친다. 공백 제거·중복 제거·20자·최대 10개."""
-    require_admin(actor, membership.org)
+    """스킬 태그. 관리자만 고친다(조직이 본인도 허용했으면 본인도). 공백 제거·중복 제거·20자·최대 10개."""
+    self_edit = actor == membership.user and effective("org.tags_by", org=membership.org) == "self"
+    if not self_edit:
+        require_admin(actor, membership.org)
     cleaned, seen = [], set()
     for t in tags:
         t = (t or "").strip()[:20]
@@ -130,7 +221,8 @@ def _validate_team_name(org, name: str, exclude_pk=None) -> str:
     return name
 
 
-def create_team(*, org, name: str, purpose: str = "", actor) -> Team:
+def create_team(*, org, name: str, purpose: str = "", actor, source: str = "") -> Team:
+    _check_ai_manage_teams(org, source)
     require_admin(actor, org)
     return Team.objects.create(
         org=org,
@@ -154,8 +246,11 @@ def delete_team(team, actor):
     team.delete()
 
 
-def add_team_member(team, user, actor) -> TeamMembership:
-    require_admin(actor, team.org)
+def add_team_member(team, user, actor, source: str = "") -> TeamMembership:
+    _check_ai_manage_teams(team.org, source)
+    self_join = actor == user and effective("org.team_join_self", org=team.org)
+    if not self_join:
+        require_admin(actor, team.org)
     if not is_member(user, team.org):
         raise ServiceError({"user": "먼저 조직에 초대해야 합니다."})
     if not user.is_active:
@@ -164,8 +259,11 @@ def add_team_member(team, user, actor) -> TeamMembership:
     return membership
 
 
-def remove_team_member(team, user, actor):
-    require_admin(actor, team.org)
+def remove_team_member(team, user, actor, source: str = ""):
+    _check_ai_manage_teams(team.org, source)
+    self_leave = actor == user and effective("org.team_join_self", org=team.org)
+    if not self_leave:
+        require_admin(actor, team.org)
     TeamMembership.objects.filter(team=team, user=user).delete()
 
 

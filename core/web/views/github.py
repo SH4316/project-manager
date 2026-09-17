@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from common.errors import ServiceError
@@ -15,8 +16,7 @@ from github import client
 from github import services as gh_services
 from github import writes as gh_writes
 from github.client import GitHubError
-from github.models import GitHubIdentity, TaskGitLink
-from tasks import services as ts
+from github.models import GitHubIdentity, RepoConnection, RepoIssue, TaskGitLink
 from tasks.models import Task
 
 from .common import can_admin, not_admin, org_or_404, project_or_404, task_or_404
@@ -260,24 +260,68 @@ def repo_issue_import(request, project_id, number):
     if issue is None:
         raise Http404
     if issue.task_id is None:
-        task = ts.create_task(
-            project=project,
-            title=issue.title[:200],
-            actor=request.user,
-            source="web",
-            assignee=request.user,
-            no_due_reason="GitHub 이슈로 가져옴",
-        )
-        issue.task = task
-        issue.save(update_fields=["task"])
-        link, _ = TaskGitLink.objects.get_or_create(task=task, defaults={"connection": conn})
-        link.connection = conn
-        link.issue_number = issue.number
-        link.issue_title = issue.title
-        link.issue_state = issue.state
-        link.save(update_fields=["connection", "issue_number", "issue_title", "issue_state"])
+        task = gh_services.import_issue(issue, request.user)
         messages.success(request, f"태스크 {task.number}로 가져왔습니다.")
     return redirect("project_repo", project_id=project.pk)
+
+
+@login_required
+def org_issues(request, org_id):
+    """조직 이슈 뷰어. 연결된 저장소 전부의 열린 이슈를 한 화면에서 보고 내 태스크로 가져간다.
+
+    저장소 탭은 저장소 하나만 보여 준다 — "지금 내가 집을 수 있는 일"은 조직 단위로 봐야 보인다.
+    """
+    _gh_enabled_or_404()
+    org = org_or_404(request.user, org_id)
+    repo_id = request.GET.get("repo") or ""
+    state = request.GET.get("state") or "todo"  # todo=아직 안 가져온 것 | done | all
+    query = (request.GET.get("q") or "").strip()
+    imported = {"todo": False, "done": True}.get(state)
+    issues = gh_services.org_issues(
+        org, repo_id=int(repo_id) if repo_id.isdecimal() else None, imported=imported, query=query
+    )
+    repos = RepoConnection.objects.filter(project__org=org).select_related("project")
+    return render(
+        request,
+        "github/issues.html",
+        {
+            "org": org,
+            "tab": "issues",
+            "issues": issues,
+            "repos": repos,
+            "repo_id": repo_id,
+            "state": state,
+            "q": query,
+            "is_admin": can_admin(request.user, org),
+        },
+    )
+
+
+@login_required
+@require_POST
+def org_issues_sync(request, org_id):
+    _gh_enabled_or_404()
+    org = org_or_404(request.user, org_id)
+    n = gh_services.sync_org_issues(org)
+    messages.success(request, f"열린 이슈 {n}건을 확인했습니다.")
+    return redirect(f"{reverse('org_issues', args=[org.pk])}?{request.POST.get('back', '')}")
+
+
+@login_required
+@require_POST
+def org_issue_import(request, org_id, issue_id):
+    """이슈 하나를 내 태스크로. 담당자는 누른 사람이다."""
+    _gh_enabled_or_404()
+    org = org_or_404(request.user, org_id)
+    issue = RepoIssue.objects.filter(pk=issue_id, connection__project__org=org).first()
+    if issue is None:
+        raise Http404
+    if issue.task_id is None:
+        task = gh_services.import_issue(issue, request.user)
+        messages.success(request, f"태스크 {task.number}로 가져왔습니다.")
+    else:
+        messages.info(request, f"이미 태스크 {issue.task.number}로 가져온 이슈입니다.")
+    return redirect(f"{reverse('org_issues', args=[org.pk])}?{request.POST.get('back', '')}")
 
 
 @login_required

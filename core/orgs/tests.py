@@ -1,7 +1,7 @@
 import pytest
 from django.utils import timezone
 
-from accounts.models import ApiToken
+from accounts.models import ApiToken, User
 from common.errors import ServiceError
 
 from .models import OrgMembership
@@ -17,6 +17,8 @@ from .services import (
     remove_member,
     remove_team_member,
     revoke_invite,
+    set_locks,
+    set_org_settings,
     set_tags,
     teams_of,
 )
@@ -282,6 +284,100 @@ def test_team_write_api(client, org, admin, member):
     assert r.status_code == 200 and r.json()["member_count"] == 1
     r = client.delete(f"/api/orgs/teams/{team_id}/members/{member.pk}", headers=h)
     assert r.status_code == 200 and r.json()["member_count"] == 0
+
+
+# ---------- 설정 ----------
+
+
+def test_settings_clean_rejects_unknown_key_range_and_type_strips_default(org):
+    from .settings import clean
+
+    with pytest.raises(ServiceError):
+        clean("org", {"no.such.key": 1})
+    with pytest.raises(ServiceError):
+        clean("org", {"task.default_priority": 99})  # 범위 밖
+    with pytest.raises(ServiceError):
+        clean("org", {"task.require_done_when": "그런셈"})  # 형 불일치
+    assert clean("org", {"task.default_priority": 5}) == {}  # 기본값과 같으면 지워진다
+
+
+def test_settings_effective_locked_override_default_order(org, project, admin):
+    from .settings import effective
+
+    assert effective("task.default_priority", org=org, project=project) == 5  # 기본값
+    set_org_settings(org, {"task.default_priority": 8}, admin)
+    org.refresh_from_db()
+    assert effective("task.default_priority", org=org, project=project) == 8  # 조직 값
+
+    project.settings = {"task.default_priority": 3}
+    project.save(update_fields=["settings"])
+    assert effective("task.default_priority", org=org, project=project) == 3  # 프로젝트가 덮어쓴다
+
+    set_locks(org, ["task.default_priority"], admin)
+    org.refresh_from_db()
+    assert effective("task.default_priority", org=org, project=project) == 8  # 잠기면 다시 조직 값
+
+
+def test_set_org_settings_logs_changelog_and_requires_admin(org, admin, member):
+    from tasks.models import ChangeLog
+
+    with pytest.raises(ServiceError):
+        set_org_settings(org, {"org.invite_days": 14}, member)
+
+    set_org_settings(org, {"org.invite_days": 14}, admin)
+    org.refresh_from_db()
+    assert org.settings == {"org.invite_days": 14}
+    log = ChangeLog.objects.get(target_type="org", target_id=org.pk, field="org.invite_days")
+    assert log.old_value == "7" and log.new_value == "14" and log.actor == admin
+
+
+def test_create_invite_uses_org_settings_for_days_and_max_uses(org, admin):
+    set_org_settings(org, {"org.invite_days": 3, "org.invite_max_uses": 2}, admin)
+    org.refresh_from_db()
+    invite = create_invite(org, admin)
+    assert invite.max_uses == 2
+    assert 2 <= (invite.expires_at - timezone.now()).days <= 3
+
+
+def test_join_by_token_blocked_once_max_uses_reached(org, admin, outsider):
+    set_org_settings(org, {"org.invite_max_uses": 1}, admin)
+    org.refresh_from_db()
+    invite = create_invite(org, admin)
+    join_by_token(outsider, invite.token)
+    other = User.objects.create_user("outsider2", password="pw12345678")
+    with pytest.raises(ServiceError):
+        join_by_token(other, invite.token)
+
+
+def test_set_tags_self_allowed_when_org_settings_permit(org, admin, member):
+    membership = OrgMembership.objects.get(org=org, user=member)
+    with pytest.raises(ServiceError):
+        set_tags(membership, ["파이썬"], member)  # 기본은 관리자만
+    set_org_settings(org, {"org.tags_by": "self"}, admin)
+    membership.refresh_from_db()  # membership.org의 캐시된 settings도 새로 읽는다
+    set_tags(membership, ["파이썬"], member)
+    membership.refresh_from_db()
+    assert membership.tags == ["파이썬"]
+
+
+def test_team_join_self_allows_member_to_join_and_leave_without_admin(org, team, admin, outsider):
+    OrgMembership.objects.create(org=org, user=outsider, role="member")
+    with pytest.raises(ServiceError):
+        add_team_member(team, outsider, outsider)
+    set_org_settings(org, {"org.team_join_self": True}, admin)
+    org.refresh_from_db()
+    add_team_member(team, outsider, outsider)
+    assert outsider in team.members.all()
+    remove_team_member(team, outsider, outsider)
+    assert outsider not in team.members.all()
+
+
+def test_ai_source_denied_when_manage_teams_is_off(org, admin):
+    set_org_settings(org, {"ai.manage_teams": "deny"}, admin)
+    org.refresh_from_db()
+    with pytest.raises(ServiceError):
+        create_team(org=org, name="AI팀", actor=admin, source="mcp")
+    create_team(org=org, name="AI팀", actor=admin, source="web")  # 웹은 막히지 않는다
 
 
 def test_member_sees_permission_error_instead_of_404(client, org, member):

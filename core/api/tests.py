@@ -604,3 +604,75 @@ def test_doc_body_ceiling_on_create(api, project):
         {"project_id": project.pk, "title": "큰 글", "body_md": "가" * 300_000},
     )
     assert r.status_code == 400
+
+
+# ---- 설정 (IMPL-PLAN-4 §8.1) ----
+
+
+def _put(client, raw, url, data):
+    return client.put(url, data=data, content_type="application/json", headers=_h(raw))
+
+
+def test_org_settings_get_member_ok(client, write_token, org):
+    r = client.get(f"/api/orgs/{org.pk}/settings", headers=_h(write_token))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["values"]["task.default_priority"] == 5
+    assert body["locked"] == []
+    assert any(s["key"] == "task.default_priority" for s in body["specs"])
+
+
+def test_org_settings_write_member_rejected_admin_ok(client, write_token, admin, org):
+    r = _put(client, write_token, f"/api/orgs/{org.pk}/settings", {"task.default_priority": 3})
+    assert r.status_code == 400
+
+    _, admin_raw = ApiToken.issue(admin, "a", "write")
+    r = _put(client, admin_raw, f"/api/orgs/{org.pk}/settings", {"task.default_priority": 3})
+    assert r.status_code == 200
+    assert r.json()["values"]["task.default_priority"] == 3
+
+
+def test_org_settings_outside_org_404(client, outsider, org):
+    _, raw = ApiToken.issue(outsider, "o", "write")
+    assert client.get(f"/api/orgs/{org.pk}/settings", headers=_h(raw)).status_code == 404
+    assert _put(client, raw, f"/api/orgs/{org.pk}/settings", {}).status_code == 404
+
+
+def test_org_settings_invalid_value_rejected(client, admin, org):
+    _, raw = ApiToken.issue(admin, "a", "write")
+    r = _put(client, raw, f"/api/orgs/{org.pk}/settings", {"task.default_priority": 99})
+    assert r.status_code == 400
+    assert "task.default_priority" in r.json()["detail"]
+
+
+def test_project_settings_permission_and_write(client, write_token, admin, project):
+    r = client.get(f"/api/projects/{project.pk}/settings", headers=_h(write_token))
+    assert r.status_code == 200
+    assert any(s["key"] == "task.default_due_days" for s in r.json()["specs"])
+
+    # 프로젝트 관리자도 조직 관리자도 아닌 멤버는 못 바꾼다.
+    r = _put(
+        client, write_token, f"/api/projects/{project.pk}/settings", {"task.default_due_days": 2}
+    )
+    assert r.status_code == 400
+
+    # 조직 관리자는 통과한다.
+    _, admin_raw = ApiToken.issue(admin, "a", "write")
+    r = _put(
+        client, admin_raw, f"/api/projects/{project.pk}/settings", {"task.default_due_days": 2}
+    )
+    assert r.status_code == 200
+    assert r.json()["values"]["task.default_due_days"] == 2
+
+
+def test_my_settings_roundtrip(client, write_token):
+    r = client.get("/api/me/settings", headers=_h(write_token))
+    assert r.status_code == 200
+    assert r.json()["values"]["user.notify_dm"] is True
+
+    r = _put(client, write_token, "/api/me/settings", {"user.notify_dm": False})
+    assert r.status_code == 200
+    assert r.json()["values"]["user.notify_dm"] is False
+
+    r = client.get("/api/me/settings", headers=_h(write_token))
+    assert r.json()["values"]["user.notify_dm"] is False

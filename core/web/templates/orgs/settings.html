@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% block title %}조직 설정{% endblock %}
+{% block main %}
+{% include "orgs/_tabs.html" %}
+<p class="muted t13">
+  개인 &gt; 프로젝트 &gt; 조직 &gt; 기본값 순으로 가까운 값이 이깁니다. [프로젝트가 바꿀 수 있음]을 끄면
+  프로젝트 설정에서 이 값을 덮어쓸 수 없습니다.
+</p>
+{% if not is_admin %}<p class="muted t13">조직 관리자만 고칠 수 있습니다.</p>{% endif %}
+<form method="post">{% csrf_token %}
+{% for label, rows in groups %}
+<section class="card">
+  <h2>{{ label }}</h2>
+  <table class="grid">
+    <thead><tr><th>항목</th><th>값</th>{% if is_admin %}<th>프로젝트가 바꿀 수 있음</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.spec.label }}{% if row.spec.help %}<div class="muted t12">{{ row.spec.help }}</div>{% endif %}</td>
+      <td>
+        {% if is_admin %}
+          {% if row.spec.kind == "bool" %}
+            <input type="checkbox" name="{{ row.spec.key }}" {% if row.value %}checked{% endif %}>
+          {% elif row.spec.kind == "int" %}
+            <input class="input" type="number" name="{{ row.spec.key }}" value="{{ row.value }}" min="{{ row.spec.lo }}" max="{{ row.spec.hi }}" style="width:6em">
+          {% elif row.spec.kind == "choice" %}
+            <select class="select" name="{{ row.spec.key }}">
+              {% for code, clabel in row.spec.choices %}<option value="{{ code }}" {% if code == row.value %}selected{% endif %}>{{ clabel }}</option>{% endfor %}
+            </select>
+          {% elif row.spec.kind == "set" %}
+            <div class="stack t13">
+            {% for code, clabel in row.spec.choices %}
+              <label class="row"><input type="checkbox" name="{{ row.spec.key }}" value="{{ code }}" {% if code in row.value %}checked{% endif %}> {{ clabel }}</label>
+            {% endfor %}
+            </div>
+          {% else %}
+            <input class="input" name="{{ row.spec.key }}" value="{{ row.value }}">
+          {% endif %}
+        {% else %}
+          {{ row.display }}
+        {% endif %}
+      </td>
+      {% if is_admin %}
+      <td>{% if row.spec.overridable %}<input type="checkbox" name="unlock__{{ row.spec.key }}" {% if row.unlocked %}checked{% endif %}>{% else %}<span class="muted t12">&mdash;</span>{% endif %}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% if is_admin %}<button class="btn primary">저장</button>{% endif %}
+</form>
+<section class="card">
+  <h2>설정 변경 이력</h2>
+  <ul class="history">
+  {% for h in history %}
+  <li><div>{{ h.field }}: {{ h.from }} → {{ h.to }}</div><div class="who">{{ h.time }} · {{ h.actor }} · {{ h.source }}</div></li>
+  {% empty %}<li class="muted">변경 이력 없음</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

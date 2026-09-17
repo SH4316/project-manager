@@ -14,6 +14,7 @@ from .routers import (
     orgs,
     projects,
     reports,
+    settings,
     tasks,
     today,
 )
@@ -65,6 +66,7 @@ def _conflict(request, exc):
 
 
 api.add_router("/", me.router)
+api.add_router("/", settings.router)
 api.add_router("/orgs", orgs.router)
 api.add_router("/projects", projects.router)
 # /api/docs는 Ninja의 Swagger UI가 이미 쓴다. 겹치면 문서 목록이 로그인 화면으로 넘어간다.

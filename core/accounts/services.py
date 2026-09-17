@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from common.errors import ServiceError
+from orgs.settings import clean
 
 from .models import User
 
@@ -84,3 +85,13 @@ def user_by_discord_id(discord_user_id: str):
     return User.objects.filter(
         discord_user_id=did, discord_linked_at__isnull=False, is_active=True
     ).first()
+
+
+# ---------- 개인 설정 ----------
+
+
+def set_user_settings(user, data: dict) -> User:
+    """개인 설정을 통째로 교체한다. 이력은 남기지 않는다."""
+    user.settings = clean("user", data)
+    user.save(update_fields=["settings"])
+    return user

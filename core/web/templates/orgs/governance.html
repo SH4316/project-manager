@@ -1,6 +1,18 @@
 {% extends "base.html" %}{% block title %}개발 거버넌스{% endblock %}
 {% block main %}
 {% include "orgs/_tabs.html" %}
+{% if enforced_rows %}
+<section class="card">
+  <h2>설정에서 강제 중</h2>
+  <table class="grid">
+    <thead><tr><th>항목</th><th>값</th><th>어디서</th></tr></thead>
+    <tbody>
+    {% for r in enforced_rows %}<tr><td>{{ r.label }}</td><td>{{ r.value }}</td><td>{{ r.where }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if is_admin %}<p class="muted t13"><a href="{% url 'org_settings' org.pk %}">설정에서 바꾸기</a></p>{% endif %}
+</section>
+{% endif %}
 <section class="card">
   <div class="card-head">
     <h2>개발 거버넌스</h2>

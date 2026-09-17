@@ -3,8 +3,10 @@ from datetime import timedelta
 
 import pytest
 
+from accounts.models import User
 from common.dates import today_kst
 from common.errors import ConflictError, ServiceError
+from orgs.models import OrgMembership
 from orgs.services import create_org
 from projects.docs import (
     create_doc,
@@ -19,11 +21,14 @@ from projects.services import (
     create_milestone,
     create_project,
     fetch_spec,
+    is_owner,
     parse_spec,
     project_stats,
     restore_project,
     roadmap,
     set_api_spec,
+    set_governance_extra,
+    set_project_settings,
     spec_view,
     update_project,
 )
@@ -226,6 +231,125 @@ def test_dependency_duplicate_rejected(org, admin, project):
     with pytest.raises(ServiceError) as e:
         create_dependency(from_project=project, to_project=p2, actor=admin)
     assert "to_project" in e.value.errors
+
+
+# ---------- 설정·권한 (IMPL-PLAN-4 §3.1·§4.2) ----------
+
+
+def _plain_member(org, name="plain"):
+    """조직 멤버지만 어떤 프로젝트의 관리자도 아닌 사람."""
+    u = User.objects.create_user(name, password="pw12345678", display_name="일반멤버")
+    OrgMembership.objects.create(org=org, user=u, role="member")
+    return u
+
+
+def _set_settings(org, **kv):
+    org.settings = kv
+    org.save(update_fields=["settings"])
+
+
+def test_is_owner(project, admin, member):
+    assert is_owner(admin, project)
+    assert not is_owner(member, project)
+
+
+@pytest.mark.parametrize(
+    "key, act",
+    [
+        (
+            "project.edit_by",
+            lambda p, a: update_project(p, {"purpose": "x"}, actor=a, expected_version=p.version),
+        ),
+        (
+            "project.status_by",
+            lambda p, a: update_project(p, {"status": "done"}, actor=a, expected_version=p.version),
+        ),
+        ("project.archive_by", lambda p, a: archive_project(p, actor=a)),
+        (
+            "project.roadmap_by",
+            lambda p, a: create_milestone(project=p, name="m", target_date=today_kst(), actor=a),
+        ),
+    ],
+)
+def test_require_level_three_tiers(org, admin, project, key, act):
+    """member|owner|admin 세 등급이 대표 강제 지점 4곳에서 그대로 먹혀야 한다."""
+    plain = _plain_member(org, f"plain-{key}")
+    owner = _plain_member(org, f"owner-{key}")
+    project.owners.set([owner])
+
+    _set_settings(org, **{key: "member"})
+    act(project, plain)  # 멤버 누구나 통과
+    project.refresh_from_db()
+
+    _set_settings(org, **{key: "owner"})
+    with pytest.raises(ServiceError):
+        act(project, plain)
+    act(project, owner)  # 프로젝트 관리자는 통과
+    project.refresh_from_db()
+
+    _set_settings(org, **{key: "admin"})
+    with pytest.raises(ServiceError):
+        act(project, owner)
+    act(project, admin)  # 조직 관리자는 언제나 통과
+
+
+def test_settings_by_admin_blocks_project_owner(org, admin, member, project):
+    project.owners.set([member])
+    _set_settings(org, **{"project.settings_by": "admin"})
+    with pytest.raises(ServiceError):
+        set_project_settings(project, {"task.priority_cap": 3}, actor=member)
+    set_project_settings(project, {"task.priority_cap": 3}, actor=admin)
+    project.refresh_from_db()
+    assert project.settings.get("task.priority_cap") == 3
+
+
+def test_settings_rejects_locked_key(org, admin, project):
+    _set_settings(org, _locked=["task.priority_cap"])
+    with pytest.raises(ServiceError) as e:
+        set_project_settings(project, {"task.priority_cap": 3}, actor=admin)
+    assert "task.priority_cap" in e.value.errors
+
+
+def test_settings_logs_changes(org, admin, project):
+    set_project_settings(project, {"task.priority_cap": 4}, actor=admin)
+    assert (
+        ChangeLog.objects.filter(
+            target_type="project", target_id=project.pk, field="task.priority_cap"
+        ).count()
+        == 1
+    )
+
+
+def test_governance_extra_permission_and_ceiling(org, admin, member, project):
+    project.owners.set([member])
+    p = set_governance_extra(project, "짧은 문단", actor=member)
+    assert p.governance_extra == "짧은 문단"
+    with pytest.raises(ServiceError):
+        set_governance_extra(project, "가" * 5001, actor=member)
+    plain = _plain_member(org)
+    with pytest.raises(ServiceError):
+        set_governance_extra(project, "x", actor=plain)
+
+
+def test_owner_required_blocks_create_and_reduce_but_not_existing(org, admin):
+    _set_settings(org, **{"project.owner_required": True})
+    with pytest.raises(ServiceError) as e:
+        create_project(org=org, name="빈관리자", actor=admin)
+    assert "owners" in e.value.errors
+
+    p = create_project(org=org, name="관리자있음", actor=admin, owners=[admin])
+    with pytest.raises(ServiceError) as e:
+        update_project(p, {"owners": []}, actor=admin, expected_version=p.version)
+    assert "owners" in e.value.errors
+
+    # 이미 관리자가 0명인 기존 프로젝트는 그대로 둔다 — owners를 건드리지 않는 수정은 통과한다
+    _set_settings(org)
+    p0 = create_project(org=org, name="관리자없음", actor=admin)
+    _set_settings(org, **{"project.owner_required": True})
+    p0 = update_project(
+        p0, {"purpose": "여전히 고칠 수 있다"}, actor=admin, expected_version=p0.version
+    )
+    assert p0.purpose == "여전히 고칠 수 있다"
 
 
 # ---- V2-06: API 문서 ----

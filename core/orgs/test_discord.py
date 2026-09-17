@@ -152,9 +152,9 @@ def test_bot_reads_member_notify_settings(client, org, admin, member, bot_token)
     r = client.get(f"{DC}/orgs/{org.pk}/members", headers={"Authorization": f"Bearer {bot_token}"})
     assert r.status_code == 200
     rows = {m["display_name"]: m for m in r.json()}
-    assert rows[member.display_name]["notify"]["notify_dm"] is False
-    assert rows[admin.display_name]["notify"]["notify_dm"] is True
-    assert rows[admin.display_name]["notify"]["notify_kinds"] == ["d3", "d1", "d0", "overdue"]
+    assert rows[member.display_name]["notify_dm"] is False
+    assert rows[admin.display_name]["notify_dm"] is True
+    assert rows[admin.display_name]["notify_kinds"] == ["d3", "d1", "d0", "overdue"]
 
 
 def test_slash_channel_command_sets_the_org_channel(client, org, admin, member, bot_token):
@@ -197,3 +197,33 @@ def test_bound_orgs_is_ordered_and_excludes_unbound(admin):
     dc.link_guild(a, "9001", actor=admin)
     assert list(dc.bound_orgs()) == [a, b]
     assert Organization.objects.count() == 2
+
+
+def test_bot_reads_escalation_recipients(client, org, admin, member, project, bot_token):
+    project.owners.add(member)
+    r = client.get(
+        f"{DC}/projects/{project.pk}/owners", headers={"Authorization": f"Bearer {bot_token}"}
+    )
+    assert member.display_name in [p["display_name"] for p in r.json()]
+    r = client.get(f"{DC}/orgs/{org.pk}/admins", headers={"Authorization": f"Bearer {bot_token}"})
+    assert [p["display_name"] for p in r.json()] == [admin.display_name]
+
+
+def test_tasks_updated_since_ignores_status(client, org, admin, task, write_token):
+    """채널 게시는 방금 done으로 넘어간 것도 봐야 '완료' 사건을 만든다."""
+    from tasks.services import transition
+
+    transition(task, "doing", actor=admin, source="web", expected_version=task.version)
+    r = client.get(
+        f"/api/tasks?org={org.pk}&updated_since=2000-01-01T00:00:00Z",
+        headers={"Authorization": f"Bearer {write_token}"},
+    )
+    (item,) = [i for i in r.json()["items"] if i["id"] == task.pk]
+    assert item["status"] == "doing"
+    assert "discord_channel_id" in item["project"]
+    assert "stopped_at" in item and "updated_at" in item
+    later = client.get(
+        f"/api/tasks?org={org.pk}&updated_since=2999-01-01T00:00:00Z",
+        headers={"Authorization": f"Bearer {write_token}"},
+    )
+    assert later.json()["total"] == 0

@@ -4,7 +4,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from accounts.models import ApiToken
-from accounts.services import issue_link_code, unlink_discord
+from accounts.services import issue_link_code, set_user_settings, unlink_discord
+from common.errors import ServiceError
+from orgs.settings import effective, specs_for
 
 from ..forms import ProfileForm, TokenForm
 
@@ -72,3 +74,27 @@ def token_revoke(request, token_id):
     token = get_object_or_404(ApiToken, pk=token_id, user=request.user)
     token.revoke()
     return redirect("tokens")
+
+
+@login_required
+def preferences(request):
+    """개인 설정. IMPL-PLAN-4 §7."""
+    user = request.user
+    specs = specs_for("user")
+    if request.method == "POST":
+        data = {}
+        for spec in specs:
+            if spec.kind == "bool":
+                data[spec.key] = spec.key in request.POST
+            elif spec.kind == "set":
+                data[spec.key] = request.POST.getlist(spec.key)
+            elif spec.key in request.POST:
+                data[spec.key] = request.POST[spec.key]
+        try:
+            set_user_settings(user, data)
+            messages.success(request, "환경설정을 저장했습니다.")
+        except ServiceError as e:
+            messages.error(request, " ".join(e.errors.values()))
+        return redirect("preferences")
+    rows = [{"spec": s, "value": effective(s.key, user=user)} for s in specs]
+    return render(request, "settings/preferences.html", {"rows": rows})

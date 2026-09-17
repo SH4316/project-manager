@@ -113,11 +113,16 @@ class Bot:
 
     # ---------- 채널 ----------
 
-    def send_channel(self, text: str) -> str:
-        """팀 채널 게시(주간 보고 등). 멘션이 목적이라 사용자 멘션만 허용한다."""
-        if not self.channel_id:
-            raise RuntimeError("DISCORD_CHANNEL_ID가 없습니다.")
-        self._send(self.channel_id, text, parse=["users"])
+    def send_channel(self, text: str, channel_id: str | None = None) -> str:
+        """조직 채널 게시(주간 보고 등). 멘션이 목적이라 사용자 멘션만 허용한다.
+
+        `channel_id`를 주면 그 채널로(다중 조직에서 조직마다 다른 채널). 생략하면 생성 시
+        받은 기본 채널(단발 CLI용)을 쓴다.
+        """
+        cid = channel_id or self.channel_id
+        if not cid:
+            raise RuntimeError("채널 id가 없습니다(조직에 알림 채널이 연결되지 않았습니다).")
+        self._send(cid, text, parse=["users"])
         return "sent"
 
     # ---------- 내부 ----------

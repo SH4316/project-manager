@@ -1,0 +1,90 @@
+{% extends "base.html" %}{% block title %}{{ project.name }} · 설정{% endblock %}
+{% block main %}
+{% include "projects/_tabs.html" %}
+{% if not editable %}<p class="muted t13">이 설정은 프로젝트 관리자만 고칠 수 있습니다.</p>{% endif %}
+<form method="post">{% csrf_token %}
+{% for label, rows in groups %}
+<section class="card">
+  <h2>{{ label }}</h2>
+  <table class="grid">
+    <thead><tr><th>항목</th><th>값</th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.spec.label }}{% if row.spec.help %}<div class="muted t12">{{ row.spec.help }}</div>{% endif %}
+        {% if row.locked %}
+          {% if is_admin %}<a class="badge" href="{% url 'org_settings' project.org_id %}">조직에서 잠금 · 풀려면 설정에서</a>
+          {% else %}<span class="badge">조직에서 잠금</span>{% endif %}
+        {% endif %}
+      </td>
+      <td>
+        {% if editable and not row.locked %}
+          {% if row.spec.kind == "bool" %}
+            <input type="checkbox" name="{{ row.spec.key }}" {% if row.value %}checked{% endif %}>
+          {% elif row.spec.kind == "int" %}
+            <input class="input" type="number" name="{{ row.spec.key }}" value="{{ row.value }}" min="{{ row.spec.lo }}" max="{{ row.spec.hi }}" style="width:6em">
+          {% elif row.spec.kind == "choice" %}
+            <select class="select" name="{{ row.spec.key }}">
+              {% for code, clabel in row.spec.choices %}<option value="{{ code }}" {% if code == row.value %}selected{% endif %}>{{ clabel }}</option>{% endfor %}
+            </select>
+          {% elif row.spec.kind == "set" %}
+            <div class="stack t13">
+            {% for code, clabel in row.spec.choices %}
+              <label class="row"><input type="checkbox" name="{{ row.spec.key }}" value="{{ code }}" {% if code in row.value %}checked{% endif %}> {{ clabel }}</label>
+            {% endfor %}
+            </div>
+          {% else %}
+            <input class="input" name="{{ row.spec.key }}" value="{{ row.value }}">
+          {% endif %}
+        {% else %}
+          {{ row.display }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% if editable %}<button class="btn primary">설정 저장</button>{% endif %}
+</form>
+
+{% if github_enabled and repo_state.state == "ok" %}
+<section class="card">
+  <h2>저장소 규칙</h2>
+  {% if editable %}
+  <form method="post" action="{% url 'repo_settings' project.pk %}" class="stack">{% csrf_token %}
+    <div class="row">
+      <label class="field">라벨 필터<input class="input" name="import_label" value="{{ repo_state.conn.import_label }}" placeholder="task"></label>
+    </div>
+    <label class="row"><input type="checkbox" name="auto_import" {% if repo_state.conn.auto_import %}checked{% endif %}> 새 이슈 자동 가져오기</label>
+    <div class="stack t13">
+      <label class="row"><input type="checkbox" name="rule_issue" {% if repo_state.conn.rule_issue %}checked{% endif %}> 이슈 → 태스크</label>
+      <label class="row"><input type="checkbox" name="rule_branch" {% if repo_state.conn.rule_branch %}checked{% endif %}> 브랜치 연결 → 진행 중</label>
+      <label class="row"><input type="checkbox" name="rule_commit" {% if repo_state.conn.rule_commit %}checked{% endif %}> 커밋 → 체크리스트</label>
+      <label class="row"><input type="checkbox" name="rule_pr" {% if repo_state.conn.rule_pr %}checked{% endif %}> PR 오픈 → 검토 대기</label>
+      <label class="row"><input type="checkbox" name="rule_merge" {% if repo_state.conn.rule_merge %}checked{% endif %}> 머지 → 완료</label>
+    </div>
+    <button class="btn sm primary">규칙 저장</button>
+  </form>
+  <p class="muted t13">저장소 연결·해제와 이슈 가져오기는 <a href="{% url 'project_repo' project.pk %}">GitHub 탭</a>에서 합니다.</p>
+  {% else %}
+  <p class="muted t13">라벨 필터 {{ repo_state.conn.import_label|default:"없음" }} · 자동 가져오기 {% if repo_state.conn.auto_import %}켬{% else %}끔{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>프로젝트 거버넌스 추가 문단</h2>
+  <p class="muted t13">조직 거버넌스에 이 프로젝트만의 규칙을 덧붙입니다. 5000자까지 씁니다.</p>
+  {% if editable %}
+  <form method="post" class="stack">{% csrf_token %}
+    <input type="hidden" name="action" value="governance_extra">
+    <textarea name="governance_extra" class="textarea" rows="8">{{ governance_extra }}</textarea>
+    <button class="btn primary">저장</button>
+  </form>
+  {% else %}
+  <p class="t13">{{ governance_extra|default:"없음" }}</p>
+  {% endif %}
+</section>
+{% endblock %}

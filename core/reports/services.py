@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from django.db.models import Count, Q
 
-from common.dates import kst_week_range, today_kst, week_bounds
+from common.dates import kst_week_range, overdue_before, today_kst, week_bounds
 from orgs.models import TeamMembership
 from tasks.brief import task_brief, user_brief
 from tasks.models import ChangeLog, Task
@@ -16,6 +16,8 @@ def _open_qs(org):
 def org_status(org) -> dict:
     """조직 지표. 키: counts, by_project, by_assignee, capacity, projects_without_owner"""
     today = today_kst()
+    # 초과 판정만 유예(task.overdue_grace_days)를 본다. 화면 배지·알림과 같은 기준이다.
+    overdue_day = overdue_before(org)
     monday, sunday = week_bounds(today)
     open_qs = _open_qs(org)
     counts = {
@@ -23,7 +25,7 @@ def org_status(org) -> dict:
         "doing": open_qs.filter(status="doing").count(),
         "review": open_qs.filter(status="review").count(),
         "blocked": open_qs.filter(status="blocked").count(),
-        "overdue": open_qs.filter(due_date__lt=today).count(),
+        "overdue": open_qs.filter(due_date__lt=overdue_day).count(),
         "due_this_week": open_qs.filter(due_date__gte=monday, due_date__lte=sunday).count(),
         "no_due": open_qs.filter(due_date__isnull=True).count(),
         "done": Task.objects.filter(
@@ -67,7 +69,7 @@ def org_status(org) -> dict:
         .annotate(
             open=Count("id"),
             doing=Count("id", filter=Q(status="doing")),
-            overdue=Count("id", filter=Q(due_date__lt=today)),
+            overdue=Count("id", filter=Q(due_date__lt=overdue_day)),
             review=Count("id", filter=Q(status="review")),
             blocked=Count("id", filter=Q(status="blocked")),
         )

@@ -41,7 +41,7 @@
               {% for code, label in task.STATUSES %}<option value="{{ code }}"{% if code == task.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
           </form>
-          <span class="badge{% if task.is_overdue %} danger{% endif %}">{{ due_label }}</span>
+          <span class="badge{% if due_class == "overdue" %} danger{% endif %}">{{ due_label }}</span>
           <form class="row" style="gap:4px">
             <input type="hidden" name="version" value="{{ task.version }}">
             <span>중요도</span>
@@ -59,7 +59,7 @@
       </label>
       <div class="section due-block">
         <div class="label">목표일</div>
-        <div class="value{% if task.is_overdue %} danger{% endif %}">{{ due_full }}</div>
+        <div class="value{% if due_class == "overdue" %} danger{% endif %}">{{ due_full }}</div>
         {% if task.is_open %}
         <button type="button" class="btn link" data-action="toggle" data-target="#extend-form"
                 data-alt="{% if extend_open %}{% if task.due_date %}목표일 연장하기{% else %}목표일 정하기{% endif %}{% else %}취소{% endif %}">{% if extend_open %}취소{% elif task.due_date %}목표일 연장하기{% else %}목표일 정하기{% endif %}</button>

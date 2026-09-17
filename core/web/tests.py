@@ -1055,3 +1055,100 @@ def test_task_refs_rejects_doc_from_another_project(logged, project, org, admin,
     assert r.status_code == 200
     assert "같은 프로젝트의 태스크여야 합니다." in r.content.decode()
     assert not task.docs.exists()
+
+
+# ---------- 설정 화면 (IMPL-PLAN-4 §7) ----------
+
+
+def test_org_settings_admin_edits_member_reads_only(client, org, admin, member):
+    # as_admin·logged는 둘 다 같은 client fixture를 로그인시키므로 한 테스트에서 같이
+    # 쓰면 나중 로그인이 앞선 로그인을 덮어쓴다 — 여기서는 force_login으로 직접 오간다.
+    client.force_login(admin)
+    r = client.get(f"/orgs/{org.pk}/settings")
+    assert r.status_code == 200 and "기본 중요도" in r.content.decode()
+
+    r = client.post(
+        f"/orgs/{org.pk}/settings",
+        {"task.require_done_when": "on", "unlock__task.require_done_when": "on"},
+    )
+    assert r.status_code == 302
+    org.refresh_from_db()
+    assert org.settings.get("task.require_done_when") is True
+    assert "task.require_done_when" not in (org.settings.get("_locked") or [])
+
+    # 멤버는 링크도 못 보고, URL로 와도 읽기만 한다 — POST해도 안 바뀐다.
+    client.force_login(member)
+    assert f"/orgs/{org.pk}/settings" not in client.get(f"/orgs/{org.pk}").content.decode()
+    r = client.get(f"/orgs/{org.pk}/settings")
+    assert r.status_code == 200 and "조직 관리자만 고칠 수 있습니다" in r.content.decode()
+    client.post(f"/orgs/{org.pk}/settings", {"task.require_done_when": "off"})
+    org.refresh_from_db()
+    assert org.settings.get("task.require_done_when") is True
+
+
+def test_org_settings_outsider_404(client, outsider, org):
+    client.force_login(outsider)
+    assert client.get(f"/orgs/{org.pk}/settings").status_code == 404
+
+
+def test_org_lock_blocks_project_override(as_admin, org, project):
+    # unlock__를 보내지 않으면 그 회차의 모든 덮어쓸 수 있는 항목이 잠긴다.
+    r = as_admin.post(f"/orgs/{org.pk}/settings", {"task.require_done_when": "on"})
+    assert r.status_code == 302
+    org.refresh_from_db()
+    assert "task.require_done_when" in org.settings.get("_locked", [])
+
+    body = as_admin.get(f"/projects/{project.pk}/settings").content.decode()
+    assert "조직에서 잠금" in body
+
+    as_admin.post(f"/projects/{project.pk}/settings", {"task.require_done_when": "off"})
+    project.refresh_from_db()
+    assert "task.require_done_when" not in (project.settings or {})
+
+
+def test_project_settings_roundtrip_and_governance_extra(as_admin, project):
+    r = as_admin.post(f"/projects/{project.pk}/settings", {"task.require_done_when": "on"})
+    assert r.status_code == 302
+    project.refresh_from_db()
+    assert project.settings.get("task.require_done_when") is True
+
+    r = as_admin.post(
+        f"/projects/{project.pk}/settings",
+        {"action": "governance_extra", "governance_extra": "추가 규칙"},
+    )
+    assert r.status_code == 302
+    project.refresh_from_db()
+    assert project.governance_extra == "추가 규칙"
+
+
+def test_project_settings_readonly_for_non_owner_member(logged, project):
+    """project.settings_by 기본값은 '프로젝트 관리자'다 — 관리자가 아닌 멤버는 읽기만 한다."""
+    r = logged.get(f"/projects/{project.pk}/settings")
+    assert r.status_code == 200 and "프로젝트 관리자만 고칠 수 있습니다" in r.content.decode()
+    logged.post(f"/projects/{project.pk}/settings", {"task.require_done_when": "on"})
+    project.refresh_from_db()
+    assert project.settings == {}
+
+
+def test_project_settings_outsider_404(client, outsider, project):
+    client.force_login(outsider)
+    assert client.get(f"/projects/{project.pk}/settings").status_code == 404
+
+
+def test_preferences_roundtrip(logged, member):
+    r = logged.get("/settings/preferences")
+    assert r.status_code == 200 and "환경설정" in r.content.decode()
+    r = logged.post("/settings/preferences", {"user.start_page": "me"})
+    assert r.status_code == 302
+    member.refresh_from_db()
+    assert member.settings.get("user.start_page") == "me"
+
+
+def test_governance_shows_enforced_settings(as_admin, org):
+    body = as_admin.get(f"/orgs/{org.pk}/governance").content.decode()
+    assert "설정에서 강제 중" not in body
+
+    as_admin.post(f"/orgs/{org.pk}/settings", {"task.require_done_when": "on"})
+    body = as_admin.get(f"/orgs/{org.pk}/governance").content.decode()
+    assert "설정에서 강제 중" in body
+    assert "완료 조건 필수" in body

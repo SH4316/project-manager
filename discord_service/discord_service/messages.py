@@ -29,11 +29,19 @@ def mention(assignee: dict) -> str:
     return f"<@{did}>" if did else assignee.get("display_name", "?")
 
 
-def task_line(t: dict) -> str:
-    """개인 DM용 한 줄. 담당자는 받는 사람 본인이라 넣지 않는다."""
+def task_line(t: dict, org_names: dict | None = None) -> str:
+    """개인 DM용 한 줄. 담당자는 받는 사람 본인이라 넣지 않는다.
+
+    `org_names`가 있으면(사람이 조직 둘 이상에 걸쳐 있을 때만, §8.4) 조직 이름을 덧붙인다.
+    """
     reason = f" ({t['stop_reason']})" if t.get("stop_reason") else ""
+    org_tag = ""
+    if org_names:
+        name = org_names.get(t["project"].get("org_id"))
+        if name:
+            org_tag = f" · {name}"
     return (
-        f"• **{t['number']}** {t['title']} — {t['project']['name']}"
+        f"• **{t['number']}** {t['title']} — {t['project']['name']}{org_tag}"
         f" — {STATUS.get(t['status'], t['status'])}{reason}\n  {t['url']}"
     )
 
@@ -64,7 +72,7 @@ def dm_blocked_message(assignee: dict) -> str:
     )
 
 
-def today_message(view: dict) -> str:
+def today_message(view: dict, org_names: dict | None = None) -> str:
     """`오늘` 답장. 오늘 화면과 같은 내용."""
     c = view["counts"]
     head = f"🗓 오늘 · {view['date']} · 미완료 {c['my_open']}건 · 오늘 완료 {c['done_today']}건"
@@ -72,7 +80,7 @@ def today_message(view: dict) -> str:
     if not items:
         return head + "\n담은 일이 없습니다. 웹 `/today`에서 담아 보세요."
     more = len(view["items"]) - len(items)
-    body = "\n".join(task_line(t) for t in items)
+    body = "\n".join(task_line(t, org_names) for t in items)
     return head + "\n" + body + (f"\n… 그리고 {more}건 더" if more > 0 else "")
 
 
