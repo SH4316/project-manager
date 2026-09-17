@@ -67,30 +67,8 @@
     // ---------- 렌더 ----------
     function autosize(ta) { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; }
 
-    // 번호 목록의 표시 번호. 마크다운 관행대로 **첫 항목의 숫자에서 시작해 1씩 올린다** —
-    // 사람들이 모든 줄에 `1.`을 적어도 1. 2. 3.으로 보여야 한다. 원문은 적은 그대로 둔다.
-    function numbering(all) {
-      var out = [], start = 1, count = 0, run = false;
-      for (var i = 0; i < all.length; i++) {
-        var m = /^\s*(\d+)\.\s+/.exec(all[i]);
-        if (m) {
-          if (!run) { start = parseInt(m[1], 10); count = 0; run = true; }
-          out[i] = start + count + ".";
-          count++;
-        } else {
-          out[i] = null;
-          // 빈 줄은 목록을 끊지 않는다. 다른 내용이 끼면 거기서 새 목록이 시작된다.
-          if (all[i].trim() !== "") run = false;
-        }
-      }
-      return out;
-    }
-
-    var marks = [];
-
     function block(raw, i) {
       var b = parse(raw);
-      if (b.type === "li" && marks[i]) b.marker = marks[i];
       var wrap = document.createElement("div");
       wrap.className = "blk blk-" + b.type + (b.type === "h" ? " h" + b.level : "");
       if (b.type === "rule") {
@@ -141,7 +119,6 @@
     }
 
     function render() {
-      marks = numbering(lines);
       while (bodyEl.firstChild) bodyEl.removeChild(bodyEl.firstChild);
       for (var i = 0; i < lines.length; i++) {
         bodyEl.appendChild(!readonly && i === editing ? editor(lines[i], i) : block(lines[i], i));
@@ -165,6 +142,14 @@
     }
 
     // ---------- 키 ----------
+    // 목록을 이어 쓸 때 넣을 접두어. 번호 목록은 **하나 올린다** — 앞 줄을 그대로 복사하면
+    // 1. 1. 1.이 된다. 사람이 번호를 직접 고쳐 적으면 그 값이 다음 줄의 기준이 되고,
+    // 화면은 원문을 그대로 보여 준다(재번호 매기기를 하지 않는다).
+    function nextPrefix(p) {
+      var m = /^(\s*)(\d+)\.(\s)$/.exec(p);
+      return m ? m[1] + (parseInt(m[2], 10) + 1) + "." + m[3] : p;
+    }
+
     function keys(e, ta, i) {
       var at = ta.selectionStart;
       if (e.key === "Enter" && !e.shiftKey) {
@@ -172,7 +157,7 @@
         var head = ta.value.slice(0, at), tail = ta.value.slice(at);
         var cont = /^(\s*(?:[-*]\s\[[ xX]\]|[-*]|\d+\.)\s)/.exec(head);
         // 접두어만 남은 줄에서 Enter를 치면 목록을 끝낸다.
-        var prefix = cont && tail === "" && head.trim() !== cont[1].trim() ? cont[1] : "";
+        var prefix = cont && tail === "" && head.trim() !== cont[1].trim() ? nextPrefix(cont[1]) : "";
         lines.splice(i, 1, head, prefix + tail);
         editing = i + 1; caret = prefix.length;
         changed();
