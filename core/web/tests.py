@@ -1237,3 +1237,13 @@ def test_governance_shows_enforced_settings(as_admin, org):
     body = as_admin.get(f"/orgs/{org.pk}/governance").content.decode()
     assert "설정에서 강제 중" in body
     assert "완료 조건 필수" in body
+
+
+def test_note_scope_filter_is_a_list_not_chips(logged, org, project, member):
+    """범위는 프로젝트 수만큼 늘어난다 — 칩 줄이 아니라 고르는 목록이어야 한다."""
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all").content.decode()
+    assert '<select name="scope"' in body
+    assert f'<option value="{project.pk}"' in body
+    # 태그를 고른 상태로 범위를 바꿔도 태그가 유지된다.
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all&tag=%EA%B8%B0%ED%9A%8D").content.decode()
+    assert 'name="tag"' in body

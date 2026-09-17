@@ -14,13 +14,21 @@
       </label>
       <form method="post" action="{% url 'note_new' org.pk %}">{% csrf_token %}<button class="btn sm primary">새 회의록</button></form>
     </div>
-    <div class="row" role="group" aria-label="범위">
-      <a class="chip" href="?scope=all{% if tag %}&amp;tag={{ tag|urlencode }}{% endif %}" aria-pressed="{% if scope == 'all' %}true{% else %}false{% endif %}">전체</a>
-      <a class="chip" href="?scope=team{% if tag %}&amp;tag={{ tag|urlencode }}{% endif %}" aria-pressed="{% if scope == 'team' %}true{% else %}false{% endif %}">팀 공통</a>
-      {% for p in projects %}
-      <a class="chip" href="?scope={{ p.pk }}{% if tag %}&amp;tag={{ tag|urlencode }}{% endif %}" aria-pressed="{% if scope == p.pk|stringformat:'s' %}true{% else %}false{% endif %}">{{ p.name }}</a>
-      {% endfor %}
-    </div>
+    {# 범위는 프로젝트 수만큼 늘어난다. 칩을 늘어놓으면 줄이 끝없이 길어지므로 목록에서 고른다. #}
+    <form class="row gap" method="get">
+      <label class="field">
+        <span class="label">범위</span>
+        <select name="scope" onchange="this.form.submit()">
+          <option value="all" {% if scope == 'all' %}selected{% endif %}>전체</option>
+          <option value="team" {% if scope == 'team' %}selected{% endif %}>팀 공통</option>
+          {% for p in projects %}
+          <option value="{{ p.pk }}" {% if scope == p.pk|stringformat:'s' %}selected{% endif %}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
+      <noscript><button class="btn sm">적용</button></noscript>
+    </form>
     {% if all_tags %}
     <div class="row" role="group" aria-label="태그">
       <a class="chip" href="?scope={{ scope }}" aria-pressed="{% if not tag %}true{% else %}false{% endif %}">태그 전체</a>
