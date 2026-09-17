@@ -8,6 +8,8 @@ from mcp_server.core_client import CoreError
 
 TOOL_NAMES = {
     "list_orgs",
+    "list_org_repos",
+    "connect_repo",
     "list_projects",
     "get_project",
     "list_tasks",
@@ -175,7 +177,7 @@ def test_doc_tools(fake_core, with_token):
 async def test_tool_names_registered():
     tools = await s.mcp.list_tools()
     assert {t.name for t in tools} == TOOL_NAMES
-    assert len(TOOL_NAMES) == 25
+    assert len(TOOL_NAMES) == 27
 
 
 def test_governance_tool(fake_core, with_token):
@@ -190,3 +192,20 @@ def test_settings_tool_is_read_only(fake_core, with_token):
     assert any(s["key"] == "task.default_priority" for s in out["specs"])
     assert not hasattr(s, "set_settings")
     assert not hasattr(s, "update_settings")
+
+
+def test_list_org_repos(fake_core, with_token):
+    rows = s.list_org_repos(1)
+    assert rows[0]["full_name"] == "teamSANDOL/sandol-api"
+
+
+def test_connect_repo(fake_core, with_token):
+    got = s.connect_repo(1, "https://github.com/teamSANDOL/sandol-api")
+    assert got["connected"] is True
+
+
+def test_connect_repo_relays_the_refusal(fake_core, with_token):
+    """조직이 막아 두면 도구는 그 문구를 그대로 돌려준다 — 우회하지 않는다."""
+    with pytest.raises(Exception) as e:
+        s.connect_repo(2, "https://github.com/teamSANDOL/sandol-api")
+    assert "저장소 연결" in str(e.value)

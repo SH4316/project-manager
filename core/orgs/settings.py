@@ -430,6 +430,18 @@ SPECS: dict[str, Spec] = {
             ai_only=True,
         ),
         _s(
+            "ai.manage_repo",
+            "choice",
+            "allow",
+            "org",
+            False,
+            "ai",
+            "저장소 연결·해제",
+            "AI가 프로젝트에 GitHub 저장소를 잇거나 끊는 것입니다.",
+            choices=ALLOW_DENY,
+            ai_only=True,
+        ),
+        _s(
             "ai.manage_teams",
             "choice",
             "allow",

@@ -170,6 +170,17 @@ urlpatterns = [
     path("settings/github/refresh", github.github_refresh, name="github_refresh"),
     path("settings/github/unlink", github.github_unlink, name="github_unlink"),
     path("projects/<int:project_id>/repo", github.project_repo, name="project_repo"),
+    path("projects/<int:project_id>/issues", github.project_issues, name="project_issues"),
+    path(
+        "projects/<int:project_id>/issues/sync",
+        github.project_issues_sync,
+        name="project_issues_sync",
+    ),
+    path(
+        "projects/<int:project_id>/issues/<int:issue_id>/import",
+        github.project_issue_import,
+        name="project_issue_import",
+    ),
     path(
         "projects/<int:project_id>/repo/disconnect",
         github.repo_disconnect,

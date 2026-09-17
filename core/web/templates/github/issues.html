@@ -1,15 +1,17 @@
-{% extends "base.html" %}{% block title %}{{ org.name }} · 이슈{% endblock %}
+{% extends "base.html" %}{% block title %}{% if project %}{{ project.name }}{% else %}{{ org.name }}{% endif %} · 이슈{% endblock %}
 {% block main %}
-{% include "orgs/_tabs.html" %}
+{% if project %}{% include "projects/_tabs.html" %}{% else %}{% include "orgs/_tabs.html" %}{% endif %}
 
 <div class="card">
   <form class="row wrap gap" method="get">
+    {% if not project %}
     <select name="repo" onchange="this.form.submit()">
       <option value="">저장소 전체</option>
       {% for r in repos %}
       <option value="{{ r.pk }}" {% if repo_id == r.pk|stringformat:"s" %}selected{% endif %}>{{ r.full_name }}</option>
       {% endfor %}
     </select>
+    {% endif %}
     <select name="state" onchange="this.form.submit()">
       <option value="todo" {% if state == "todo" %}selected{% endif %}>안 가져온 것</option>
       <option value="done" {% if state == "done" %}selected{% endif %}>가져온 것</option>
@@ -18,7 +20,7 @@
     <input type="search" name="q" value="{{ q }}" placeholder="제목·본문 검색">
     <button class="btn sm">찾기</button>
   </form>
-  <form method="post" action="{% url 'org_issues_sync' org.pk %}">
+  <form method="post" action="{% if project %}{% url 'project_issues_sync' project.pk %}{% else %}{% url 'org_issues_sync' org.pk %}{% endif %}">
     {% csrf_token %}
     <input type="hidden" name="back" value="repo={{ repo_id }}&state={{ state }}&q={{ q }}">
     <button class="btn sm tint">GitHub에서 새로 고침</button>
@@ -47,7 +49,7 @@
   <p class="row"><a class="btn sm" href="{% url 'task_detail' issue.task.pk %}">{{ issue.task.number }}</a>
     <span class="muted t13">이미 태스크로 가져왔습니다 · {{ issue.task.get_status_display }}</span></p>
   {% else %}
-  <form method="post" action="{% url 'org_issue_import' org.pk issue.pk %}">
+  <form method="post" action="{% if project %}{% url 'project_issue_import' project.pk issue.pk %}{% else %}{% url 'org_issue_import' org.pk issue.pk %}{% endif %}">
     {% csrf_token %}
     <input type="hidden" name="back" value="repo={{ repo_id }}&state={{ state }}&q={{ q }}">
     <button class="btn sm primary">내 태스크로 가져오기</button>
@@ -57,7 +59,7 @@
 {% empty %}
 <div class="card">
   <p class="muted t13">
-    {% if repos %}조건에 맞는 열린 이슈가 없습니다. [GitHub에서 새로 고침]을 눌러 보세요.
+    {% if repos or project %}조건에 맞는 열린 이슈가 없습니다. [GitHub에서 새로 고침]을 눌러 보세요.
     {% else %}이 조직에는 아직 저장소가 연결된 프로젝트가 없습니다. 프로젝트의 저장소 탭에서 연결해 주세요.{% endif %}
   </p>
 </div>

@@ -15,19 +15,28 @@
       <form method="post" action="{% url 'note_new' org.pk %}">{% csrf_token %}<button class="btn sm primary">새 회의록</button></form>
     </div>
     <div class="row" role="group" aria-label="범위">
-      <a class="chip" href="?scope=all" aria-pressed="{% if scope == 'all' %}true{% else %}false{% endif %}">전체</a>
-      <a class="chip" href="?scope=team" aria-pressed="{% if scope == 'team' %}true{% else %}false{% endif %}">팀 공통</a>
+      <a class="chip" href="?scope=all{% if tag %}&amp;tag={{ tag|urlencode }}{% endif %}" aria-pressed="{% if scope == 'all' %}true{% else %}false{% endif %}">전체</a>
+      <a class="chip" href="?scope=team{% if tag %}&amp;tag={{ tag|urlencode }}{% endif %}" aria-pressed="{% if scope == 'team' %}true{% else %}false{% endif %}">팀 공통</a>
       {% for p in projects %}
-      <a class="chip" href="?scope={{ p.pk }}" aria-pressed="{% if scope == p.pk|stringformat:'s' %}true{% else %}false{% endif %}">{{ p.name }}</a>
+      <a class="chip" href="?scope={{ p.pk }}{% if tag %}&amp;tag={{ tag|urlencode }}{% endif %}" aria-pressed="{% if scope == p.pk|stringformat:'s' %}true{% else %}false{% endif %}">{{ p.name }}</a>
       {% endfor %}
     </div>
+    {% if all_tags %}
+    <div class="row" role="group" aria-label="태그">
+      <a class="chip" href="?scope={{ scope }}" aria-pressed="{% if not tag %}true{% else %}false{% endif %}">태그 전체</a>
+      {% for t in all_tags %}
+      <a class="chip" href="?scope={{ scope }}&amp;tag={{ t|urlencode }}" aria-pressed="{% if tag == t %}true{% else %}false{% endif %}">{{ t }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% for g in groups %}
     <div class="section">
       <span class="label">{{ g.title }} · {{ g.hint }}</span>
       {% for n in g.items %}
-      <a class="note-item{% if note.pk == n.pk %} sel{% endif %}" href="?scope={{ scope }}&amp;note={{ n.pk }}">
+      <a class="note-item{% if note.pk == n.pk %} sel{% endif %}" href="?scope={{ scope }}{% if tag %}&amp;tag={{ tag|urlencode }}{% endif %}&amp;note={{ n.pk }}">
         <b>{{ n.title }}</b>
         <span class="muted t13">{{ n.created_by.display_name }} · v{{ n.version }} · {{ n.updated_at|date:"n/j" }}</span>
+        {% if n.tags %}<span class="row" style="gap:4px">{% for t in n.tags %}<span class="tag">{{ t }}</span>{% endfor %}</span>{% endif %}
       </a>
       {% endfor %}
     </div>
@@ -44,8 +53,11 @@
         {% for p in projects %}<option value="{{ p.pk }}"{% if p.pk == note.project_id %} selected{% endif %}>{{ p.name }}</option>{% endfor %}
       </select>
       <span>{{ note.created_by.display_name }}</span>
-      <label class="row" style="gap:4px">생성일
-        <input class="input auto" type="date" data-note-field="created_on" value="{{ note.created_on|date:'Y-m-d' }}" aria-label="생성일">
+      <label class="row" style="gap:4px">회의 일시
+        <input class="input auto" type="datetime-local" data-note-field="created_on" value="{{ note.created_on|date:'Y-m-d\TH:i' }}" aria-label="회의 일시">
+      </label>
+      <label class="row grow" style="gap:4px">태그
+        <input class="input auto" data-note-field="tags" value="{{ note.tags|join:', ' }}" placeholder="예: 스프린트, 결정사항" aria-label="태그">
       </label>
       <span id="note-status" class="status" aria-live="polite">v{{ note.version }} · {{ note.updated_at|date:"n/j H:i" }}</span>
     </div>

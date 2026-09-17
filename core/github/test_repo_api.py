@@ -1,0 +1,85 @@
+"""저장소 연결의 API 통로. MCP(AI)도 이 길로 들어온다 — 막는 규칙은 services 안에 있다."""
+
+import pytest
+
+from github import services as gh_services
+
+pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture
+def repos(monkeypatch):
+    """설치 저장소 목록을 가짜로. GitHub을 부르지 않는다."""
+
+    def fake(org):
+        return [
+            {
+                "full_name": "teamSANDOL/sandol-api",
+                "clone_url": "https://github.com/teamSANDOL/sandol-api.git",
+                "private": False,
+            },
+        ]
+
+    monkeypatch.setattr(gh_services, "installation_repos", fake)
+
+
+@pytest.fixture
+def viewable(monkeypatch):
+    monkeypatch.setattr(gh_services, "can_view_repo", lambda actor, full_name: True)
+
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_org_repos_lists_choices(client, gh, org, write_token, repos):
+    r = client.get(f"/api/orgs/{org.pk}/repos", headers=_auth(write_token))
+    assert r.status_code == 200
+    assert r.json()[0]["full_name"] == "teamSANDOL/sandol-api"
+
+
+def test_connect_and_read_back(client, gh, project, member, write_token, viewable):
+    project.owners.add(member)
+    r = client.post(
+        f"/api/projects/{project.pk}/repo",
+        {"url": "https://github.com/teamSANDOL/sandol-api"},
+        content_type="application/json",
+        headers=_auth(write_token),
+    )
+    assert r.status_code == 200, r.content
+    assert r.json()["full_name"] == "teamSANDOL/sandol-api"
+    got = client.get(f"/api/projects/{project.pk}/repo", headers=_auth(write_token))
+    assert got.json()["connected"] is True
+
+
+def test_ai_gate_blocks_mcp_when_org_says_no(
+    client, gh, org, project, member, write_token, viewable
+):
+    project.owners.add(member)
+    org.settings = {"ai.manage_repo": "deny"}
+    org.save(update_fields=["settings"])
+    r = client.post(
+        f"/api/projects/{project.pk}/repo",
+        {"url": "https://github.com/teamSANDOL/sandol-api"},
+        content_type="application/json",
+        headers={**_auth(write_token), "X-Source": "mcp"},
+    )
+    assert r.status_code == 400
+    assert "AI" in r.content.decode()
+    assert not hasattr(project, "repo") or project.repo is None
+
+
+def test_same_token_without_the_header_is_not_ai(
+    client, gh, project, member, write_token, viewable
+):
+    """`ai.*`는 자기 신고인 X-Source 헤더로만 걸린다. 사람이 API로 부르면 걸리지 않는다."""
+    project.owners.add(member)
+    project.org.settings = {"ai.manage_repo": "deny"}
+    project.org.save(update_fields=["settings"])
+    r = client.post(
+        f"/api/projects/{project.pk}/repo",
+        {"url": "https://github.com/teamSANDOL/sandol-api"},
+        content_type="application/json",
+        headers=_auth(write_token),
+    )
+    assert r.status_code == 200

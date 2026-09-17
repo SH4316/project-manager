@@ -7,7 +7,13 @@
   {% if state.state == "none" %}
   <p class="muted t13">아직 연결된 저장소가 없습니다.</p>
   <form method="post" class="row">{% csrf_token %}
-    <input class="input" name="url" placeholder="https://github.com/owner/repo.git" style="flex:1 1 260px">
+    <input class="input" name="url" placeholder="https://github.com/owner/repo.git" style="flex:1 1 260px"
+      {% if org_repos %}list="org-repos"{% endif %}>
+    {% if org_repos %}
+    <datalist id="org-repos">
+      {% for r in org_repos %}<option value="{{ r.clone_url }}">{{ r.label }}</option>{% endfor %}
+    </datalist>
+    {% endif %}
     <button class="btn sm primary">저장소 연결</button>
   </form>
   {% elif state.state == "unlinked" %}

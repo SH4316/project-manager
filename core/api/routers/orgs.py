@@ -154,3 +154,15 @@ def remove_team_member_ep(request, team_id: int, user_id: int):
         raise HttpError(404, "사용자를 찾을 수 없습니다.")
     remove_team_member(team, user, request.auth)
     return _team_out(team)
+
+
+@router.get("/{org_id}/repos", response=list[dict])
+def org_repos(request, org_id: int):
+    """조직의 GitHub 설치가 접근할 수 있는 저장소. 프로젝트에 무엇을 이을지 고르는 목록이다.
+
+    설치가 없거나 GitHub이 답하지 않으면 빈 목록이다 — 화면도 AI도 그대로 동작해야 한다.
+    """
+    from github import services as gh_services
+
+    org = org_or_404(request, org_id)
+    return gh_services.installation_repos(org)

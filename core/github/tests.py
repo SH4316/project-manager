@@ -226,6 +226,8 @@ def test_can_view_repo_needs_identity(gh, member):
 
 def test_connect_repo_requires_access(gh, project, member, org):
     """볼 수 없는 저장소는 연결할 수 없다."""
+    # 저장소 연결은 프로젝트 관리자 등급이다 — 여기서 보는 건 GitHub 접근 쪽이다
+    project.owners.add(member)
     with pytest.raises(ServiceError):
         ghs.connect_repo(project=project, url="https://github.com/o/r.git", actor=member)
     GitHubIdentity.objects.create(user=member, github_id=5, login="m", repos=["o/r"])
@@ -239,6 +241,37 @@ def test_connect_repo_requires_membership(gh, project, outsider):
     outsider.refresh_from_db()
     with pytest.raises(ServiceError):
         ghs.connect_repo(project=project, url="https://github.com/o/r.git", actor=outsider)
+
+
+def test_connect_repo_settings_by_admin_blocks_project_owner(gh, org, admin, member, project):
+    """저장소 연결은 project.settings_by 등급을 탄다 — admin으로 잠그면 프로젝트 관리자도 막힌다."""
+    project.owners.set([member])
+    GitHubIdentity.objects.create(user=member, github_id=7, login="m", repos=["o/r"])
+    GitHubIdentity.objects.create(user=admin, github_id=17, login="ad", repos=["o/r"])
+    member.refresh_from_db()
+    admin.refresh_from_db()
+    org.settings = {"project.settings_by": "admin"}
+    org.save(update_fields=["settings"])
+    with pytest.raises(ServiceError):
+        ghs.connect_repo(project=project, url="https://github.com/o/r.git", actor=member)
+    conn = ghs.connect_repo(project=project, url="https://github.com/o/r.git", actor=admin)
+    assert conn.full_name == "o/r"
+
+
+def test_connect_repo_ai_gate(gh, org, admin, project):
+    """source=mcp일 때만 ai.manage_repo를 본다. web 경로는 그대로 통과한다."""
+    GitHubIdentity.objects.create(user=admin, github_id=8, login="a", repos=["o/r"])
+    admin.refresh_from_db()
+    org.settings = {"ai.manage_repo": "deny"}
+    org.save(update_fields=["settings"])
+    with pytest.raises(ServiceError):
+        ghs.connect_repo(
+            project=project, url="https://github.com/o/r.git", actor=admin, source="mcp"
+        )
+    conn = ghs.connect_repo(
+        project=project, url="https://github.com/o/r.git", actor=admin, source="web"
+    )
+    assert conn.full_name == "o/r"
 
 
 @pytest.mark.parametrize(

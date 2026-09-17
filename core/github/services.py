@@ -10,7 +10,7 @@
 
 import re
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from django.conf import settings
 from django.db.models import Q
@@ -18,7 +18,9 @@ from django.utils import timezone
 
 from common.errors import ConflictError, ServiceError
 from orgs.models import TeamMembership
-from orgs.services import is_member, orgs_of
+from orgs.services import ai_denied, is_member, orgs_of
+from orgs.settings import effective
+from projects.services import require_level
 from tasks.models import ChangeLog, Task
 from tasks.services import create_task, transition
 
@@ -191,6 +193,34 @@ def backfill_actor(identity):
 
 # ---------- 저장소 주소 ----------
 
+
+def installation_repos(org) -> list[dict]:
+    """조직의 GitHub 앱 설치가 접근할 수 있는 저장소 목록. 저장소 연결 화면의 자동완성이 쓴다.
+
+    이미 다른 프로젝트에 연결됐는지는 여기서 보지 않는다 — 호출부가 판단한다.
+    설치가 없거나 GitHub가 오류를 내면 빈 목록을 돌려준다. 화면은 입력창만으로도 그대로
+    동작해야 하기 때문이다.
+    # ponytail: 첫 100건, 캐시 없음. 100건 넘는 조직이 생기면 페이지를 돌거나 sync_repos처럼
+    # identity.repos_checked_at 같은 캐시를 둔다.
+    """
+    inst = getattr(org, "github", None)
+    if inst is None:
+        return []
+    try:
+        token = client.installation_token(inst.installation_id)
+        data = client.request("GET", "/installation/repositories?per_page=100", token)
+    except GitHubError:
+        return []
+    return [
+        {
+            "full_name": r["full_name"],
+            "clone_url": r.get("clone_url", ""),
+            "private": bool(r.get("private")),
+        }
+        for r in (data or {}).get("repositories", [])
+    ]
+
+
 REPO_RE = re.compile(r"(?:github\.com[:/])([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", re.I)
 
 
@@ -203,8 +233,22 @@ def parse_repo_url(url: str) -> str:
     return f"{m.group(1)}/{m.group(2)}"
 
 
-def connect_repo(*, project, url, actor) -> RepoConnection:
-    """저장소를 프로젝트에 잇는다. 그 사람이 볼 수 있는 저장소여야 한다."""
+def _check_ai_manage_repo(org, source: str):
+    """source가 mcp인데 AI 정책이 저장소 연결·해제를 막아 뒀으면 거부한다."""
+    if source != "mcp":
+        return
+    if not effective("ai.enabled", org=org) or effective("ai.manage_repo", org=org) == "deny":
+        raise ServiceError({"url": ai_denied("저장소 연결")})
+
+
+def connect_repo(*, project, url, actor, source: str = "web") -> RepoConnection:
+    """저장소를 프로젝트에 잇는다. 그 사람이 볼 수 있는 저장소여야 한다.
+
+    등급·AI 정책 검사가 맨 앞이다 — MCP로도 이 함수를 부르게 될 것이므로 강제는 여기
+    있어야 한다(IMPL-PLAN-4 원칙 3).
+    """
+    require_level(actor, project, effective("project.settings_by", org=project.org), "url")
+    _check_ai_manage_repo(project.org, source)
     if not is_member(actor, project.org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
     full_name = parse_repo_url(url)
@@ -217,6 +261,21 @@ def connect_repo(*, project, url, actor) -> RepoConnection:
         defaults={"url": url.strip()[:300], "full_name": full_name, "created_by": actor},
     )
     return conn
+
+
+def disconnect_repo(*, project, actor, source: str = "web") -> bool:
+    """저장소 연결을 끊는다. connect_repo와 같은 등급·AI 검사를 받는다.
+
+    연결이 없어도 조용히 끝낸다 — 화면의 [연결 해제] 버튼은 연결이 있을 때만 보이지만,
+    두 탭이 열려 있으면 먼저 끊은 쪽이 이긴다.
+    """
+    require_level(actor, project, effective("project.settings_by", org=project.org), "url")
+    _check_ai_manage_repo(project.org, source)
+    conn = getattr(project, "repo", None)
+    if conn is None:
+        return False
+    conn.delete()
+    return True
 
 
 # ---------- 이벤트 공통 ----------
@@ -783,8 +842,10 @@ def pr_compare_url(link) -> str:
     q = urlencode(
         {
             "quick_pull": "1",
-            "title": f"{link.task.number} {link.task.title}",
+            "title": f"{link.task.title} ({link.task.number})",
             "body": f"Closes #{link.issue_number}" if link.issue_number else "",
         }
     )
-    return f"https://github.com/{link.connection.full_name}/compare/{link.branch}?{q}"
+    # 브랜치 이름에는 괄호나 한글이 들어올 수 있다. 경로에 그대로 붙이지 않는다.
+    branch = quote(link.branch, safe="/")
+    return f"https://github.com/{link.connection.full_name}/compare/{branch}?{q}"

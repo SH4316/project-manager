@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 import dj_database_url
@@ -143,3 +144,8 @@ DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
 CREDENTIAL_KEY = os.environ.get("CREDENTIAL_KEY", "")
 # 설정이 없으면 GitHub 화면과 버튼을 아예 그리지 않는다(개발·테스트 환경).
 GITHUB_ENABLED = bool(GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY and CREDENTIAL_KEY)
+
+# 테스트에서만 해시를 약한 것으로 바꾼다. 픽스처가 테스트마다 계정을 만드는데 PBKDF2는
+# 한 번에 수백 ms가 든다 — 스위트 시간의 대부분이 거기였다. 운영 경로는 그대로다.
+if "pytest" in sys.modules:
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

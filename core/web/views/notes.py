@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import datetime
 
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpResponse
@@ -6,6 +6,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from common.dates import KST
 from common.errors import ConflictError, ServiceError
 from notes import services as ts_notes
 
@@ -39,6 +40,12 @@ def org_notes(request, org_id):
         qs = qs.filter(project_id=int(scope))
     notes = list(qs)
 
+    # 태그 필터는 DB가 아니라 파이썬에서 거른다 — OrgMembership 스킬 태그 필터와 같은 방식.
+    all_tags = sorted({t for n in notes for t in n.tags})
+    tag = request.GET.get("tag", "")
+    if tag:
+        notes = [n for n in notes if tag in n.tags]
+
     raw = request.GET.get("note", "")
     note = next((n for n in notes if str(n.pk) == raw), None) or (notes[0] if notes else None)
 
@@ -64,6 +71,8 @@ def org_notes(request, org_id):
             "groups": groups,
             "note": note,
             "scope": scope,
+            "tag": tag,
+            "all_tags": all_tags,
             "projects": org.projects.filter(is_archived=False).order_by("name"),
             "can_delete": bool(note)
             and (note.created_by_id == request.user.pk or can_admin(request.user, org)),
@@ -112,10 +121,14 @@ def note_save(request, note_id):
     if field == "project":
         value = project_or_404(request.user, raw) if raw else None
     elif field == "created_on":
+        # <input type="datetime-local">는 "YYYY-MM-DDTHH:MM"(초·시간대 없음)을 준다.
+        # 빈 값은 "회의 일시 없음" — 작성 시각(created_at)과 별개로 비워 둘 수 있다.
         try:
-            value = date.fromisoformat(raw)
+            value = datetime.fromisoformat(raw).replace(tzinfo=KST) if raw else None
         except ValueError:
             value = None
+    elif field == "tags":
+        value = raw.split(",")
     try:
         note = ts_notes.update_note(
             note, field, value, actor=request.user, expected_version=version_of(request)

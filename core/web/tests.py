@@ -1,5 +1,6 @@
 import json
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -529,6 +530,19 @@ def test_rail_shows_open_counts(logged, project, task):
     assert '<span class="count t12 muted">1</span>' in body
 
 
+def test_rail_close_handle_hides_list_completely(logged, project):
+    """레일에는 다시 여는 손잡이(data-action="toggle-rail")가 있고, 닫힘 클래스가 붙으면
+    목록이 아이콘만 남는 게 아니라 완전히 숨겨져야 한다(display:none). JS 토글 자체는 다루지 않는다."""
+    body = logged.get(f"/projects/{project.pk}").content.decode()
+    assert 'data-action="toggle-rail"' in body
+
+    css = (Path(__file__).resolve().parent / "static" / "app.css").read_text(encoding="utf-8")
+    assert (
+        ".rail.collapsed .rail-list" in css
+        and "display: none" in css.split(".rail.collapsed .rail-list")[1].split("}")[0]
+    )
+
+
 def test_org_tabs_hidden_for_member(logged, org):
     body = logged.get(f"/orgs/{org.pk}").content.decode()
     assert f"/orgs/{org.pk}/teams" not in body
@@ -791,6 +805,29 @@ def test_note_create_and_list_scopes(logged, org, project, member):
     assert team_note.pk and project_note.pk
 
 
+def test_note_click_shows_selected_body(logged, org, member):
+    """목록에서 회의록을 고르면(=note 쿼리) 그 회의록의 본문이 뜬다.
+
+    /orgs/<id>/notes는 note-item을 누르면 HTMX 부분 렌더가 아니라 전체 페이지를
+    다시 그린다(hx-get·hx-target이 없다) — 그래서 편집기(.doc)도 매 요청마다
+    새로 만들어진다. 여기서는 그 전체 렌더 결과에 고른 회의록의 본문이 실제로
+    담기는지, 목록의 다른 회의록 본문과 섞이지 않는지를 확인한다."""
+    from notes.services import create_note
+
+    n1 = create_note(org=org, actor=member, title="첫 회의록", body_md="첫 회의 본문")
+    n2 = create_note(org=org, actor=member, title="둘째 회의록", body_md="둘째 회의 본문")
+
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all&note={n2.pk}").content.decode()
+    assert 'class="doc"' in body
+    assert 'id="doc-src"' in body
+    assert "둘째 회의 본문" in body
+    assert "첫 회의 본문" not in body
+
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all&note={n1.pk}").content.decode()
+    assert "첫 회의 본문" in body
+    assert "둘째 회의 본문" not in body
+
+
 def test_note_save_bumps_version(logged, org, member):
     from notes.services import create_note
 
@@ -816,6 +853,54 @@ def test_note_save_conflict_returns_409(logged, org, member):
         f"/notes/{note.pk}/save", {"field": "title", "value": "낡은 수정", "version": note.version}
     )
     assert r.status_code == 409
+
+
+def test_note_save_tags_and_meeting_datetime(logged, org, member):
+    """태그는 쉼표로 구분한 문자열 하나로 저장(공백 제거·중복 제거), 회의 일시는
+    datetime-local 문자열을 받아 저장하고 빈 값이면 비워 둘 수 있다(작성 시각과 별개)."""
+    from datetime import datetime
+
+    from common.dates import KST
+    from notes.services import create_note
+
+    note = create_note(org=org, actor=member)
+    r = logged.post(
+        f"/notes/{note.pk}/save",
+        {"field": "tags", "value": " 스프린트 , 결정사항 ,스프린트", "version": note.version},
+    )
+    assert r.status_code == 204
+    note.refresh_from_db()
+    assert note.tags == ["스프린트", "결정사항"]
+
+    r = logged.post(
+        f"/notes/{note.pk}/save",
+        {"field": "created_on", "value": "2026-09-20T14:30", "version": note.version},
+    )
+    assert r.status_code == 204
+    note.refresh_from_db()
+    assert note.created_on == datetime(2026, 9, 20, 14, 30, tzinfo=KST)
+
+    r = logged.post(
+        f"/notes/{note.pk}/save", {"field": "created_on", "value": "", "version": note.version}
+    )
+    assert r.status_code == 204
+    note.refresh_from_db()
+    assert note.created_on is None
+
+
+def test_note_tag_filter(logged, org, member):
+    from notes.services import create_note
+
+    a = create_note(org=org, actor=member, title="스프린트 회고", tags=["스프린트", "회고"])
+    b = create_note(org=org, actor=member, title="결정 사항 정리", tags=["결정사항"])
+
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all&tag=스프린트").content.decode()
+    assert "스프린트 회고" in body and "결정 사항 정리" not in body
+
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all").content.decode()
+    assert "스프린트 회고" in body and "결정 사항 정리" in body
+
+    assert a.pk and b.pk
 
 
 def test_task_note_link_unlink(logged, org, task, member, project, admin):

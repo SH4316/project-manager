@@ -4,6 +4,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from accounts.models import User
+from github import services as gh_services
 from orgs.models import Team
 from orgs.services import orgs_of
 from projects.models import Project
@@ -17,6 +18,7 @@ from ..schemas import (
     ProjectCreateIn,
     ProjectOut,
     ProjectPatchIn,
+    RepoConnectIn,
 )
 from ..serialize import project_out
 
@@ -110,3 +112,37 @@ def put_api_spec(request, project_id: int, payload: ApiSpecIn):
     spec = parse_spec(json.dumps(payload.spec).encode(), source=payload.source_url or "요청 본문")
     obj = set_api_spec(p, spec, source_url=payload.source_url, actor=request.auth)
     return {"ok": True, "fetched_at": obj.fetched_at}
+
+
+# ---------- 저장소 연결 (IMPL-PLAN-4 §4.4 `ai.manage_repo`) ----------
+
+
+@router.get("/{project_id}/repo", response=dict)
+def get_repo(request, project_id: int):
+    """이 프로젝트에 연결된 저장소. 없으면 connected=false."""
+    project = _project_or_404(request, project_id)
+    conn = getattr(project, "repo", None)
+    if conn is None:
+        return {"connected": False}
+    return {
+        "connected": True,
+        "full_name": conn.full_name,
+        "url": conn.url,
+        "auto_import": conn.auto_import,
+        "import_label": conn.import_label,
+    }
+
+
+@router.post("/{project_id}/repo", response={200: dict, 400: ErrorOut})
+def connect_repo(request, project_id: int, payload: RepoConnectIn):
+    """저장소를 프로젝트에 잇는다.
+
+    AI(MCP)도 여기까지 올 수 있다. 막는 규칙은 전부 `github.services.connect_repo` 안에 있다 —
+    등급(`project.settings_by`)과 조직의 AI 정책(`ai.manage_repo`)이다. 끊는 일은 열지 않았다.
+    """
+    project = _project_or_404(request, project_id)
+    c = ctx(request)
+    conn = gh_services.connect_repo(
+        project=project, url=payload.url, actor=c["actor"], source=c["source"]
+    )
+    return {"connected": True, "full_name": conn.full_name, "url": conn.url}

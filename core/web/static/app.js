@@ -17,11 +17,18 @@
     if (pushUrl) history.pushState(null, "", pushUrl);
   }
 
-  // 프로젝트 레일 접기. 아이콘 열(56px)과 목록(200px)을 오간다.
+  // 프로젝트 레일 접기. 닫으면 목록을 통째로 숨기고 여는 손잡이만 남긴다.
+  // 사생활 모드 등에서 localStorage가 막혀도 페이지가 죽지 않도록 감싼다.
+  function getRailClosed() {
+    try { return localStorage.getItem("rail-collapsed") === "1"; } catch (e) { return false; }
+  }
+  function setRailClosed(off) {
+    try { localStorage.setItem("rail-collapsed", off ? "1" : "0"); } catch (e) {}
+  }
   function applyRail() {
     var rail = document.querySelector("[data-rail]");
     if (!rail) return;
-    var off = localStorage.getItem("rail-collapsed") === "1";
+    var off = getRailClosed();
     rail.classList.toggle("collapsed", off);
     var b = rail.querySelector("[data-action='toggle-rail']");
     if (b) {
@@ -122,7 +129,7 @@
       if (b.dataset.alt) { var t = b.textContent; b.textContent = b.dataset.alt; b.dataset.alt = t; }
       if (!el.hidden) { var i = el.querySelector("input:not([type=hidden]), textarea"); if (i) i.focus(); }
     } else if (a === "toggle-rail") {
-      localStorage.setItem("rail-collapsed", localStorage.getItem("rail-collapsed") === "1" ? "0" : "1");
+      setRailClosed(!getRailClosed());
       applyRail();
     }
   });

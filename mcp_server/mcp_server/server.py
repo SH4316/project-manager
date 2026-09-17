@@ -227,6 +227,21 @@ def get_settings(org_id: int) -> dict:
 
 
 @mcp.tool()
+def list_org_repos(org_id: int) -> list[dict]:
+    """그 조직의 GitHub 설치가 접근할 수 있는 저장소 목록. 프로젝트에 무엇을 이을지 고를 때 쓴다.
+    설치가 없거나 GitHub이 답하지 않으면 빈 목록이다."""
+    return _core().get(f"/api/orgs/{org_id}/repos")
+
+
+@mcp.tool()
+def connect_repo(project_id: int, url: str) -> dict:
+    """프로젝트에 GitHub 저장소를 잇는다. url은 `https://github.com/<소유자>/<저장소>` 형태다.
+    list_org_repos로 먼저 확인하고 고른다. 조직 설정에서 막혀 있으면 거부 문구가 온다 —
+    우회하지 말고 사람에게 넘긴다. 끊는 일은 사람이 웹에서 한다."""
+    return _core().post(f"/api/projects/{project_id}/repo", {"url": url})
+
+
+@mcp.tool()
 def list_docs(
     project_id: int | None = None,
     org_id: int | None = None,

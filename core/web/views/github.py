@@ -194,6 +194,8 @@ def project_repo(request, project_id):
         "is_admin": can_admin(request.user, project.org),
         "error": error,
     }
+    if state["state"] == "none":
+        ctx["org_repos"] = _pickable_repos(project)
     if state["state"] == "ok":
         conn = state["conn"]
         ctx["issues"] = conn.issues.all()[:50]
@@ -203,15 +205,34 @@ def project_repo(request, project_id):
     return render(request, "projects/repo.html", ctx)
 
 
+def _pickable_repos(project):
+    """조직 설치가 접근할 수 있는 저장소 + 이미 다른 프로젝트에 연결됐으면 그 표시.
+
+    같은 저장소를 두 프로젝트에 붙일지는 connect_repo가 판단한다 — 여기서는 고르지 못하게
+    막지 않고 이미 연결됐다는 사실만 보여 준다.
+    """
+    repos = gh_services.installation_repos(project.org)
+    taken = dict(
+        RepoConnection.objects.filter(project__org=project.org)
+        .exclude(project=project)
+        .values_list("full_name", "project__name")
+    )
+    for r in repos:
+        other = taken.get(r["full_name"])
+        r["label"] = f"{r['full_name']} (이미 연결됨 · {other})" if other else r["full_name"]
+    return repos
+
+
 @login_required
 @require_POST
 def repo_disconnect(request, project_id):
     _gh_enabled_or_404()
     project = project_or_404(request.user, project_id)
-    conn = getattr(project, "repo", None)
-    if conn is not None:
-        conn.delete()
-        messages.success(request, "저장소 연결을 해제했습니다.")
+    try:
+        if gh_services.disconnect_repo(project=project, actor=request.user):
+            messages.success(request, "저장소 연결을 해제했습니다.")
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
     return redirect("project_repo", project_id=project.pk)
 
 
@@ -341,6 +362,77 @@ def repo_event_link(request, project_id, event_id):
         event.task = task
         event.save(update_fields=["task"])
     return redirect("project_repo", project_id=project.pk)
+
+
+@login_required
+def project_issues(request, project_id):
+    """프로젝트 이슈 뷰어. 조직 이슈 뷰어와 같은 템플릿을 쓰되 이 프로젝트의 저장소로만 좁힌다.
+
+    저장소 선택 드롭다운은 의미가 없으므로(프로젝트에는 저장소가 하나뿐이다) 템플릿이
+    `project`가 있으면 숨긴다. 필터링은 `org_issues`에 이 저장소의 연결 pk를 repo_id로
+    넘겨 재사용한다 — 새 조회 함수를 만들지 않는다.
+    """
+    _gh_enabled_or_404()
+    project = project_or_404(request.user, project_id)
+    conn = getattr(project, "repo", None)
+    if conn is None:
+        raise Http404
+    state = request.GET.get("state") or "todo"  # todo=아직 안 가져온 것 | done | all
+    query = (request.GET.get("q") or "").strip()
+    imported = {"todo": False, "done": True}.get(state)
+    issues = gh_services.org_issues(project.org, repo_id=conn.pk, imported=imported, query=query)
+    return render(
+        request,
+        "github/issues.html",
+        {
+            "org": project.org,
+            "project": project,
+            "tab": "issues",
+            "issues": issues,
+            "repo_id": "",
+            "state": state,
+            "q": query,
+            "is_admin": can_admin(request.user, project.org),
+        },
+    )
+
+
+@login_required
+@require_POST
+def project_issues_sync(request, project_id):
+    _gh_enabled_or_404()
+    project = project_or_404(request.user, project_id)
+    conn = getattr(project, "repo", None)
+    if conn is None:
+        raise Http404
+    try:
+        n = gh_services.sync_issues(conn)
+        messages.success(request, f"열린 이슈 {n}건을 확인했습니다.")
+    except (ServiceError, GitHubError):
+        messages.error(request, "이슈를 가져오지 못했습니다.")
+    back = f"{reverse('project_issues', args=[project.pk])}?{request.POST.get('back', '')}"
+    return redirect(back)
+
+
+@login_required
+@require_POST
+def project_issue_import(request, project_id, issue_id):
+    """이슈 하나를 내 태스크로. 담당자는 누른 사람이다."""
+    _gh_enabled_or_404()
+    project = project_or_404(request.user, project_id)
+    conn = getattr(project, "repo", None)
+    if conn is None:
+        raise Http404
+    issue = conn.issues.filter(pk=issue_id).first()
+    if issue is None:
+        raise Http404
+    if issue.task_id is None:
+        task = gh_services.import_issue(issue, request.user)
+        messages.success(request, f"태스크 {task.number}로 가져왔습니다.")
+    else:
+        messages.info(request, f"이미 태스크 {issue.task.number}로 가져온 이슈입니다.")
+    back = f"{reverse('project_issues', args=[project.pk])}?{request.POST.get('back', '')}"
+    return redirect(back)
 
 
 # ---------- 태스크 패널: GitHub 블록 ----------

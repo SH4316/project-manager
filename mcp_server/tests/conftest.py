@@ -74,6 +74,27 @@ class FakeCore:
             )
             self.tasks[1]["version"] += 1
             return httpx.Response(200, json=self.tasks[1])
+        if p == "/api/orgs/1/repos" and request.method == "GET":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "full_name": "teamSANDOL/sandol-api",
+                        "clone_url": "https://github.com/teamSANDOL/sandol-api.git",
+                        "private": False,
+                    }
+                ],
+            )
+        if p == "/api/projects/1/repo" and request.method == "POST":
+            return httpx.Response(
+                200, json={"connected": True, "full_name": "teamSANDOL/sandol-api"}
+            )
+        if p == "/api/projects/2/repo" and request.method == "POST":
+            # 조직이 ai.manage_repo를 막아 둔 경우. 도구는 그 문구를 그대로 사람에게 전한다.
+            return httpx.Response(
+                400,
+                json={"detail": {"url": "이 조직 설정에서 AI의 저장소 연결이 꺼져 있어요."}},
+            )
         if p == "/api/orgs/1/governance" and request.method == "GET":
             return httpx.Response(200, json={"text": "# 기본안", "is_default": True})
         if p == "/api/orgs/1/settings" and request.method == "GET":

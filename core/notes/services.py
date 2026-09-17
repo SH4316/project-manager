@@ -3,14 +3,25 @@ import re
 from django.db import transaction
 from django.utils import timezone
 
-from common.dates import today_kst
+from common.dates import now_kst
 from common.errors import ConflictError, ServiceError
 from orgs.services import is_admin, is_member, orgs_of
 
 from .models import MeetingNote
 
-EDITABLE = {"title", "project", "created_on", "body_md"}
+EDITABLE = {"title", "project", "created_on", "body_md", "tags"}
 MAX_BODY = 256 * 1024  # 256KB. 회의록 한 편이 이보다 클 이유가 없다.
+
+
+def _clean_tags(tags) -> list[str]:
+    """공백 제거·중복 제거·20자·최대 10개. OrgMembership.set_tags와 같은 규칙."""
+    cleaned, seen = [], set()
+    for t in tags or []:
+        t = (t or "").strip()[:20]
+        if t and t not in seen:
+            seen.add(t)
+            cleaned.append(t)
+    return cleaned[:10]
 
 
 def visible_notes(user):
@@ -31,7 +42,9 @@ def _check_project(org, project):
         raise ServiceError({"project": "같은 조직의 프로젝트여야 합니다."})
 
 
-def create_note(*, org, actor, title="제목 없는 회의록", project=None, body_md="", created_on=None):
+def create_note(
+    *, org, actor, title="제목 없는 회의록", project=None, body_md="", created_on=None, tags=None
+):
     if not is_member(actor, org):
         raise ServiceError({"org": "이 조직의 멤버가 아닙니다."})
     _check_project(org, project)
@@ -40,9 +53,9 @@ def create_note(*, org, actor, title="제목 없는 회의록", project=None, bo
         project=project,
         title=(title or "").strip()[:200] or "제목 없는 회의록",
         body_md=(body_md or "").replace("\r\n", "\n"),
-        # created_on or None이면 모델의 default=today_kst를 명시적 None이 덮어써
-        # NOT NULL 제약을 어긴다(created_on 컬럼은 null=False).
-        created_on=created_on or today_kst(),
+        # 안 주면 지금 시각. 회의 일시는 나중에 편집으로 비울 수 있다(작성 시각과 별개).
+        created_on=created_on or now_kst(),
+        tags=_clean_tags(tags),
         created_by=actor,
     )
 
@@ -62,8 +75,9 @@ def update_note(note, field: str, value, *, actor, expected_version: int) -> Mee
             raise ServiceError({"body_md": "본문이 너무 깁니다 (256KB 상한)."})
     elif field == "project":
         _check_project(note.org, value)
-    elif field == "created_on" and value is None:
-        raise ServiceError({"created_on": "날짜를 선택하세요."})
+    elif field == "tags":
+        value = _clean_tags(value)
+    # created_on(회의 일시)은 비워 둘 수 있다 — 작성 시각(created_at)과 별개다.
 
     # auto_now는 update()를 타지 않으므로 직접 넣는다.
     updated = MeetingNote.objects.filter(pk=note.pk, version=expected_version).update(

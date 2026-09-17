@@ -85,7 +85,6 @@ p { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .switcher .caret { transition: none; } }
 .frame { display: flex; align-items: flex-start; }
 .rail { position: sticky; top: 64px; flex: none; width: 200px; padding: 16px 8px; display: flex; flex-direction: column; gap: 2px; }
-.rail.collapsed { width: 56px; }
 .rail-head { display: flex; align-items: center; gap: 8px; padding: 0 6px 6px; }
 .rail-head .grow { flex: 1; min-width: 0; }
 .rail-list { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 248px); min-height: 120px; overflow-y: auto; padding-right: 2px; }
@@ -93,9 +92,14 @@ p { margin: 0; }
 .rail a .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail a[aria-current="page"] { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
 .rail .initial { flex: none; width: 24px; height: 24px; border-radius: 6px; background: var(--bg-fill); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
-.rail.collapsed .rail-only, .rail.collapsed a .label, .rail.collapsed a .count { display: none; }
-.rail.collapsed .rail-head { justify-content: center; padding: 0 0 6px; }
 .rail-new { height: 40px; padding: 0 10px; text-align: left; }
+/* 접기는 데스크톱 사이드바 전용이다 — 접으면 목록 전체를 숨기고 여는 손잡이만 남긴다.
+   모바일은 rail-head(손잡이가 있는 자리)를 통째로 숨기므로(아래 700px 규칙) 접힘 상태를 여기서 적용하지 않는다. */
+@media (min-width: 701px) {
+  .rail.collapsed { width: auto; }
+  .rail.collapsed .rail-only, .rail.collapsed .rail-list, .rail.collapsed .rail-new { display: none; }
+  .rail.collapsed .rail-head { justify-content: center; padding: 0 0 6px; }
+}
 .layout { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 16px; padding: 24px; }
 .layout > main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 aside#panel { flex: 1 1 380px; max-width: 480px; position: sticky; top: 88px; max-height: calc(100vh - 112px); overflow: auto; }

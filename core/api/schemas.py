@@ -270,6 +270,10 @@ class DiscordLinkIn(Schema):
     discord_user_id: str
 
 
+class RepoConnectIn(Schema):
+    url: str
+
+
 class DiscordActorIn(Schema):
     discord_user_id: str
 
