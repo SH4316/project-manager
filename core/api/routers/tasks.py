@@ -12,6 +12,7 @@ from tasks.brief import task_brief
 from tasks.models import ChangeLog, Task
 from tasks.services import (
     create_task,
+    delete_task,
     extend_due,
     replace_checklist,
     transition,
@@ -133,6 +134,15 @@ def create_task_ep(request, payload: TaskCreateIn):
     if payload.checklist is not None and not task.checklist.exists():
         replace_checklist(task, [i.dict() for i in payload.checklist], actor=c["actor"])
     return 201, task_out(task)
+
+
+@router.delete("/{task_id}", response={204: None, 400: ErrorOut})
+def delete_task_ep(request, task_id: int):
+    """조직 관리자만. 체크리스트·링크가 함께 사라진다."""
+    task = task_or_404(request, task_id)
+    c = ctx(request)
+    delete_task(task, actor=c["actor"], source=c["source"])
+    return 204, None
 
 
 @router.patch("/{task_id}", response={200: TaskOut, 400: ErrorOut, 409: ConflictOut})

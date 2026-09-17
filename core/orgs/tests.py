@@ -11,6 +11,7 @@ from .services import (
     create_invite,
     create_org,
     create_team,
+    delete_team,
     is_admin,
     is_member,
     join_by_token,
@@ -125,9 +126,7 @@ def test_remove_org_member_clears_team_memberships(org, team, admin, member):
 
 
 def test_delete_team_keeps_members_and_projects(org, team, project, admin, member):
-    from .services import delete_team
-
-    delete_team(team, admin)
+    delete_team(team, actor=admin)
     assert is_member(member, org)
     assert project.pk is not None
 
@@ -378,6 +377,28 @@ def test_ai_source_denied_when_manage_teams_is_off(org, admin):
     with pytest.raises(ServiceError):
         create_team(org=org, name="AI팀", actor=admin, source="mcp")
     create_team(org=org, name="AI팀", actor=admin, source="web")  # 웹은 막히지 않는다
+
+
+def test_delete_team_member_blocked_admin_allowed_and_logged(org, team, admin, member):
+    from tasks.models import ChangeLog
+
+    with pytest.raises(ServiceError):
+        delete_team(team, actor=member)
+    team_id, name = team.pk, team.name
+    delete_team(team, actor=admin)
+    log = ChangeLog.objects.get(target_type="org", target_id=org.pk, field="delete")
+    assert name in log.new_value and str(team_id) in log.new_value
+    assert log.actor == admin
+
+
+def test_delete_team_ai_delete_default_deny_then_allow(org, admin):
+    t = create_team(org=org, name="AI삭제", actor=admin)
+    with pytest.raises(ServiceError):
+        delete_team(t, actor=admin, source="mcp")  # 기본값(deny)에서 막힌다
+    set_org_settings(org, {"ai.delete": "allow"}, admin)
+    org.refresh_from_db()
+    delete_team(t, actor=admin, source="mcp")
+    assert not org.teams.filter(pk=t.pk).exists()
 
 
 def test_member_sees_permission_error_instead_of_404(client, org, member):

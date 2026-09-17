@@ -6,6 +6,14 @@ import pytest
 import mcp_server.core_client as cc
 from mcp_server.auth import current_token
 
+# 토큰 -> (조직 역할 목록, 쓰기 가능 여부). permissions._probe가 /api/me의
+# PATCH /api/tasks/0(있지도 않은 id) 응답으로 이 둘을 읽어 낸다.
+TOKENS = {
+    "pm_good": {"orgs": [{"id": 1, "name": "산돌이", "role": "member"}], "write": True},
+    "pm_read": {"orgs": [{"id": 1, "name": "산돌이", "role": "member"}], "write": False},
+    "pm_admin": {"orgs": [{"id": 1, "name": "산돌이", "role": "admin"}], "write": True},
+}
+
 
 class FakeCore:
     def __init__(self):
@@ -35,13 +43,19 @@ class FakeCore:
             (request.method, request.url.path, dict(request.headers), request.content)
         )
         auth = request.headers.get("authorization", "")
-        if auth != "Bearer pm_good":
+        token = auth.removeprefix("Bearer ")
+        profile = TOKENS.get(token)
+        if profile is None:
             return httpx.Response(401, json={"detail": "Unauthorized"})
         p = request.url.path
         if p == "/api/me":
             return httpx.Response(
                 200,
-                json={"id": 2, "orgs": [{"id": 1, "name": "산돌이", "role": "member"}]},
+                json={
+                    "id": 2,
+                    "orgs": profile["orgs"],
+                    "token_scope": "write" if profile["write"] else "read",
+                },
             )
         if p == "/api/tasks" and request.method == "GET":
             return httpx.Response(

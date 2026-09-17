@@ -10,7 +10,7 @@ from orgs.services import create_org
 from projects.services import archive_project, create_project
 from reports.services import weekly
 from tasks import services as ts
-from tasks.models import ChangeLog, Link, Task
+from tasks.models import ChangeLog, ChecklistItem, Link, Task
 from tasks.services import (
     add_link,
     checklist_add,
@@ -18,6 +18,7 @@ from tasks.services import (
     checklist_move,
     checklist_toggle,
     create_task,
+    delete_task,
     extend_due,
     me_view,
     replace_checklist,
@@ -1048,6 +1049,33 @@ def test_ai_denied_never_fires_for_non_mcp_source_or_actor_none(project, member,
         assert t.title == f"{src} 통과"
     t2 = transition(t, "doing", actor=None, source="gh", expected_version=t.version)
     assert t2.status == "doing"
+
+
+def test_delete_task_member_blocked_admin_allowed_and_logged(task, member, admin, org):
+    with pytest.raises(ServiceError):
+        delete_task(task, actor=member)
+    number, title, task_id = task.number, task.title, task.pk
+    delete_task(task, actor=admin)
+    assert not Task.objects.filter(pk=task_id).exists()
+    log = ChangeLog.objects.get(target_type="org", target_id=org.pk, field="delete")
+    assert number in log.new_value and title in log.new_value
+    assert log.actor == admin
+
+
+def test_delete_task_removes_checklist_and_links(task, admin):
+    item = checklist_add(task, "체크", actor=admin)
+    link = add_link(actor=admin, task=task, title="문서", url="https://example.com")
+    delete_task(task, actor=admin)
+    assert not ChecklistItem.objects.filter(pk=item.pk).exists()
+    assert not Link.objects.filter(pk=link.pk).exists()
+
+
+def test_delete_task_ai_delete_default_deny_then_allow(task, admin, org):
+    with pytest.raises(ServiceError):
+        delete_task(task, actor=admin, source="mcp")  # 기본값(deny)
+    _set(org, **{"ai.delete": "allow"})
+    delete_task(task, actor=admin, source="mcp")
+    assert not Task.objects.filter(pk=task.pk).exists()
 
 
 def test_default_settings_regression_full_lifecycle(project, member, admin):

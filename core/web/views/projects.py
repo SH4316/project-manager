@@ -13,6 +13,7 @@ from projects.services import (
     SPEC_MAX,
     archive_project,
     create_project,
+    delete_project,
     fetch_spec,
     is_owner,
     parse_spec,
@@ -273,6 +274,20 @@ def project_restore(request, project_id):
     except ServiceError as e:
         messages.error(request, " ".join(e.errors.values()))
     return redirect("project_detail", project_id=project.pk)
+
+
+@login_required
+@require_POST
+def project_delete(request, project_id):
+    """조직 관리자만(서비스가 검사). 보관된 프로젝트만 지울 수 있다. 되돌릴 수 없다."""
+    project = project_or_404(request.user, project_id)
+    try:
+        delete_project(project, actor=request.user, source="web")
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+        return redirect("project_detail", project_id=project.pk)
+    messages.success(request, "프로젝트를 삭제했습니다.")
+    return redirect("project_index")
 
 
 @login_required

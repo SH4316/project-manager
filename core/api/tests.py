@@ -238,6 +238,36 @@ def test_invite_admin_only(client, api, org, admin):
     assert "/join/" in r.json()["url"]
 
 
+def test_delete_team_endpoint_admin_only(client, api, org, admin):
+    from orgs.services import create_team
+
+    t = create_team(org=org, name="API팀", actor=admin)
+    assert api.delete(f"/api/orgs/teams/{t.pk}").status_code == 400  # member 토큰은 막힌다
+    _, raw = ApiToken.issue(admin, "a", "write")
+    r = client.delete(f"/api/orgs/teams/{t.pk}", headers=_h(raw))
+    assert r.status_code == 204
+    assert not org.teams.filter(pk=t.pk).exists()
+
+
+def test_delete_project_endpoint_requires_archived(client, admin, project):
+    _, raw = ApiToken.issue(admin, "a", "write")
+    r = client.delete(f"/api/projects/{project.pk}", headers=_h(raw))
+    assert r.status_code == 400  # 아직 보관 전
+
+    from projects.services import archive_project
+
+    archive_project(project, actor=admin)
+    r = client.delete(f"/api/projects/{project.pk}", headers=_h(raw))
+    assert r.status_code == 204
+
+
+def test_delete_task_endpoint_admin_only(client, api, admin, task):
+    assert api.delete(f"/api/tasks/{task.pk}").status_code == 400  # member 토큰은 막힌다
+    _, raw = ApiToken.issue(admin, "a", "write")
+    r = client.delete(f"/api/tasks/{task.pk}", headers=_h(raw))
+    assert r.status_code == 204
+
+
 def test_bearer_write_passes_csrf(write_token, task, db):
     """Bearer 토큰 쓰기 요청은 CSRF 검사에 걸리지 않는다 (MCP·Discord 경로)."""
     from django.test import Client

@@ -7,7 +7,7 @@ from django.utils import timezone
 from accounts.models import IdempotencyKey, User
 from common.dates import kst_day_range, overdue_before, today_kst, week_bounds
 from common.errors import ConflictError, ServiceError
-from orgs.services import ai_denied, is_admin, is_member, orgs_of
+from orgs.services import ai_denied, is_admin, is_member, orgs_of, require_admin
 from orgs.settings import effective
 from projects.services import is_owner, project_stats
 
@@ -532,6 +532,23 @@ def extend_due(
         external_actor=external_actor,
     )
     return task
+
+
+@transaction.atomic
+def delete_task(task, *, actor, source: str = "web") -> None:
+    """조직 관리자만. 체크리스트·오늘 목록·링크가 함께 사라진다(CASCADE)."""
+    require_admin(actor, task.project.org)
+    _ai_check(task.project.org, "ai.delete", "삭제", source, "task")
+    ChangeLog.objects.create(
+        target_type="org",
+        target_id=task.project.org_id,
+        field="delete",
+        old_value="",
+        new_value=f"{task.number} {task.title}",
+        actor=actor,
+        source=source,
+    )
+    task.delete()
 
 
 # ---------- 링크 ----------

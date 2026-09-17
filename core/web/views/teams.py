@@ -83,7 +83,7 @@ def team_delete(request, team_id):
     team = _admin_team_or_404(request, team_id)
     org_id = team.org_id
     try:
-        osv.delete_team(team, request.user)
+        osv.delete_team(team, actor=request.user, source="web")
     except ServiceError as e:
         messages.error(request, " ".join(e.errors.values()))
     return redirect("org_teams", org_id=org_id)

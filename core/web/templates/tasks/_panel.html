@@ -94,6 +94,9 @@
       <details><summary>변경 이력 {{ history|length }}</summary>{% include "tasks/_history.html" %}</details>
       <details><summary>더보기</summary>
         <p class="muted t13">일시정지: 개인 사유 또는 다른 작업 · 막힘: 외부 요인으로 진행 불가</p>
+        {% if is_admin %}
+        <form method="post" action="{% url 'task_delete' task.pk %}" onsubmit="return confirm('태스크를 삭제할까요? 체크리스트·링크도 함께 사라지고 되돌릴 수 없습니다.')">{% csrf_token %}<button class="btn link danger">태스크 삭제</button></form>
+        {% endif %}
       </details>
     </div>
   </div>

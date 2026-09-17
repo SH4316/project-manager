@@ -42,6 +42,12 @@
         {# 목록/보드 토글 옆에 같은 모양으로 두면 뷰를 바꾸려다 프로젝트를 보관한다 #}
         {% if project.is_archived %}
         <form method="post" action="{% url 'project_restore' project.pk %}">{% csrf_token %}<button class="btn sm">복원</button></form>
+        <details class="menu">
+          <summary class="btn sm icon" aria-label="더보기" title="더보기">⋯</summary>
+          <div class="menu-list">
+            <form method="post" action="{% url 'project_delete' project.pk %}" onsubmit="return prompt('되돌릴 수 없습니다. 확인을 위해 프로젝트 이름을 입력하세요.') === '{{ project.name|escapejs }}'">{% csrf_token %}<button class="btn link danger">프로젝트 삭제</button></form>
+          </div>
+        </details>
         {% else %}
         <details class="menu">
           <summary class="btn sm icon" aria-label="더보기" title="더보기">⋯</summary>

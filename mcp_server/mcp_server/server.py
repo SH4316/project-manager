@@ -3,7 +3,8 @@ import os
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-from .auth import require_token
+from . import permissions
+from .auth import current_token, require_token
 from .core_client import Core, CoreError
 
 INSTRUCTIONS = """산돌이 조직 업무 관리 도구.
@@ -24,6 +25,7 @@ INSTRUCTIONS = """산돌이 조직 업무 관리 도구.
 - 상태: todo(시작 전) doing(진행 중) paused(일시정지) blocked(막힘, 사유 필수) review(검토 대기) done(완료) cancelled(취소).
 - 중요도는 1~10 정수. 8~10 높음, 4~7 중간, 1~3 낮음.
 - 진행 메모(notes)는 태스크당 한 덩어리 텍스트다. 덧붙일 때는 append_note를 쓴다. update_task(notes=...)는 통째로 바꾼다.
+- 보이는 도구는 지금 이 토큰으로 할 수 있는 것뿐입니다. 없는 기능은 사람에게 부탁하세요.
 """
 
 
@@ -41,7 +43,17 @@ def security_settings(extra: str) -> TransportSecuritySettings:
     )
 
 
-mcp = FastMCP(
+class _ScopedFastMCP(FastMCP):
+    """tools/list 응답을 호출자 토큰에 맞게 거른다. 목록에서 뺀다고 호출까지 막히는 건
+    아니다 — 실제 차단은 core가 한다(permissions.py 맨 위 주석 참고)."""
+
+    async def list_tools(self):
+        tools = await super().list_tools()
+        allowed = permissions.visible_names(current_token.get())
+        return [t for t in tools if t.name in allowed]
+
+
+mcp = _ScopedFastMCP(
     "sandol-pm",
     instructions=INSTRUCTIONS,
     stateless_http=True,
@@ -291,6 +303,28 @@ def update_doc(
     if body_md is not None:
         body["body_md"] = body_md
     return _core().patch(f"/api/project-docs/{doc_id}", body)
+
+
+@mcp.tool()
+def delete_team(team_id: int) -> dict:
+    """팀을 지운다. 조직 관리자만 할 수 있고, 되돌릴 수 없다.
+    조직 설정 `ai.delete`가 기본값(막기)이면 AI에게는 거부 문구가 온다 — 사람에게 넘긴다.
+    팀이 담당하던 프로젝트는 남는다."""
+    return _core().delete(f"/api/orgs/teams/{team_id}")
+
+
+@mcp.tool()
+def delete_project(project_id: int) -> dict:
+    """프로젝트를 지운다. **보관한 프로젝트만** 지울 수 있고 태스크가 함께 사라진다.
+    조직 관리자 전용이며 `ai.delete`가 기본값(막기)이면 거부된다. 보통은 지우지 말고 보관한다."""
+    return _core().delete(f"/api/projects/{project_id}")
+
+
+@mcp.tool()
+def delete_task(task_id: int) -> dict:
+    """태스크를 지운다. 조직 관리자 전용이고 되돌릴 수 없다. `ai.delete`가 기본값(막기)이면 거부된다.
+    끝난 일은 지우지 말고 완료로, 하지 않기로 한 일은 취소로 남긴다 — 그래야 이력이 남는다."""
+    return _core().delete(f"/api/tasks/{task_id}")
 
 
 @mcp.tool()

@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from common.dates import fmt_md, today_kst
 from common.errors import ConflictError, ServiceError
-from orgs.services import is_admin, is_member, require_admin
+from orgs.services import ai_denied, is_admin, is_member, require_admin
 from orgs.settings import SPECS, clean, display, effective, locked_keys
 
 from .models import ApiSpec, Milestone, Project, ProjectDependency
@@ -75,6 +75,14 @@ def require_level(actor, project, level: str, key: str):
         raise ServiceError({key: "이 작업은 조직 관리자만 할 수 있습니다."})
     if level == "owner" and not is_owner(actor, project):
         raise ServiceError({key: "이 작업은 프로젝트 관리자만 할 수 있습니다."})
+
+
+def _check_ai_delete(org, source: str):
+    """source가 mcp인데 AI 정책이 삭제를 막아 뒀으면 거부한다. 기본값이 막기다."""
+    if source != "mcp":
+        return
+    if not effective("ai.enabled", org=org) or effective("ai.delete", org=org) == "deny":
+        raise ServiceError({"ai": ai_denied("삭제")})
 
 
 def _validate(org, name, owners, status):
@@ -228,6 +236,29 @@ def restore_project(project, *, actor, source="web", token=None):
     project.refresh_from_db()
     _log(project, "is_archived", True, False, actor, source, token)
     return project
+
+
+@transaction.atomic
+def delete_project(project, *, actor, source: str = "web"):
+    """조직 관리자만. 보관된 프로젝트만 지울 수 있다. 태스크·마일스톤·문서가 함께 사라진다."""
+    require_admin(actor, project.org)
+    _check_ai_delete(project.org, source)
+    if not project.is_archived:
+        raise ServiceError({"project": "먼저 보관한 뒤에 지울 수 있습니다."})
+    from tasks.models import ChangeLog, Task
+
+    ChangeLog.objects.create(
+        target_type="org",
+        target_id=project.org_id,
+        field="delete",
+        old_value="",
+        new_value=f"프로젝트 {project.name}({project.pk})",
+        actor=actor,
+        source=source,
+    )
+    # Task.project는 PROTECT라 먼저 지운다. 체크리스트·오늘 목록·태스크 링크는 CASCADE.
+    Task.objects.filter(project=project).delete()
+    project.delete()  # 마일스톤·문서·API 스펙·의존성·저장소 연결은 CASCADE
 
 
 def _display_or_default(key: str, value) -> str:

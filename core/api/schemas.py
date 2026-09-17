@@ -207,6 +207,7 @@ class MeOut(Schema):
     display_name: str
     discord_user_id: str | None
     auto_pull_days: int
+    token_scope: str = "write"
     orgs: list[OrgBrief]
 
 

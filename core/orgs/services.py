@@ -39,6 +39,14 @@ def _check_ai_manage_teams(org, source: str):
         raise ServiceError({"ai": ai_denied("팀 만들고 사람 넣기")})
 
 
+def _check_ai_delete(org, source: str):
+    """source가 mcp인데 AI 정책이 삭제를 막아 뒀으면 거부한다. 기본값이 막기다."""
+    if source != "mcp":
+        return
+    if not effective("ai.enabled", org=org) or effective("ai.delete", org=org) == "deny":
+        raise ServiceError({"ai": ai_denied("삭제")})
+
+
 def _display_setting(key: str, value) -> str:
     """이력에 남기는 사람이 읽는 문구. 값이 없으면(=기본값) 기본값을 보여 준다."""
     if key == LOCKED:
@@ -240,9 +248,26 @@ def update_team(team, *, name: str, purpose: str = "", actor) -> Team:
     return team
 
 
-def delete_team(team, actor):
-    """팀만 지운다. 멤버는 조직에 그대로 남고 프로젝트도 지워지지 않는다."""
+@transaction.atomic
+def delete_team(team, *, actor, source: str = "web"):
+    """팀만 지운다. 멤버는 조직에 그대로 남고 프로젝트도 지워지지 않는다(M2M 행만 사라진다).
+
+    GitHub 팀 링크가 있으면 함께 사라진다(CASCADE) — 웹훅의 'team deleted' 처리와 같이
+    링크만 지우고 GitHub 쪽 팀은 그대로 둔다.
+    """
     require_admin(actor, team.org)
+    _check_ai_delete(team.org, source)
+    from tasks.models import ChangeLog
+
+    ChangeLog.objects.create(
+        target_type="org",
+        target_id=team.org_id,
+        field="delete",
+        old_value="",
+        new_value=f"팀 {team.name}({team.pk})",
+        actor=actor,
+        source=source,
+    )
     team.delete()
 
 

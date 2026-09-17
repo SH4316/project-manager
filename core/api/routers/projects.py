@@ -8,7 +8,13 @@ from github import services as gh_services
 from orgs.models import Team
 from orgs.services import orgs_of
 from projects.models import Project
-from projects.services import create_project, parse_spec, set_api_spec, update_project
+from projects.services import (
+    create_project,
+    delete_project,
+    parse_spec,
+    set_api_spec,
+    update_project,
+)
 
 from ..context import ctx, org_or_404
 from ..schemas import (
@@ -95,6 +101,15 @@ def patch_project(request, project_id: int, payload: ProjectPatchIn):
         data["teams"] = _teams(data.pop("team_ids") or [])
     p = update_project(p, data, expected_version=version, **ctx(request))
     return project_out(p)
+
+
+@router.delete("/{project_id}", response={204: None, 400: ErrorOut})
+def delete_project_ep(request, project_id: int):
+    """조직 관리자만. 보관된 프로젝트만 지울 수 있다."""
+    p = _project_or_404(request, project_id)
+    c = ctx(request)
+    delete_project(p, actor=c["actor"], source=c["source"])
+    return 204, None
 
 
 @router.get("/{project_id}/api-spec", response=dict)

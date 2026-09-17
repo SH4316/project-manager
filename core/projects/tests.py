@@ -20,6 +20,7 @@ from projects.services import (
     create_dependency,
     create_milestone,
     create_project,
+    delete_project,
     fetch_spec,
     is_owner,
     parse_spec,
@@ -33,7 +34,7 @@ from projects.services import (
     update_project,
 )
 from reports.services import org_status
-from tasks.models import ChangeLog
+from tasks.models import ChangeLog, Task
 from tasks.services import create_task, transition
 
 pytestmark = pytest.mark.django_db
@@ -91,6 +92,45 @@ def test_archive_and_restore(project, admin, member, task):
     )
     p = restore_project(p, actor=admin)
     assert not p.is_archived
+
+
+def test_delete_project_requires_archived_and_admin(project, admin, member):
+    with pytest.raises(ServiceError) as e:
+        delete_project(project, actor=admin)
+    assert "project" in e.value.errors  # 아직 보관하지 않았다
+    archive_project(project, actor=admin)
+    with pytest.raises(ServiceError):
+        delete_project(project, actor=member)  # 일반 멤버는 막힌다
+    pid, org, name = project.pk, project.org, project.name
+    delete_project(project, actor=admin)
+    from projects.models import Project
+
+    assert not Project.objects.filter(pk=pid).exists()
+    log = ChangeLog.objects.get(target_type="org", target_id=org.pk, field="delete")
+    assert name in log.new_value and str(pid) in log.new_value
+
+
+def test_delete_project_removes_tasks(project, admin, member):
+    t = create_task(
+        project=project, title="지워질 태스크", actor=member, source="web", due_date=today_kst()
+    )
+    t = transition(t, "done", actor=member, source="web", expected_version=t.version)
+    archive_project(project, actor=admin)
+    delete_project(project, actor=admin)
+    assert not Task.objects.filter(pk=t.pk).exists()
+
+
+def test_delete_project_ai_delete_default_deny_then_allow(project, admin):
+    archive_project(project, actor=admin)
+    with pytest.raises(ServiceError):
+        delete_project(project, actor=admin, source="mcp")  # 기본값(deny)
+    # archive_project가 project.refresh_from_db()로 project.org 캐시를 새로 채워 뒀으므로
+    # 그 인스턴스에 바로 써야 다음 호출이 최신 설정을 본다.
+    _set_settings(project.org, **{"ai.delete": "allow"})
+    delete_project(project, actor=admin, source="mcp")
+    from projects.models import Project
+
+    assert not Project.objects.filter(pk=project.pk).exists()
 
 
 def test_update_project_conflict(project, admin):

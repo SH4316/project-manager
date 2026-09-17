@@ -8,6 +8,7 @@ from orgs.services import (
     add_team_member,
     create_invite,
     create_team,
+    delete_team,
     remove_team_member,
     revoke_invite,
     set_governance,
@@ -134,6 +135,15 @@ def create_team_ep(request, org_id: int, payload: TeamCreateIn):
     org = org_or_404(request, org_id)
     team = create_team(org=org, name=payload.name, purpose=payload.purpose, actor=request.auth)
     return 201, _team_out(team)
+
+
+@router.delete("/teams/{team_id}", response={204: None, 400: ErrorOut})
+def delete_team_ep(request, team_id: int):
+    """조직 관리자만. 팀만 지운다 — 멤버·프로젝트는 그대로 남는다."""
+    team = _team_or_404(request, team_id)
+    c = ctx(request)
+    delete_team(team, actor=c["actor"], source=c["source"])
+    return 204, None
 
 
 @router.post("/teams/{team_id}/members", response={200: TeamOut, 400: ErrorOut})

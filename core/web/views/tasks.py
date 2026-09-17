@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -16,6 +17,7 @@ from tasks.models import ChangeLog, ChecklistItem, Link
 from ..forms import LinkForm
 from .common import (
     CONFLICT_MSG,
+    can_admin,
     due_class,
     due_full,
     due_label,
@@ -69,6 +71,7 @@ def _panel_ctx(request, task, **extra):
     checklist = list(task.checklist.all())
     ctx = {
         "task": task,
+        "is_admin": can_admin(request.user, task.project.org),
         "checklist": checklist,
         "checklist_done": sum(1 for i in checklist if i.is_done),
         "links": task.links.all(),
@@ -135,6 +138,20 @@ def task_detail(request, task_id):
 @login_required
 def task_panel(request, task_id):
     return _panel(request, task_or_404(request.user, task_id))
+
+
+@login_required
+@require_POST
+def task_delete(request, task_id):
+    """조직 관리자만(서비스가 검사). 체크리스트·링크가 함께 사라진다. 되돌릴 수 없어 확인을 거친다."""
+    task = task_or_404(request.user, task_id)
+    try:
+        ts.delete_task(task, actor=request.user, source="web")
+    except ServiceError as e:
+        messages.error(request, " ".join(e.errors.values()))
+        return redirect("task_detail", task_id=task.pk)
+    messages.success(request, "태스크를 삭제했습니다.")
+    return redirect("today")
 
 
 @login_required

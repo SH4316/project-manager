@@ -430,6 +430,18 @@ SPECS: dict[str, Spec] = {
             ai_only=True,
         ),
         _s(
+            "ai.delete",
+            "choice",
+            "deny",
+            "org",
+            False,
+            "ai",
+            "팀·프로젝트·태스크 삭제",
+            "삭제는 되돌릴 수 없어 기본값이 막기입니다. 사람이 화면에서 지우는 길은 그대로 있습니다.",
+            choices=ALLOW_DENY,
+            ai_only=True,
+        ),
+        _s(
             "ai.manage_repo",
             "choice",
             "allow",

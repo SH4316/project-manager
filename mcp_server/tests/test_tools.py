@@ -10,6 +10,9 @@ TOOL_NAMES = {
     "list_orgs",
     "list_org_repos",
     "connect_repo",
+    "delete_team",
+    "delete_project",
+    "delete_task",
     "list_projects",
     "get_project",
     "list_tasks",
@@ -174,10 +177,17 @@ def test_doc_tools(fake_core, with_token):
     assert fn("get_doc")(7)["body_md"].startswith("# 배경")
 
 
-async def test_tool_names_registered():
-    tools = await s.mcp.list_tools()
+async def test_tool_names_registered(fake_core):
+    """도구 27개가 전부 등록돼 있다는 사실 자체는 그대로다.
+    pm_admin은 admin+write 토큰이라 목록 필터를 통과해도 전부 보인다(필터가 실제로
+    무엇을 거르는지는 test_permissions.py에서 검증한다)."""
+    tok = current_token.set("pm_admin")
+    try:
+        tools = await s.mcp.list_tools()
+    finally:
+        current_token.reset(tok)
     assert {t.name for t in tools} == TOOL_NAMES
-    assert len(TOOL_NAMES) == 27
+    assert len(TOOL_NAMES) == 30
 
 
 def test_governance_tool(fake_core, with_token):
