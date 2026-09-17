@@ -26,10 +26,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     ports:
-      # 0.0.0.0:8000. 다른 장비의 리버스 프록시(NginxProxyManager)가 여기로 붙는다.
-      # 방화벽에서 프록시 장비 IP만 8000번을 열어 둔다 — 직접 오는 요청은 평문 HTTP다.
-      # cloudflared로만 공개한다면 "127.0.0.1:8000:8000"으로 되돌린다.
-      - "8000:8000"
+      # 0.0.0.0의 WEB_PORT(.env, 기본 8000). 다른 장비의 리버스 프록시(NginxProxyManager)가 여기로 붙는다.
+      # 방화벽에서 프록시 장비 IP만 그 포트를 열어 둔다 — 직접 오는 요청은 평문 HTTP다.
+      # cloudflared로만 공개한다면 WEB_PORT를 "127.0.0.1:8000"으로 둔다.
+      - "${WEB_PORT:-8000}:8000"
 
   discord:                       # 발송(60초 틱): 마감 DM·주간 보고
     profiles: ["discord"]        # DISCORD_BOT_TOKEN 없이는 기동에 실패한다 → 기본에서 뺀다
@@ -65,7 +65,7 @@ services:
       - web
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"   # 루프백만. AI 클라이언트를 로컬에서 붙여 볼 때 쓴다
+      - "127.0.0.1:${MCP_PORT:-8080}:8080"   # 루프백만. AI 클라이언트를 로컬에서 붙여 볼 때 쓴다
 
   cloudflared:
     profiles: ["tunnel"]         # TUNNEL_TOKEN 없이는 기동에 실패한다 → 기본에서 뺀다
