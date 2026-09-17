@@ -253,7 +253,8 @@ def test_org_page_renders(logged, org, project):
     assert "새 프로젝트" in body
 
 
-def test_signup_then_no_team_message(client):
+def test_signup_lands_on_org_list_with_create_button(client):
+    """조직이 없는 채로 가입한 사람은 [조직 만들기]가 있는 화면에 내린다."""
     r = client.post(
         "/signup",
         {
@@ -264,8 +265,10 @@ def test_signup_then_no_team_message(client):
         },
     )
     assert r.status_code == 302
-    assert r.headers["Location"] == "/today"
-    assert "초대 링크" in client.get("/today").content.decode()
+    assert r.headers["Location"] == "/orgs"
+    body = client.get("/orgs").content.decode()
+    assert "조직 만들기" in body
+    assert "초대 링크" in body
 
 
 def test_ops_requires_staff(client, member):

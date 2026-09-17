@@ -19,8 +19,10 @@ def signup(request):
     if request.method == "POST" and form.is_valid():
         user = form.save()
         login(request, user)
-        messages.info(request, "가입되었습니다. 조직에 참여하려면 초대 링크가 필요합니다.")
-        return redirect(request.GET.get("next") or "today")
+        messages.info(request, "가입되었습니다. 조직을 만들거나 초대 링크로 참여하세요.")
+        # 갓 가입한 사람은 조직이 없다. 오늘 화면은 빈 목록뿐이라 다음에 뭘 해야 하는지 안 보인다.
+        # 조직 목록은 [조직 만들기]가 있는 화면이다(초대로 온 사람은 next를 타고 그대로 간다).
+        return redirect(request.GET.get("next") or "org_list")
     return render(request, "auth/signup.html", {"form": form})
 
 
