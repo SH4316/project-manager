@@ -58,4 +58,5 @@ def shell(request):
         "current_project_id": match.kwargs.get("project_id") if match else None,
         "page_url": request.get_full_path(),
         "github_enabled": settings.GITHUB_ENABLED,
+        "webmcp_origin_trial": settings.WEBMCP_ORIGIN_TRIAL,
     }

@@ -24,6 +24,41 @@
 | [docs/GUIDE-03-mcp.md](docs/GUIDE-03-mcp.md) | mcp_server 구현 지시서 |
 | [docs/GUIDE-04-deploy.md](docs/GUIDE-04-deploy.md) | 배포 절차 (Proxmox + Docker Compose + Cloudflare Tunnel) |
 
+## 브라우저 안 AI 에이전트 (WebMCP)
+
+로그인한 화면이 [WebMCP](https://github.com/webmachinelearning/webmcp) 도구를 등록한다. 브라우저에 붙은
+AI 에이전트가 지금 보고 있는 사람의 세션 그대로 태스크를 읽고 고칠 수 있다. 토큰을 따로 발급하지 않고,
+원격 MCP(`mcp_server`)와 같은 이름·같은 규칙의 도구를 쓴다.
+
+| | `mcp_server` | WebMCP |
+|---|---|---|
+| 누구를 위한 것인가 | Claude·ChatGPT 등 **밖에 있는** AI | **브라우저 안에서** 이 화면을 보고 있는 AI |
+| 인증 | API 토큰(`/settings/tokens`) | 지금 로그인한 세션 쿠키 |
+| 코드 | [`mcp_server/mcp_server/server.py`](mcp_server/mcp_server/server.py) | [`core/web/static/webmcp.js`](core/web/static/webmcp.js) |
+
+도구는 13개다. 읽기는 `list_orgs` `list_members` `list_projects` `list_tasks` `get_task` `get_today`
+`get_org_status` `get_governance`, 쓰기는 `create_task` `update_task` `transition_task` `append_note`
+`add_to_today`. 전부 `/api`를 그대로 부르므로 권한·낙관적 잠금(version)·검증은 서버 규칙 그대로다.
+쓰기가 끝나면 화면 본문만 다시 그려서 사람이 보는 것과 어긋나지 않게 한다.
+
+### 규약
+
+- 진입점은 표준대로 `document.modelContext`다(`navigator.modelContext`는 폴리필용 대비책).
+- `execute`가 돌려준 값은 **브라우저가 JSON으로 직렬화해** 에이전트에게 준다. 그래서 감싸지 않고 API 응답을 그대로 돌려준다.
+- 실패는 프라미스를 거부하는 대신 `{ok: false, error}`로 돌려준다. 스펙상 거부하면 결과가 `null`이 되어
+  서버가 알려 준 이유(충돌 시 최신 `version`, 검증 실패 사유)가 통째로 사라지기 때문이다
+  ([스펙도 열어 둔 문제](https://webmachinelearning.github.io/webmcp/)).
+- 태스크·메모 본문은 남이 쓴 글이라 모든 도구에 `untrustedContentHint`를, 읽기 도구에는 `readOnlyHint`를 붙였다.
+
+### 켜지는 조건 (둘 다 필요하다)
+
+1. **오리진 트라이얼 토큰** — 크롬 149·엣지 150은 아직 실험 단계라 `WEBMCP_ORIGIN_TRIAL`이 비어 있으면
+   `document.modelContext` 자체가 없다. 로컬에서 시험만 할 때는 `about:flags#enable-webmcp-testing`을 켠다.
+2. **오리진 키 에이전트 클러스터** — 스펙이 요구한다. `common.middleware.origin_agent_cluster`가
+   모든 응답에 `Origin-Agent-Cluster: ?1`을 붙인다. 없으면 `registerTool()`이 `SecurityError`로 죽는다.
+
+지원하지 않는 브라우저에서는 아무 일도 하지 않는다(`document.modelContext`가 없으면 즉시 빠져나온다).
+
 ## 로컬 개발 빠른 시작
 
 ```bash
@@ -126,6 +161,7 @@ docker compose exec -T web python manage.py loaddata --format=json - < devdata.j
 | `ALLOWED_HOSTS` | core | 쉼표로 구분한 호스트 목록 |
 | `CSRF_TRUSTED_ORIGINS` | core | 쉼표로 구분한 오리진(스킴 포함) |
 | `SITE_URL` | core | 링크·초대 URL을 만들 때 쓰는 기준 주소 |
+| `WEBMCP_ORIGIN_TRIAL` | core | WebMCP 오리진 트라이얼 토큰. 비우면 브라우저 도구 등록만 빠진다 |
 | `POSTGRES_PASSWORD` | db·core | Postgres 비밀번호 |
 | `CLOUDFLARE_TUNNEL_TOKEN` | cloudflared | 터널 토큰 |
 
