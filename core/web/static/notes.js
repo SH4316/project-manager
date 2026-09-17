@@ -67,8 +67,30 @@
     // ---------- 렌더 ----------
     function autosize(ta) { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; }
 
+    // 번호 목록의 표시 번호. 마크다운 관행대로 **첫 항목의 숫자에서 시작해 1씩 올린다** —
+    // 사람들이 모든 줄에 `1.`을 적어도 1. 2. 3.으로 보여야 한다. 원문은 적은 그대로 둔다.
+    function numbering(all) {
+      var out = [], start = 1, count = 0, run = false;
+      for (var i = 0; i < all.length; i++) {
+        var m = /^\s*(\d+)\.\s+/.exec(all[i]);
+        if (m) {
+          if (!run) { start = parseInt(m[1], 10); count = 0; run = true; }
+          out[i] = start + count + ".";
+          count++;
+        } else {
+          out[i] = null;
+          // 빈 줄은 목록을 끊지 않는다. 다른 내용이 끼면 거기서 새 목록이 시작된다.
+          if (all[i].trim() !== "") run = false;
+        }
+      }
+      return out;
+    }
+
+    var marks = [];
+
     function block(raw, i) {
       var b = parse(raw);
+      if (b.type === "li" && marks[i]) b.marker = marks[i];
       var wrap = document.createElement("div");
       wrap.className = "blk blk-" + b.type + (b.type === "h" ? " h" + b.level : "");
       if (b.type === "rule") {
@@ -119,6 +141,7 @@
     }
 
     function render() {
+      marks = numbering(lines);
       while (bodyEl.firstChild) bodyEl.removeChild(bodyEl.firstChild);
       for (var i = 0; i < lines.length; i++) {
         bodyEl.appendChild(!readonly && i === editing ? editor(lines[i], i) : block(lines[i], i));
