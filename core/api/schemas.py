@@ -269,6 +269,14 @@ class DiscordActorIn(Schema):
     discord_user_id: str
 
 
+class DiscordOrgChannelIn(Schema):
+    """길드 안에서 `/알림채널`을 실행했을 때. 길드에 붙은 조직의 알림 채널을 정한다."""
+
+    discord_user_id: str
+    guild_id: str
+    channel_id: str
+
+
 class DiscordExtendIn(Schema):
     discord_user_id: str
     due_date: date

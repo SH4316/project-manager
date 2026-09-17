@@ -58,4 +58,5 @@ def shell(request):
         "current_project_id": match.kwargs.get("project_id") if match else None,
         "page_url": request.get_full_path(),
         "github_enabled": settings.GITHUB_ENABLED,
+        "discord_enabled": bool(settings.DISCORD_CLIENT_ID),
     }

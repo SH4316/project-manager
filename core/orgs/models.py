@@ -28,6 +28,19 @@ class Organization(models.Model):
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL, through="OrgMembership", related_name="orgs"
     )
+    # Discord 바인딩(IMPL-PLAN-4 §8.4). 길드 하나는 조직 하나에만 붙는다 — 한 채널에 두 조직의
+    # 알림이 섞이면 아무도 안 본다. 채널은 길드 안에서 `/알림채널`로 정한다(core는 봇 토큰이 없다).
+    discord_guild_id = models.CharField(
+        "Discord 서버", max_length=32, null=True, blank=True, unique=True
+    )
+    discord_channel_id = models.CharField("알림 채널", max_length=32, blank=True)
+    discord_linked_at = models.DateTimeField(null=True, blank=True)
+    discord_linked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    # 이 줄은 반드시 settings.AUTH_USER_MODEL을 쓰는 필드들 뒤에 온다 —
+    # 클래스 본문에서 이름이 가려져 django.conf.settings를 더 못 읽기 때문이다.
+    settings = models.JSONField("설정", default=dict, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -113,6 +126,7 @@ class Invite(models.Model):
     expires_at = models.DateTimeField(default=_default_expiry)
     revoked_at = models.DateTimeField(null=True, blank=True)
     use_count = models.PositiveIntegerField(default=0)
+    max_uses = models.PositiveIntegerField("최대 사용 횟수", default=0)  # 0=무제한
 
     class Meta:
         ordering = ["-created_at"]

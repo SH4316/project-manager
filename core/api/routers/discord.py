@@ -12,7 +12,9 @@ from ninja.errors import HttpError
 
 from accounts.models import User
 from accounts.services import link_discord, unlink_discord_by_id, user_by_discord_id
-from orgs.models import Team
+from orgs import discord as org_discord
+from orgs import settings as org_settings
+from orgs.models import OrgMembership, Team
 from orgs.services import orgs_of, set_team_channel
 from projects.models import Project
 from projects.services import set_project_channel
@@ -37,6 +39,7 @@ from ..schemas import (
     DiscordExtendIn,
     DiscordLinkIn,
     DiscordNoteIn,
+    DiscordOrgChannelIn,
     DiscordStatusIn,
     DiscordTaskCreateIn,
     DiscordTaskUpdateIn,
@@ -135,6 +138,66 @@ def _assignee(assignee_id: int | None):
     if user is None:
         raise HttpError(400, "담당자를 찾을 수 없습니다.")
     return user
+
+
+@router.get("/orgs", response=list[dict])
+def orgs(request):
+    """Discord 서버가 붙은 조직 전부. 틱이 이 목록을 돌며 조직마다 알림을 보낸다.
+
+    `settings`는 **실효 설정**이다 — 봇이 기본값을 따로 알 필요가 없게 여기서 다 채워 보낸다.
+    """
+    out = []
+    for org in org_discord.bound_orgs():
+        values = {
+            spec.key: org_settings.effective(spec.key, org=org)
+            for spec in org_settings.SPECS.values()
+            if spec.scope == "org"
+        }
+        out.append(
+            {
+                "org_id": org.pk,
+                "name": org.name,
+                "guild_id": org.discord_guild_id,
+                "channel_id": org.discord_channel_id,
+                "settings": values,
+            }
+        )
+    return out
+
+
+@router.get("/orgs/{int:org_id}/members", response=list[dict])
+def org_members(request, org_id: int):
+    """그 조직의 멤버와 개인 알림 설정. 봇이 누구에게 무엇을 보낼지 여기서 정한다."""
+    rows = (
+        OrgMembership.objects.filter(org_id=org_id, user__is_active=True)
+        .select_related("user")
+        .order_by("user__display_name")
+    )
+    out = []
+    for m in rows:
+        u = m.user
+        out.append(
+            {
+                "id": u.pk,
+                "display_name": u.display_name,
+                "discord_user_id": u.discord_user_id,
+                "role": m.role,
+                "notify": {
+                    "notify_dm": org_settings.effective("user.notify_dm", user=u),
+                    "notify_kinds": list(org_settings.effective("user.notify_kinds", user=u)),
+                    "notify_hour": org_settings.effective("user.notify_hour", user=u),
+                },
+            }
+        )
+    return out
+
+
+@router.post("/orgs/channel", response=dict)
+def org_channel(request, payload: DiscordOrgChannelIn):
+    """`/알림채널`. 길드에 붙은 조직의 관리자만 바꿀 수 있다(서비스가 검사한다)."""
+    actor = _actor(payload.discord_user_id)
+    org = org_discord.set_channel_by_guild(payload.guild_id, actor, payload.channel_id)
+    return {"org_id": org.pk, "name": org.name, "channel_id": org.discord_channel_id}
 
 
 @router.post("/projects", response=list[dict])

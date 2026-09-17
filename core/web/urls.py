@@ -4,6 +4,7 @@ from django.urls import path
 from .forms import LoginForm
 from .views import (
     auth,
+    discord,
     docs,
     events,
     github,
@@ -147,6 +148,10 @@ urlpatterns = [
         name="task_note_unlink",
     ),
     # ---- V2-07: GitHub 읽기 (아래는 이 단계에서 추가) ----
+    path("orgs/<int:org_id>/discord", discord.org_discord, name="org_discord"),
+    path("orgs/<int:org_id>/discord/connect", discord.discord_connect, name="discord_connect"),
+    path("orgs/<int:org_id>/discord/unlink", discord.discord_unlink, name="discord_unlink"),
+    path("orgs/discord/installed", discord.discord_installed, name="discord_installed"),
     path("orgs/<int:org_id>/github", github.org_github, name="org_github"),
     path("orgs/<int:org_id>/github/install", github.github_install, name="github_install"),
     path("orgs/github/installed", github.github_installed, name="github_installed"),

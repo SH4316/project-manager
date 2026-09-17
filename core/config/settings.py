@@ -136,6 +136,9 @@ GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 # .env에는 한 줄로 들어 있다. 줄바꿈 자리의 \n 을 되돌린다.
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY", "").replace("\\n", "\n")
+# Discord 앱의 Client ID(= Application ID). 비밀이 아니다 — 조직이 봇을 자기 서버에 설치하는
+# 링크를 만들 때만 쓴다. 봇 토큰은 여기 없다(.env.discord에만 있다, GUIDE-00 §3).
+DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
 # 사용자 GitHub 토큰을 Fernet으로 암호화하는 키. 갈면 저장된 토큰을 전부 못 읽는다.
 CREDENTIAL_KEY = os.environ.get("CREDENTIAL_KEY", "")
 # 설정이 없으면 GitHub 화면과 버튼을 아예 그리지 않는다(개발·테스트 환경).

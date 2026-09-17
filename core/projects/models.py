@@ -43,6 +43,9 @@ class Project(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    governance_extra = models.TextField("프로젝트 거버넌스", blank=True)
+    # settings.AUTH_USER_MODEL을 쓰는 필드들 뒤에 온다(orgs.Organization.settings와 같은 이유).
+    settings = models.JSONField("설정", default=dict, blank=True)
 
     class Meta:
         ordering = ["name"]
