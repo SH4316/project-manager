@@ -1279,6 +1279,7 @@ def test_project_settings_groups_share_one_card_with_the_save_button(client, pro
     rules = body[body.index('<form method="post">') : body.index("설정 저장")]
     assert rules.count('<section class="card') == 1
 
+
 def test_webmcp_script_only_for_logged_in(logged, org, project):
     """WebMCP 도구는 로그인한 세션으로 API를 부른다. 로그인 전 화면에는 실리지 않는다."""
     assert "webmcp.js" in logged.get("/today").content.decode()
