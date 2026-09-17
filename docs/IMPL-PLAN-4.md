@@ -351,6 +351,12 @@ governance_extra = models.TextField("프로젝트 거버넌스", blank=True)   #
 # accounts.User
 settings = models.JSONField("설정", default=dict, blank=True)
 
+# orgs.Organization — Discord 바인딩 (§8.4)
+discord_guild_id = models.CharField("Discord 서버", max_length=32, blank=True, unique=True, null=True)
+discord_channel_id = models.CharField("알림 채널", max_length=32, blank=True)
+discord_linked_at = models.DateTimeField(null=True, blank=True)
+discord_linked_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
 # orgs.Invite
 max_uses = models.PositiveIntegerField("최대 사용 횟수", default=0)      # 0=무제한
 
@@ -601,6 +607,66 @@ AI 정책
 
 `.env.discord`의 `SEND_HOUR`·`WEEKLY_*`는 남기되 README에 "조직 설정이 있으면 그것이 우선"이라 적는다.
 
+### 8.4 조직별 Discord 바인딩 (2026-09-17 추가)
+
+**문제.** 지금은 `.env.discord`의 `ORG_ID`·`DISCORD_GUILD_ID`·`DISCORD_CHANNEL_ID` 한 벌이 전부라
+**조직 하나 = 컨테이너 한 벌**이다. 조직마다 Discord 서버가 다른 것이 정상인데 그 관계를 담을 자리가 없다.
+GitHub은 이미 조직마다 설치를 붙이는데(`GitHubInstallation.org` OneToOne) Discord만 환경 변수에 박혀 있었다.
+
+**방침.** 봇은 **하나**다(토큰 한 개, 여러 길드에 설치). 조직↔길드는 **DB**에 둔다. 환경 변수에는 봇 토큰만 남는다.
+
+| | 전 | 후 |
+|---|---|---|
+| 조직 선택 | `.env.discord`의 `ORG_ID` | `Organization.discord_guild_id`가 있는 조직 전부를 틱이 순회 |
+| 길드 | `.env.discord`의 `DISCORD_GUILD_ID` | `Organization.discord_guild_id` |
+| 알림 채널 | `.env.discord`의 `DISCORD_CHANNEL_ID` | `Organization.discord_channel_id` |
+| 봇 토큰 | `.env.discord` | 그대로 (`.env.discord`) |
+
+#### 연결 절차 — GitHub 앱 설치와 같은 모양
+
+1. 조직 관리자가 `/orgs/<id>/discord`에서 **[Discord 서버 연결]**
+2. 세션에 `dc_state`·`dc_org`를 두고 Discord 인증 화면으로 보낸다:
+   `https://discord.com/oauth2/authorize?client_id=<DISCORD_CLIENT_ID>&scope=bot+applications.commands`
+   `&permissions=3088&response_type=code&redirect_uri=<SITE_URL>/orgs/discord/installed&state=<state>`
+3. 관리자가 서버를 고르면 Discord가 `?code=&guild_id=&permissions=&state=`로 되돌려 보낸다.
+   `/orgs/discord/installed`가 `state`를 대조하고(GitHub `github_installed`와 같은 CSRF 방어) `guild_id`를 저장한다.
+4. 알림 채널은 **길드 안에서** 슬래시 명령 `/알림채널`로 정한다(그 채널에서 실행 → 그 채널 id가 저장된다).
+
+**채널을 웹에서 고르지 않는 이유**: 채널 목록을 뽑으려면 봇 토큰이 필요한데, core가 그 토큰을 갖는 순간
+GUIDE-00 §3의 비밀 반경(웹 프로세스에 봇 토큰을 두지 않는다)이 깨진다. `DISCORD_CLIENT_ID`는 비밀이 아니다.
+
+**초대 링크를 쓰지 않는 이유**: 조직 초대 링크는 멤버 전원에게 뿌리는 값이라, 그것으로 길드를 묶으면
+멤버 누구나 아무 서버를 조직에 붙일 수 있다. 위 절차는 **PM 조직 관리자**(state는 그 세션에서 나온다)와
+**길드의 Manage Server 권한자**(Discord가 그 사람에게만 서버 선택을 보여 준다) 둘 다를 요구한다.
+
+#### 코드에 미치는 곳
+
+| 자리 | 변화 |
+|---|---|
+| `core/orgs/models.py` | 위 필드 4개. `discord_guild_id`는 unique — 한 길드는 한 조직에만 붙는다 |
+| `core/orgs/services.py` | `link_discord_guild(org, guild_id, actor)`·`unlink_discord_guild`·`set_org_channel(org, channel_id, actor)` (전부 `require_admin`, ChangeLog `target="org"`) |
+| `core/web/views/discord.py` (새) | 조직 탭 `/orgs/<id>/discord`, `/orgs/<id>/discord/connect`, `/orgs/discord/installed`, 해제 |
+| `core/api/routers/discord.py` | `GET /orgs`(bot 토큰 전용): 바인딩된 조직 목록 `[{org_id, name, guild_id, channel_id, settings}]`. `POST /orgs/channel`: `/알림채널`이 부른다 |
+| `discord_service/config.py` | `ORG_ID`·`DISCORD_GUILD_ID`·`DISCORD_CHANNEL_ID` **삭제**. `SEND_HOUR`·`WEEKLY_*`는 fallback으로 유지 |
+| `discord_service/scheduler.py` | 틱마다 `core.orgs()`를 읽어 **조직마다** 마감·주간·에스컬레이션을 돈다 |
+| `discord_service/store.py` | 중복 방지 키에 org를 넣는다: `daily(org_id, kind, date)`, `weekly(org_id, period_start)`. `sent`는 `task_id`가 전역 유일이라 그대로 |
+| `discord_service/listener.py` | 바인딩된 길드 **전부**에 슬래시 명령 동기화. 길드가 늘면 다음 기동에 반영 |
+| `discord_service/channels.py` | 팀·프로젝트 채널은 그 길드에 바인딩된 조직의 것만 다룬다 |
+| `/ops` | `IntegrationStatus` 한 줄 유지, `detail`에 조직별 집계를 담는다 |
+
+#### 조직 컨텍스트 규칙 (사용자 결정 2026-09-17)
+
+- **DM 명령(`오늘`·`완료 12`)은 사용자의 모든 조직을 본다.** 지금도 `/api/integrations/discord/*`가
+  `orgs_of(actor)`로 범위를 잡으므로 대부분 코드 변경이 없다. 조직이 여럿이면 목록에 조직 이름을 함께 찍는다.
+- **길드 안 슬래시 명령은 그 길드에 바인딩된 조직만 본다.** 바인딩이 없으면 "이 서버는 아직 조직에 연결되지 않았습니다"로 끝낸다.
+  자동완성도 그 조직으로 좁힌다.
+
+#### 안 하는 것
+
+- 조직마다 봇 토큰(멀티 테넌시). 봇 하나로 충분하고, 토큰을 조직마다 받으면 암호화 저장과 조직별 앱 등록이 따라온다.
+- 길드 하나를 여러 조직에 붙이기. `unique`로 막는다 — 채널 하나에 두 조직의 알림이 섞이면 아무도 안 본다.
+- 웹에서 채널 목록 고르기(위 이유).
+
 ---
 
 ## 9. 테스트
@@ -628,7 +694,8 @@ AI 정책
 | **0. 기반** | 필드 5개 + 마이그레이션, `orgs/settings.py` 레지스트리(전 항목 정의, 강제는 아직 3개), `effective`·`clean`·서비스 3개, ChangeLog target `org`, 조직 설정 화면, API GET/PUT. 강제 3개: `task.priority_cap`·`task.review_required`·`project.create_by` | 설정을 안 건드린 조직에서 기존 테스트 전부 통과. 세 규칙이 웹·API에서 같은 문구로 막힌다 |
 | **1. 규칙 전부** | `task.*` 나머지, `project.*`·`org.*` 전부, `is_owner`·`require_level`, `update_task(reason=)`, `Invite.max_uses`, 프로젝트 설정 화면·잠금·거버넌스 문단, 저장소 규칙 폼 권한 좁히기, 오류 문구 링크 | §3.4 표의 모든 행에 테스트 |
 | **2. AI 정책** | `ai.*` 전부(`source="mcp"` 분기), MCP `get_settings`·INSTRUCTIONS, 거버넌스 화면 "강제 중" 블록 | MCP 테스트가 거부 문구를 받는다. 헤더 없는 같은 토큰은 걸리지 않는다 |
-| **3. 알림·개인** | `notify.*`·`user.*`, 개인 설정 화면, members `notify`, discord_service 4파일 | 설정을 안 건드리면 discord 테스트 58개 그대로. `escalate` 1건 발송을 가짜 transport로 |
+| **3. 알림·개인** | `notify.*`·`user.*`, 개인 설정 화면, members `notify`, discord_service 4파일 | 설정을 안 건드리면 discord 테스트가 그대로 통과. `escalate` 1건 발송을 가짜 transport로 |
+| **3b. Discord 바인딩** | §8.4 전부: 조직 필드·연결 화면·`GET /orgs`·`/알림채널`·틱의 조직 순회·store 키·길드별 명령 동기화 | 조직 둘을 각각 다른 길드에 붙인 상태로 마감 DM·주간 보고가 서로 섞이지 않는다 |
 | **4. 승인 대기 큐** | **별도 계획서(IMPL-PLAN-5).** `PendingChange` 모델, `ai.* = pending`, 승인 화면. 이 라운드는 값만 예약한다 | — |
 
 0 → 1 → 2는 순서대로. 3은 0 뒤면 언제든(다른 파트). 모델 분배는 기존 방식: 탐색은 Haiku, 1·3단계 구현은 Sonnet,
@@ -665,6 +732,15 @@ AI 정책
 | 5 | 알림 시각을 조직 설정으로 옮길까 | **옮기되 env는 fallback** | 재배포 없이 바꿀 수 있어야 한다. env를 지우면 기존 배포가 깨진다 |
 | 6 | `ai.priority_cap` 기본 7을 처음부터 강제할까 | **강제한다** | 거버넌스 기본안이 숫자를 정했고, AI가 전부 10을 찍는 문제가 실제다. 사람은 걸리지 않는다 |
 | 7 | 저장소 규칙 편집 권한 축소(멤버 → 프로젝트 관리자) | **축소한다** | §3.4 근거. 지금 편집하는 사람도 사실상 프로젝트 관리자다 |
+
+### 12.1 2026-09-17 결정 (사용자 확답)
+
+| # | 질문 | 결정 |
+|---|---|---|
+| 8 | 이번 구현 범위 | **0~3단계 전부 + §8.4 바인딩** |
+| 9 | 봇 토큰 | **봇 하나를 여러 길드에.** 조직마다 토큰을 받지 않는다 |
+| 10 | 조직↔길드 연결 방법 | **Discord OAuth 설치 링크의 `state`+`guild_id` 왕복**(GitHub 앱과 같은 모양). 조직 초대 링크는 쓰지 않는다(§8.4 근거). 이 경로가 막히면 길드 슬래시 명령 `/조직연결 <코드>`로 대체 |
+| 11 | 조직 컨텍스트 | **DM은 모든 조직, 길드는 그 길드의 조직** |
 
 ---
 
