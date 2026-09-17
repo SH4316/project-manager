@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}API 토큰{% endblock %}
 {% block main %}
+{% with settings_tab="tokens" %}{% include "settings/_tabs.html" %}{% endwith %}
 {% if new_token %}
 <div class="card">
   <h2>새 토큰</h2>
@@ -8,7 +9,7 @@
 </div>
 {% endif %}
 <section class="card">
-  <h1 class="t24">API 토큰</h1>
+  <h2>API 토큰</h2>
   <table class="grid">
     <thead><tr><th>이름</th><th>앞자리</th><th>범위</th><th>만료</th><th></th></tr></thead>
     <tbody>
@@ -18,11 +19,23 @@
       <td><code>{{ t.prefix|slice:"3:" }}…</code></td>
       <td>{{ t.get_scope_display }}</td>
       <td>{{ t.expires_at|date:"Y-m-d"|default:"없음" }}</td>
-      <td>{% if not t.revoked_at %}<form method="post" action="{% url 'token_revoke' t.pk %}">{% csrf_token %}<button class="btn sm">폐기</button></form>{% endif %}</td>
+      <td>{% if not t.revoked_at %}<form method="post" action="{% url 'token_revoke' t.pk %}">{% csrf_token %}<button class="btn sm danger">폐기</button></form>{% endif %}</td>
     </tr>
     {% empty %}<tr><td colspan="5" class="muted">토큰이 없습니다.</td></tr>{% endfor %}
     </tbody>
   </table>
+  {% if revoked_tokens %}
+  <details>
+    <summary>폐기된 토큰 {{ revoked_tokens|length }}개</summary>
+    <table class="grid" style="margin-top:8px">
+      <tbody>
+      {% for t in revoked_tokens %}
+      <tr class="muted"><td>{{ t.name }} <span class="badge">폐기됨</span></td><td><code>{{ t.prefix|slice:"3:" }}…</code></td><td>{{ t.revoked_at|date:"Y-m-d" }} 폐기</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
   <form method="post" class="row">{% csrf_token %}
     <label class="field">{{ form.name.label }}{{ form.name }}</label>
     <label class="field">{{ form.scope.label }}{{ form.scope }}</label>
@@ -35,7 +48,7 @@
   <table class="grid">
     <thead><tr><th>클라이언트</th><th>설정</th></tr></thead>
     <tbody>
-      <tr><td>Claude Code</td><td><code>claude mcp add --transport http sandol &lt;MCP_URL&gt;/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"</code></td></tr>
+      <tr><td>Claude Code</td><td><code>claude mcp add --transport http sandol &lt;MCP_URL&gt;/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"</code> <button type="button" class="btn sm" data-copy-text='claude mcp add --transport http sandol &lt;MCP_URL&gt;/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"' data-copy-label="명령 복사됨">복사</button></td></tr>
       <tr><td>Codex CLI</td><td><code>~/.codex/config.toml</code>에 <code>[mcp_servers.sandol]</code> <code>url = "&lt;MCP_URL&gt;/mcp"</code> <code>bearer_token_env_var = "SANDOL_TOKEN"</code> 추가, 환경 변수 <code>SANDOL_TOKEN=&lt;TOKEN&gt;</code></td></tr>
       <tr><td>Claude 앱 / claude.ai</td><td>설정 → 커넥터 → 커스텀 커넥터 추가 → URL <code>&lt;MCP_URL&gt;/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
       <tr><td>ChatGPT</td><td>설정 → 커넥터(개발자 모드) → 추가 → URL <code>&lt;MCP_URL&gt;/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>

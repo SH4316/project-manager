@@ -262,7 +262,7 @@ def test_close_issue_view_explains_refusal(installed, as_admin, repo_ready, call
     task, link = repo_ready
     r = as_admin.post(f"/tasks/{task.pk}/git/issue/close")
     assert r.status_code == 200
-    assert "태스크가 완료되기 전에는 이슈를 닫을 수 없어요." in r.content.decode()
+    assert "태스크를 완료하기 전에는 이슈를 닫을 수 없습니다." in r.content.decode()
     assert calls == []
 
     transition(task, "done", actor=task.assignee, source="web", expected_version=task.version)
@@ -274,5 +274,5 @@ def test_close_issue_view_explains_refusal(installed, as_admin, repo_ready, call
 
     r = as_admin.post(f"/tasks/{task.pk}/git/issue/close")
     assert r.status_code == 200
-    assert "이미 닫힌 이슈예요." in r.content.decode()
+    assert "이미 닫힌 이슈입니다." in r.content.decode()
     assert len(calls) == 1  # 두 번째 거부에도 GitHub 쓰기는 없다

@@ -11,11 +11,13 @@
   <form id="me-filter" method="get" class="row">
     <input type="hidden" name="group" value="{{ group }}">
     <input type="hidden" name="sort" value="{{ sort }}">
-    <span class="row" role="group" aria-label="묶음" style="gap:4px">
-      {% for code, label in group_options %}<button class="btn" name="group" value="{% if code == group %}none{% else %}{{ code }}{% endif %}" aria-pressed="{% if code == group %}true{% else %}false{% endif %}">{{ label }}</button>{% endfor %}
+    <span class="seg" role="group" aria-label="묶음">
+      <span class="seg-label">묶음</span>
+      {% for code, label in group_options %}<button class="btn sm" name="group" value="{{ code }}" aria-pressed="{% if code == group %}true{% else %}false{% endif %}">{{ label }}</button>{% endfor %}
     </span>
-    <span class="row" role="group" aria-label="정렬" style="gap:4px">
-      {% for code, label in sort_options %}<button class="btn" name="sort" value="{{ code }}" aria-pressed="{% if code == sort %}true{% else %}false{% endif %}">{{ label }}</button>{% endfor %}
+    <span class="seg" role="group" aria-label="정렬">
+      <span class="seg-label">정렬</span>
+      {% for code, label in sort_options %}<button class="btn sm" name="sort" value="{{ code }}" aria-pressed="{% if code == sort %}true{% else %}false{% endif %}">{{ label }}</button>{% endfor %}
     </span>
     <select name="due" class="select auto" aria-label="기한" onchange="this.form.requestSubmit()">{% for code, label in due_options %}<option value="{{ code }}"{% if code == f.due %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     <select name="project" class="select auto" aria-label="프로젝트" onchange="this.form.requestSubmit()"><option value="">모든 프로젝트</option>{% for p in projects %}<option value="{{ p.pk }}"{% if p.pk|stringformat:"s" == f.project %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
@@ -31,11 +33,11 @@
   {% elif g.flat %}<ul class="tasks">{% for r in g.rows %}{% task_row r %}{% endfor %}</ul>
   {% else %}
     {% for p in g.projects %}
-    <div class="subgroup">
+    <div class="subgroup{% if g.projects|length == 1 and group != "project" %} bare{% endif %}">
       <div class="head">
         <a class="btn link" href="{% url 'project_detail' p.project.pk %}">{{ p.project.name }}</a>
-        <span class="muted t13">{{ p.count_label }}</span>
-        <div class="bar" role="img" aria-label="{{ p.pct }}% 완료"><i style="width:{{ p.pct }}%"></i></div>
+        <span class="muted t13">{% if group == "project" %}{{ p.count_label }}{% else %}{{ p.rows|length }}건{% endif %}</span>
+        {% if group == "project" %}<div class="bar" role="img" aria-label="{{ p.pct }}% 완료"><i style="width:{{ p.pct }}%"></i></div>{% endif %}
       </div>
       <ul class="tasks">{% for r in p.rows %}{% task_row r %}{% endfor %}</ul>
     </div>

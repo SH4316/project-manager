@@ -12,11 +12,11 @@
       <a class="btn sm" href="{% url 'today' %}?schedule={% if schedule_open %}0{% else %}1{% endif %}" aria-pressed="{% if schedule_open %}true{% else %}false{% endif %}">일정 보기</a>
     </div>
   </div>
+  <p class="t13">오늘 마감 <a href="{% url 'me' %}?due=today">{{ counts.due_today }}</a> · 기한 초과 <a href="{% url 'me' %}?due=overdue">{{ counts.overdue }}</a> · 검토 대기 <a href="{% url 'me' %}?status=review">{{ counts.review }}</a> · 막힘 <a href="{% url 'me' %}?status=blocked">{{ counts.blocked }}</a></p>
   {% if counts.auto_pulled %}<p class="muted t13">마감 {{ auto_pull_days }}일 이내 자동 추가 {{ counts.auto_pulled }}건.</p>{% endif %}
   {% if counts.excluded %}<p class="muted t13">오늘 제외 {{ counts.excluded }}건 · <button type="button" class="btn link" hx-post="{% url 'today_restore' %}" hx-target="#today-list" hx-swap="outerHTML">제외한 태스크 복원</button></p>{% endif %}
   <ul class="tasks">
-    {% for r in rows %}{% task_row r %}{% empty %}<li class="muted">오늘 할 일을 골라 보세요. 내 태스크에서 "오늘 추가"를 누르면 여기에 옵니다.</li>{% endfor %}
+    {% for r in rows %}{% task_row r %}{% empty %}<li class="muted">담긴 태스크가 없습니다. 내 태스크에서 “오늘 추가”를 누르면 여기에 표시됩니다.</li>{% endfor %}
   </ul>
   <details><summary>오늘 완료 ({{ done_rows|length }})</summary><ul class="tasks" style="margin-top:8px">{% for r in done_rows %}{% task_row r %}{% endfor %}</ul></details>
-  <p class="t13">오늘 마감 <a href="{% url 'me' %}?due=today">{{ counts.due_today }}</a> · 기한 초과 <a href="{% url 'me' %}?due=overdue">{{ counts.overdue }}</a> · 검토 대기 <a href="{% url 'me' %}?status=review">{{ counts.review }}</a> · 막힘 <a href="{% url 'me' %}?status=blocked">{{ counts.blocked }}</a></p>
 </section>

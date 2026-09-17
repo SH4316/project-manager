@@ -58,7 +58,9 @@ def tokens(request):
         "settings/tokens.html",
         {
             "form": form,
-            "tokens": request.user.tokens.all(),
+            # 폐기된 토큰이 활성 토큰과 섞이면 살아 있는 것을 세기 어렵다
+            "tokens": request.user.tokens.filter(revoked_at__isnull=True),
+            "revoked_tokens": request.user.tokens.filter(revoked_at__isnull=False),
             "new_token": request.session.pop("new_token", None),
         },
     )

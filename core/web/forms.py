@@ -1,5 +1,5 @@
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 
 from accounts.models import User
 from orgs.models import Team
@@ -9,11 +9,20 @@ from tasks.models import Link
 PRIORITY_CHOICES = [(n, str(n)) for n in range(10, 0, -1)]
 
 
+class LoginForm(AuthenticationForm):
+    """기본 폼의 라벨은 '사용자 이름'이다 — 가입 화면과 같은 말로 부른다."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["username"].label = "아이디"
+
+
 class SignupForm(UserCreationForm):
     class Meta:
         model = User
         fields = ("username", "display_name")
         labels = {"username": "아이디", "display_name": "표시 이름"}
+        help_texts = {"username": "영문·숫자와 @ . + - _ 만, 150자 이하"}
 
 
 class OrgForm(forms.Form):
@@ -54,36 +63,6 @@ class ProjectForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["owners"].queryset = org.members.filter(is_active=True).order_by("display_name")
         self.fields["teams"].queryset = org.teams.all()
-
-
-class TaskForm(forms.Form):
-    """전체 수정 화면(/tasks/{id}/edit). 담당자·프로젝트·기한 미정 사유는 여기서만 바꾼다."""
-
-    project = forms.ModelChoiceField(label="프로젝트", queryset=Project.objects.none())
-    title = forms.CharField(label="제목", max_length=200)
-    assignee = forms.ModelChoiceField(label="담당자", queryset=User.objects.none())
-    priority = forms.TypedChoiceField(
-        label="중요도", choices=PRIORITY_CHOICES, coerce=int, initial=5
-    )
-    due_date = forms.DateField(
-        label="목표 기한", required=False, widget=forms.DateInput(attrs={"type": "date"})
-    )
-    no_due_reason = forms.CharField(label="기한 미정 사유", max_length=200, required=False)
-    description = forms.CharField(
-        label="설명", required=False, widget=forms.Textarea(attrs={"rows": 4})
-    )
-    done_when = forms.CharField(label="완료 조건", max_length=300, required=False)
-    next_action = forms.CharField(label="다음 행동", max_length=200, required=False)
-    version = forms.IntegerField(widget=forms.HiddenInput)
-
-    def __init__(self, *args, org, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.filter(
-            org=org, is_archived=False
-        ).order_by("name")
-        self.fields["assignee"].queryset = org.members.filter(is_active=True).order_by(
-            "display_name"
-        )
 
 
 class TaskInlineForm(forms.Form):

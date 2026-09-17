@@ -20,7 +20,7 @@ SLASH_HELP = """슬래시 명령으로도 됩니다. 답장은 나에게만 보�
 • `/오늘` · `/완료` · `/연장` · `/연결` · `/연결해제`
 • `/태스크만들기` · `/태스크수정` · `/메모` · `/상태`
 • `/팀채널` · `/프로젝트채널` — 조직 관리자만
-번호·프로젝트·팀·담당자는 입력하면 목록이 뜹니다. 숫자를 외울 필요 없어요."""
+번호·프로젝트·팀·담당자는 입력하면 목록이 뜹니다. 숫자를 외울 필요는 없습니다."""
 
 
 def mention(assignee: dict) -> str:
@@ -52,14 +52,14 @@ def deadline_message(kind: str, tasks: list[dict], today: str) -> str:
     lines = [
         task_line(t) + (f"  (기한 {t['due_date']})" if kind == "overdue" else "") for t in tasks
     ]
-    tail = "\n답장으로 처리할 수 있어요: `완료 12` · `연장 12 2026-09-20 사유` · `도움`"
+    tail = "\n답장으로 처리할 수 있습니다: `완료 12` · `연장 12 2026-09-20 사유` · `도움`"
     return head + "\n" + "\n".join(lines) + tail
 
 
 def dm_blocked_message(assignee: dict) -> str:
     """DM이 막힌 사람에게 팀 채널로 알리는 문구. 태스크 내용은 넣지 않는다."""
     return (
-        f"{mention(assignee)} 마감 알림 DM을 보낼 수 없어요. 서버 우클릭 → 개인정보 보호 설정 →"
+        f"{mention(assignee)} 마감 알림 DM을 보낼 수 없습니다. 서버 우클릭 → 개인정보 보호 설정 →"
         " '서버 멤버의 DM 허용'을 켜 주세요."
     )
 

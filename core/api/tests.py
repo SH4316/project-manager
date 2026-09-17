@@ -480,3 +480,127 @@ def test_api_spec_put_endpoint(client, write_token, read_token, project):
         headers={"Authorization": f"Bearer {read_token}"},
     )
     assert r.status_code == 403
+
+
+# ---------- 프로젝트 문서 (AI가 읽는 경로) ----------
+
+
+def test_api_lists_docs_without_body(api, project, member):
+    from projects.docs import create_doc
+
+    create_doc(project=project, actor=member, title="설계 결정", body_md="긴 본문" * 500)
+    r = api.get(f"/api/project-docs?project={project.pk}")
+    assert r.status_code == 200
+    (item,) = r.json()["items"]
+    assert item["title"] == "설계 결정"
+    # 목록에 본문이 실리면 문서 수십 개짜리 프로젝트에서 응답이 감당 안 된다
+    assert "body_md" not in item
+
+
+def test_api_reads_one_doc_with_body(api, project, member, task):
+    from projects.docs import create_doc, link_task
+
+    doc = create_doc(project=project, actor=member, title="운영", body_md="# 배포\n순서")
+    link_task(doc, task, member)
+    r = api.get(f"/api/project-docs/{doc.pk}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["body_md"] == "# 배포\n순서"
+    assert body["task_ids"] == [task.pk]
+
+
+def test_api_docs_filter_by_project(api, project, org, admin, member):
+    from projects.docs import create_doc
+
+    create_doc(project=project, actor=member, title="이 프로젝트")
+    other = create_project(org=org, name="다른 프로젝트", actor=admin, owners=[admin])
+    create_doc(project=other, actor=member, title="다른 프로젝트")
+    assert len(api.get("/api/project-docs").json()["items"]) == 2
+    (only,) = api.get(f"/api/project-docs?project={project.pk}").json()["items"]
+    assert only["title"] == "이 프로젝트"
+    (found,) = api.get("/api/project-docs?q=다른").json()["items"]
+    assert found["project_name"] == "다른 프로젝트"
+
+
+def test_api_doc_hidden_from_other_orgs(client, project, member, outsider):
+    from projects.docs import create_doc
+
+    doc = create_doc(project=project, actor=member)
+    _, raw = ApiToken.issue(outsider, "t", "read")
+    assert client.get(f"/api/project-docs/{doc.pk}", headers=_h(raw)).status_code == 404
+
+
+def test_task_out_carries_linked_docs(api, project, task, member):
+    from projects.docs import create_doc, link_task
+
+    doc = create_doc(project=project, actor=member, title="배경")
+    link_task(doc, task, member)
+    body = api.get(f"/api/tasks/{task.pk}").json()
+    assert body["docs"] == [{"id": doc.pk, "title": "배경"}]
+
+
+def test_ai_creates_and_edits_a_doc(api, project):
+    """AI(MCP)가 문서를 만들고 고친다. 누가 고쳤는지는 문서에 남는다."""
+    mcp = {"X-Source": "mcp"}
+    r = api.post(
+        "/api/project-docs",
+        {"project_id": project.pk, "title": "설계 결정", "body_md": "# 배경"},
+        headers=mcp,
+    )
+    assert r.status_code == 201
+    doc = r.json()
+    assert doc["body_md"] == "# 배경" and doc["updated_source"] == "mcp"
+
+    r = api.patch(
+        f"/api/project-docs/{doc['id']}",
+        {"version": doc["version"], "body_md": "# 배경\n고쳤습니다"},
+        headers=mcp,
+    )
+    assert r.status_code == 200
+    assert "고쳤습니다" in r.json()["body_md"]
+
+
+def test_doc_patch_reports_conflict_with_latest(api, project, member):
+    """예전에는 문서 충돌이 project_out을 타고 500으로 터졌다."""
+    from projects.docs import create_doc
+
+    doc = create_doc(project=project, actor=member, title="원본")
+    r = api.patch(
+        f"/api/project-docs/{doc.pk}",
+        {"version": doc.version + 5, "title": "엉뚱한 버전"},
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["detail"] == "conflict"
+    assert body["latest"]["title"] == "원본"
+    assert "body_md" not in body["latest"]
+
+
+def test_doc_write_needs_write_scope(client, project, member):
+    _, raw = ApiToken.issue(member, "읽기만", "read")
+    r = client.post(
+        "/api/project-docs",
+        {"project_id": project.pk, "title": "x"},
+        content_type="application/json",
+        headers=_h(raw),
+    )
+    assert r.status_code == 403
+
+
+def test_doc_write_rejected_across_orgs(client, project, outsider):
+    _, raw = ApiToken.issue(outsider, "밖에서", "write")
+    r = client.post(
+        "/api/project-docs",
+        {"project_id": project.pk, "title": "남의 프로젝트"},
+        content_type="application/json",
+        headers=_h(raw),
+    )
+    assert r.status_code == 404
+
+
+def test_doc_body_ceiling_on_create(api, project):
+    r = api.post(
+        "/api/project-docs",
+        {"project_id": project.pk, "title": "큰 글", "body_md": "가" * 300_000},
+    )
+    assert r.status_code == 400

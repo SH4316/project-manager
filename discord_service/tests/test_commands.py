@@ -110,7 +110,7 @@ def test_conflict_is_not_retried():
     fake = _fake()
     fake.bot_status = 409
     reply = handle(make_core(fake), DID, "완료 12")
-    assert reply == "방금 다른 곳에서 바뀌었어요. 다시 보내 주세요."
+    assert reply == "방금 다른 곳에서 변경되었습니다. 다시 보내 주세요."
     assert len(fake.calls) == 1
 
 
@@ -125,7 +125,7 @@ def test_service_error_detail_is_passed_through():
 def test_rate_limited_reply():
     fake = _fake()
     fake.bot_status = 429
-    assert handle(make_core(fake), DID, "오늘") == "요청이 몰렸어요. 1분 뒤 다시 보내 주세요."
+    assert handle(make_core(fake), DID, "오늘") == "요청이 많습니다. 1분 뒤 다시 보내 주세요."
 
 
 def test_forbidden_reply():
@@ -137,4 +137,4 @@ def test_forbidden_reply():
 def test_server_error_is_generic():
     fake = _fake()
     fake.bot_status = 500
-    assert handle(make_core(fake), DID, "완료 12").startswith("지금은 처리하지 못했어요")
+    assert handle(make_core(fake), DID, "완료 12").startswith("지금은 처리할 수 없습니다")

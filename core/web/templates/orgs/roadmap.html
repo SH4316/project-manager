@@ -3,12 +3,12 @@
 {% include "orgs/_tabs.html" %}
 <section class="card">
   <div class="card-head">
-    <h1 class="t24">로드맵</h1>
+    <h2>로드맵</h2>
     <button type="button" class="btn primary" hx-get="{% url 'milestone_new' org.pk %}" hx-target="#dialog" hx-swap="innerHTML">새 마일스톤</button>
   </div>
   <div class="stack" style="gap:4px">
     <div class="tl-head"><span class="tl-name"></span>
-      <div class="tl-track">{% for m in months %}<span>{{ m.month }}월</span>{% endfor %}</div>
+      <div class="tl-track"><span class="tl-today" style="left:{{ today_pct }}%" aria-hidden="true"></span>{% for m in months %}<span>{{ m.month }}월</span>{% endfor %}</div>
     </div>
     {% for r in rows %}
     <div class="tl-row">
@@ -17,6 +17,7 @@
         <span class="t12 muted">{{ r.meta }}</span>
       </div>
       <div class="tl-track">
+        <span class="tl-today" style="left:{{ today_pct }}%" aria-hidden="true"></span>
         <div class="tl-bar{% if not r.ready %} planned{% endif %}" style="left:{{ r.left }}%;width:{{ r.width }}%">
           <i style="width:{{ r.pct }}%"></i>
         </div>
@@ -28,7 +29,7 @@
     {% empty %}<p class="muted">이 기간에 보여 줄 마일스톤이 없습니다.</p>{% endfor %}
   </div>
   {% if hidden %}<p class="muted t13">표시 기간 밖의 마일스톤 {{ hidden }}건은 보이지 않습니다.</p>{% endif %}
-  <p class="muted t13">점선은 준비 중, 채워진 막대는 진행률입니다.</p>
+  <p class="muted t13">세로선은 오늘, 점선 테두리는 준비 중, 채워진 부분은 진행률입니다.</p>
 </section>
 <section class="card">
   <h2>프로젝트 의존성</h2>
@@ -40,7 +41,7 @@
       <span style="font-weight:600">{{ d.to_project.name }}</span>
       <span class="grow muted t13">{{ d.note }}</span>
       <span class="badge{% if d.is_blocking %} danger{% endif %}">{% if d.is_blocking %}차단{% else %}차단 없음{% endif %}</span>
-      <form method="post" action="{% url 'dependency_delete' d.pk %}">{% csrf_token %}<button class="btn sm">삭제</button></form>
+      <form method="post" action="{% url 'dependency_delete' d.pk %}">{% csrf_token %}<button class="btn sm danger">삭제</button></form>
     </div>
     {% empty %}<p class="muted">의존성이 없습니다.</p>{% endfor %}
   </div>

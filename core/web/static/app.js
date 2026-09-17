@@ -52,11 +52,24 @@
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.target.click(); }
   });
 
-  // 링크 복사
+  // 안내 배너 닫기
   body.addEventListener("click", function (e) {
-    var b = e.target.closest("[data-copy]");
+    var d = e.target.closest('[data-action="dismiss"]');
+    if (d) d.closest(".notice").remove();
+  });
+
+  // 링크 복사. data-copy는 태스크 번호, data-copy-text는 아무 문자열(초대 링크·명령줄).
+  body.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-copy], [data-copy-text]");
     if (!b) return;
     e.preventDefault(); e.stopPropagation();
+    if (b.dataset.copyText !== undefined) {
+      var text = b.dataset.copyText;
+      var ok = function () { flash(b.dataset.copyLabel || "복사됨"); };
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+        .then(ok, function () { prompt("복사하세요", text); ok(); });
+      return;
+    }
     var id = b.dataset.copy, url = location.origin + "/tasks/" + id;
     var done = function () { flash("TASK-" + id + " 링크 복사됨"); };
     (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
@@ -174,4 +187,48 @@
       },
     });
   });
+
+  // ---------- 실시간 반영 (SSE) ----------
+  // 서버(/events)가 방금 바뀐 태스크 id를 흘려보내면, 이미 쓰고 있는 HTMX 이벤트로 바꿔 쏜다.
+  // 행·패널·오늘 목록은 그 이벤트를 이미 듣고 있으므로 템플릿은 건드릴 것이 없다.
+  (function () {
+    if (!window.EventSource || !body.dataset.live) return;
+    var mine = {};   // 내가 방금 바꾼 것: 되돌아온 메아리는 무시한다
+    var held = {};   // 패널에 타이핑 중이면 덮어쓰지 않고 쥐고 있는다
+
+    body.addEventListener("htmx:afterRequest", function (e) {
+      var m = /\/tasks\/(\d+)\//.exec((e.detail && e.detail.pathInfo && e.detail.pathInfo.requestPath) || "");
+      if (m) { mine[m[1]] = Date.now(); }
+    });
+
+    function typingInPanel() {
+      var panel = document.getElementById("panel");
+      var el = document.activeElement;
+      return panel && el && panel.contains(el) && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    }
+
+    function apply(id) {
+      htmx.trigger(body, "task-changed", { id: id });
+      htmx.trigger(body, "task-updated", { id: id });
+    }
+
+    function onChange(id) {
+      var t = mine[id];
+      if (t && Date.now() - t < 5000) return;      // 내가 낸 변경이 SSE로 돌아온 것
+      if (typingInPanel()) { held[id] = true; return; }
+      apply(id);
+    }
+
+    body.addEventListener("focusout", function () {
+      setTimeout(function () {
+        if (typingInPanel()) return;
+        Object.keys(held).forEach(function (id) { apply(id); delete held[id]; });
+      }, 0);
+    });
+
+    var es = new EventSource("/events");
+    es.onmessage = function (ev) {
+      try { onChange(String(JSON.parse(ev.data).id)); } catch (err) { /* 형식이 아니면 무시 */ }
+    };
+  })();
 })();

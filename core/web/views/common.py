@@ -96,15 +96,21 @@ def hx_redirect(request, url: str):
     return redirect(url)
 
 
-def not_admin(request, org):
+def not_admin(request, org, what=""):
     """관리자 전용 화면의 관문. 멤버지만 관리자가 아니면 이유를 말하고 조직 현황으로 보낸다.
 
     조직 밖 사람은 그 전에 org_or_404가 404를 낸다 — 존재를 숨기는 일은 그쪽 몫이다.
     멤버에게까지 404를 주면 "없는 페이지"로 읽혀 권한 문제인지 알 수 없다.
+    what: 시도한 화면 이름. 문구에 넣어 "왜 여기로 왔는지"를 알린다.
     """
     if is_admin(request.user, org):
         return None
-    messages.error(request, "조직 관리자만 볼 수 있어요.")
+    messages.warning(
+        request,
+        f"{what} 화면은 조직 관리자만 접근할 수 있습니다. 조직 현황으로 이동했습니다. 권한이 필요하면 조직 관리자에게 요청해 주세요."
+        if what
+        else "이 화면은 조직 관리자만 접근할 수 있습니다. 조직 현황으로 이동했습니다. 권한이 필요하면 조직 관리자에게 요청해 주세요.",
+    )
     return hx_redirect(request, reverse("org_detail", args=[org.pk]))
 
 
@@ -140,6 +146,15 @@ def due_label(task) -> str:
         return "기한 미정"
     label = "오늘 마감" if task.due_date == today_kst() else fmt_md(task.due_date)
     return label + " 초과" if task.is_overdue else label
+
+
+def due_class(task) -> str:
+    """기한 배지의 변형. 색과 테두리는 이 한 곳에서만 정한다."""
+    if task.is_overdue:
+        return "overdue"
+    if not task.due_date:
+        return "none"
+    return "today" if task.due_date == today_kst() else ""
 
 
 def due_full(task) -> str:
@@ -243,6 +258,7 @@ def row_ctx(user, task, opts: str = "", membership: dict | None = None, selected
         "checklist_done": sum(1 for i in items if i.is_done),
         "checklist_total": len(items),
         "due_label": due_label(task),
+        "due_class": due_class(task),
     }
 
 

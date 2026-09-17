@@ -33,8 +33,10 @@ ENTRYPOINT ["./entrypoint.sh"]
 set -e
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
+# SSE(/events)가 연결을 열어 두므로 스레드 워커를 쓴다. sync 워커는 연결 하나가 워커를 통째로 막는다.
+# --timeout은 스트림 수명(web/views/events.py의 STREAM_SECONDS=50초)보다 길어야 한다.
 exec gunicorn config.wsgi:application \
-  --bind 0.0.0.0:8000 --workers 2 --timeout 60 \
+  --bind 0.0.0.0:8000 --worker-class gthread --workers 2 --threads 16 --timeout 90 \
   --forwarded-allow-ips="*" --access-logfile - --error-logfile -
 ```
 

@@ -6,6 +6,13 @@ import pytest
 from common.dates import today_kst
 from common.errors import ConflictError, ServiceError
 from orgs.services import create_org
+from projects.docs import (
+    create_doc,
+    delete_doc,
+    update_doc,
+    upload_doc,
+    visible_docs,
+)
 from projects.services import (
     archive_project,
     create_dependency,
@@ -352,3 +359,114 @@ def test_spec_view_handles_missing_fields():
     assert v["version"] == "버전 없음"
     assert v["server"] == "서버 정보 없음"
     assert v["count"] == 1
+
+
+# ---------- 프로젝트 문서 (GitHub 없이도 남기는 기록) ----------
+
+
+def test_doc_create_and_edit(project, member):
+    d = create_doc(project=project, actor=member, title="설계 결정")
+    assert d.version == 1 and d.project == project
+    d = update_doc(d, "body_md", "# 배경\r\n한 줄", actor=member, expected_version=1)
+    assert d.body_md == "# 배경\n한 줄"  # CRLF는 저장 시 정리한다
+    assert d.version == 2
+
+
+def test_doc_title_falls_back_when_blank(project, member):
+    d = create_doc(project=project, actor=member, title="   ")
+    assert d.title == "제목 없는 문서"
+    d = update_doc(d, "title", "  ", actor=member, expected_version=d.version)
+    assert d.title == "제목 없는 문서"
+
+
+def test_doc_rejects_stale_version(project, member):
+    d = create_doc(project=project, actor=member)
+    update_doc(d, "body_md", "먼저", actor=member, expected_version=1)
+    with pytest.raises(ConflictError):
+        update_doc(d, "body_md", "나중", actor=member, expected_version=1)
+
+
+def test_doc_rejects_unknown_field_and_outsider(project, member, outsider):
+    d = create_doc(project=project, actor=member)
+    with pytest.raises(ServiceError):
+        update_doc(d, "project", 1, actor=member, expected_version=d.version)
+    with pytest.raises(ServiceError):
+        update_doc(d, "body_md", "x", actor=outsider, expected_version=d.version)
+    with pytest.raises(ServiceError):
+        create_doc(project=project, actor=outsider)
+
+
+def test_doc_body_has_a_ceiling(project, member):
+    d = create_doc(project=project, actor=member)
+    with pytest.raises(ServiceError):
+        update_doc(d, "body_md", "가" * 300_000, actor=member, expected_version=d.version)
+
+
+def test_doc_upload_reads_markdown_only(project, member):
+    d = upload_doc(project=project, actor=member, filename="README.md", raw=b"# hi")
+    assert d.title == "README" and d.body_md == "# hi"
+    with pytest.raises(ServiceError):
+        upload_doc(project=project, actor=member, filename="a.txt", raw=b"x")
+    with pytest.raises(ServiceError):
+        upload_doc(project=project, actor=member, filename="a.md", raw=b"\xff\xfe")
+
+
+def test_doc_delete_is_author_or_org_admin(project, member, admin, outsider):
+    d = create_doc(project=project, actor=member)
+    with pytest.raises(ServiceError):
+        delete_doc(d, outsider)
+    delete_doc(d, admin)  # 조직 관리자
+    d2 = create_doc(project=project, actor=member)
+    delete_doc(d2, member)  # 작성자 본인
+
+
+def test_docs_keep_creation_order(project, member):
+    first = create_doc(project=project, actor=member, title="개요")
+    second = create_doc(project=project, actor=member, title="운영")
+    update_doc(first, "body_md", "나중에 고쳐도", actor=member, expected_version=first.version)
+    # 수정해도 목록이 뒤집히지 않아야 문서를 다시 찾을 수 있다
+    assert [d.title for d in visible_docs(project)] == [first.title, second.title]
+    assert second.pk in [d.pk for d in visible_docs(project)]
+
+
+def test_doc_links_only_same_project_tasks(project, org, admin, member, task):
+    from projects.docs import link_task, unlink_task
+    from projects.services import create_project
+    from tasks.services import create_task
+
+    doc = create_doc(project=project, actor=member, title="설계")
+    link_task(doc, task, member)
+    assert list(doc.tasks.all()) == [task]
+    assert list(task.docs.all()) == [doc]
+
+    other_project = create_project(org=org, name="다른 프로젝트", actor=admin, owners=[admin])
+    other_task = create_task(
+        project=other_project, title="남의 일", actor=admin, source="web", no_due_reason="미정"
+    )
+    with pytest.raises(ServiceError):
+        link_task(doc, other_task, member)
+
+    unlink_task(doc, task, member)
+    assert not doc.tasks.exists()
+
+
+def test_doc_link_rejects_outsider(project, member, task, outsider):
+    from projects.docs import link_task
+
+    doc = create_doc(project=project, actor=member)
+    with pytest.raises(ServiceError):
+        link_task(doc, task, outsider)
+
+
+def test_doc_records_who_edited_and_how(project, member, admin):
+    """AI가 고친 문서를 사람이 알아볼 수 있어야 한다."""
+    d = create_doc(project=project, actor=member, title="개요")
+    assert d.updated_by == member and d.updated_source == "web"
+    d = update_doc(d, "body_md", "AI가 고침", actor=admin, expected_version=d.version, source="mcp")
+    assert d.updated_by == admin and d.updated_source == "mcp"
+    assert d.created_by == member  # 만든 사람은 그대로
+
+
+def test_doc_create_has_body_ceiling(project, member):
+    with pytest.raises(ServiceError):
+        create_doc(project=project, actor=member, body_md="가" * 300_000)

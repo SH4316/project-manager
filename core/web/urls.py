@@ -1,8 +1,11 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
 
+from .forms import LoginForm
 from .views import (
     auth,
+    docs,
+    events,
     github,
     me,
     notes,
@@ -20,10 +23,13 @@ from .views import (
 urlpatterns = [
     path("", auth.root, name="root"),
     path("healthz", ops.healthz, name="healthz"),
+    path("events", events.events, name="events"),
     path(
         "login",
         auth_views.LoginView.as_view(
-            template_name="auth/login.html", redirect_authenticated_user=True
+            template_name="auth/login.html",
+            redirect_authenticated_user=True,
+            authentication_form=LoginForm,
         ),
         name="login",
     ),
@@ -71,6 +77,17 @@ urlpatterns = [
     path("projects/new", projects.project_new, name="project_new"),
     path("projects/<int:project_id>", projects.project_detail, name="project_detail"),
     path("projects/<int:project_id>/edit", projects.project_edit, name="project_edit"),
+    path("projects/<int:project_id>/docs", docs.project_docs, name="project_docs"),
+    path("projects/<int:project_id>/docs/new", docs.doc_new, name="doc_new"),
+    path("projects/<int:project_id>/docs/upload", docs.doc_upload, name="doc_upload"),
+    path("docs/<int:doc_id>/save", docs.doc_save, name="doc_save"),
+    path("docs/<int:doc_id>/delete", docs.doc_delete, name="doc_delete"),
+    path("tasks/<int:task_id>/docs/link", docs.task_doc_link, name="task_doc_link"),
+    path(
+        "tasks/<int:task_id>/docs/<int:doc_id>/unlink",
+        docs.task_doc_unlink,
+        name="task_doc_unlink",
+    ),
     path("projects/<int:project_id>/tasks", projects.task_create, name="project_task_create"),
     path("projects/<int:project_id>/archive", projects.project_archive, name="project_archive"),
     path("projects/<int:project_id>/restore", projects.project_restore, name="project_restore"),
@@ -78,8 +95,8 @@ urlpatterns = [
     path("projects/<int:project_id>/api", projects.project_api, name="project_api"),
     path("tasks/<int:task_id>", tasks.task_detail, name="task_detail"),
     path("tasks/<int:task_id>/panel", tasks.task_panel, name="task_panel"),
+    path("tasks/<int:task_id>/meta", tasks.task_meta, name="task_meta"),
     path("tasks/<int:task_id>/row", tasks.task_row, name="task_row"),
-    path("tasks/<int:task_id>/edit", tasks.task_edit, name="task_edit"),
     path("tasks/<int:task_id>/status", tasks.task_status, name="task_status"),
     path("tasks/<int:task_id>/text/<str:field>", tasks.task_text, name="task_text"),
     path("tasks/<int:task_id>/priority", tasks.task_priority, name="task_priority"),

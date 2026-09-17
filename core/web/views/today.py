@@ -16,6 +16,7 @@ from ..forms import QuickTaskForm
 from .common import (
     apply_service_error,
     dialog,
+    due_class,
     due_label,
     hx_redirect,
     new_idem,
@@ -40,6 +41,7 @@ def _ctx(request):
     v["auto_pull_choices"] = User.AUTO_PULL_CHOICES
     v["schedule_open"] = request.GET.get("schedule") == "1"
     v["focus_due"] = due_label(v["focus"]) if v["focus"] else ""
+    v["focus_due_class"] = due_class(v["focus"]) if v["focus"] else ""
     return v
 
 

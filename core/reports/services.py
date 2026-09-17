@@ -101,11 +101,13 @@ def org_status(org) -> dict:
                 "teams": teams_by_user.get(u.pk, []),
             }
         )
+    # 상대 막대만 두면 "조직에서 가장 바쁜 사람"이 항상 꽉 찬다. 기준 수치를 함께 준다.
     max_load = max([c["load"] for c in capacity], default=0) or 1
     for c in capacity:
         c["bar"] = round(c["load"] / max_load * 100)
         c["over"] = c["load"] >= 4 or c["overdue"] >= 2
         c["verdict"] = "과부하" if c["over"] else "여유" if c["load"] <= 1 else "적정"
+        c["scale"] = max_load
     counts["avg_doing"] = (
         round(sum(c["doing"] for c in capacity) / len(members), 1) if members else 0.0
     )

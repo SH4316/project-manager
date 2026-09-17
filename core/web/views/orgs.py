@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -27,10 +28,20 @@ def org_current(request):
 
 @login_required
 def org_list(request):
-    orgs = list(osv.orgs_of(request.user).order_by("name"))
+    orgs = list(
+        osv.orgs_of(request.user)
+        .annotate(project_count=Count("projects", distinct=True))
+        .annotate(member_count=Count("memberships", distinct=True))
+        .order_by("name")
+    )
     if len(orgs) == 1:
         return redirect("org_detail", org_id=orgs[0].pk)
-    return render(request, "orgs/list.html", {"orgs": orgs})
+    admin_org_ids = set(
+        OrgMembership.objects.filter(user=request.user, role="admin").values_list(
+            "org_id", flat=True
+        )
+    )
+    return render(request, "orgs/list.html", {"orgs": orgs, "admin_org_ids": admin_org_ids})
 
 
 @login_required
@@ -87,12 +98,19 @@ def org_detail(request, org_id):
 def org_teams(request, org_id):
     """조직 → 팀. 멤버·태그·초대·팀을 한 화면에서 관리한다."""
     org = org_or_404(request.user, org_id)
-    if denied := not_admin(request, org):
+    if denied := not_admin(request, org, "팀·멤버 관리"):
         return denied
     load = {r["assignee_id"]: r for r in org_status(org)["by_assignee"]}
+    memberships = list(org.memberships.select_related("user").order_by("user__display_name"))
+    # 마지막 관리자는 services.remove_member가 거부한다 — 버튼도 그 규칙을 그대로 보여 준다
+    last_admin = sum(1 for m in memberships if m.role == "admin") <= 1
     rows = [
-        {"m": m, "load": load.get(m.user_id)}
-        for m in org.memberships.select_related("user").order_by("user__display_name")
+        {
+            "m": m,
+            "load": load.get(m.user_id),
+            "can_remove": not (m.role == "admin" and last_admin),
+        }
+        for m in memberships
     ]
     teams = [
         {

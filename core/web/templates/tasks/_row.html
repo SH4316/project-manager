@@ -1,4 +1,4 @@
-<li id="task-{{ task.pk }}"
+{% load rows %}<li id="task-{{ task.pk }}"
     class="task-row{% if task.is_closed %} closed{% endif %}{% if selected %} selected{% endif %}"
     role="button" tabindex="0" aria-label="{{ task.title }} 상세 보기"
     data-id="{{ task.pk }}" data-panel="{% url 'task_panel' task.pk %}"
@@ -10,14 +10,18 @@
     <div class="title">{{ task.title }}</div>
     <div class="meta">
       {% if not hide_assignee %}<span>{{ task.assignee.display_name }}</span>{% endif %}
-      <span class="badge{% if task.priority >= 8 %} high{% endif %}">중요도 {{ task.priority }}/10</span>
+      {% if task.priority != 5 %}<span class="badge{% if task.priority >= 8 %} high{% endif %}">중요도 {{ task.priority }}/10</span>{% endif %}
       {% if task.is_stopped %}<span{% if task.is_blocked %} class="danger"{% endif %}>{{ task.stop_reason|default:"사유 없음" }}</span>{% endif %}
       {% if checklist_total %}<span>체크리스트 {{ checklist_done }}/{{ checklist_total }}</span>{% endif %}
+      {% if auto_pulled %}<span class="auto-mark" title="마감이 가까워 오늘 목록에 자동으로 담겼습니다">자동 담김</span>{% endif %}
     </div>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
   </div>
   <div class="actions">
-    <span class="due{% if task.is_overdue %} overdue{% endif %}">{{ due_label }}</span>
+    <span class="due {{ due_class }}">{{ due_label }}</span>
+    {% if read_only %}
+    <span class="pill {{ task.status }} static">{{ task.status|status_mark }} {{ task.get_status_display }}</span>
+    {% else %}
     <form>
       <input type="hidden" name="version" value="{{ task.version }}">
       <input type="hidden" name="opts" value="{{ row_opts }}">
@@ -26,12 +30,13 @@
               hx-post="{% url 'task_status' task.pk %}" hx-target="#task-{{ task.pk }}" hx-swap="outerHTML"
               hx-trigger="change[!(this.value=='blocked' && this.dataset.status!='blocked')]"
               {% if read_only %}disabled{% endif %}>
-        {% for code, label in task.STATUSES %}<option value="{{ code }}"{% if code == task.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        {% for code, label in task.STATUSES %}<option value="{{ code }}"{% if code == task.status %} selected{% endif %}>{{ code|status_mark }} {{ label }}</option>{% endfor %}
       </select>
     </form>
-    {% if not hide_today %}
+    {% endif %}
+    {% if not hide_today and not task.is_closed %}
       {% if auto_pulled %}
-      <button type="button" class="btn sm today-btn auto" hx-post="{% url 'today_exclude' task.pk %}?{{ row_query }}" hx-target="{{ row_target }}" hx-swap="outerHTML" title="마감 기준 자동 추가. 누르면 오늘 목록에서만 제외합니다.">자동 추가 · 오늘 제외</button>
+      <button type="button" class="btn sm today-btn in" hx-post="{% url 'today_exclude' task.pk %}?{{ row_query }}" hx-target="{{ row_target }}" hx-swap="outerHTML" title="오늘 할 일 목록에서 빼기">오늘 제외</button>
       {% elif in_today %}
       <button type="button" class="btn sm today-btn in" hx-post="{% url 'today_exclude' task.pk %}?{{ row_query }}" hx-target="{{ row_target }}" hx-swap="outerHTML" title="오늘 할 일 목록에서 빼기">오늘 제외</button>
       {% else %}

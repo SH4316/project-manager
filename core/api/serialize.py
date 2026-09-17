@@ -43,6 +43,8 @@ def task_out(t) -> dict:
             "checklist_done": sum(1 for i in items if i.is_done),
             "checklist_total": len(items),
             "links": [link_out(link) for link in t.links.all()],
+            # 참고 문서는 제목과 id만. 본문은 /projects/{id}/docs/{doc_id}에서 읽는다.
+            "docs": [{"id": d.pk, "title": d.title} for d in t.docs.all()],
         }
     )
     return d

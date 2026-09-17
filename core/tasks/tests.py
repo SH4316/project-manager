@@ -2,6 +2,7 @@ from datetime import timedelta
 
 import pytest
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from common.dates import today_kst, week_bounds
 from common.errors import ConflictError, ServiceError
@@ -572,6 +573,11 @@ def test_me_view_sort_orders_inside_groups(five, member):
     yesterday, today, week, nxt, none = five
     for t, p in ((none, 9), (nxt, 8)):
         update_task(t, {"priority": p}, actor=member, source="web", expected_version=t.version)
+    # Windows의 시계 해상도(~16ms)로는 연속 두 번의 수정이 같은 updated_at을 받을 수 있다.
+    # "최근 수정순"을 검사하려면 시각이 실제로 달라야 하므로 여기서 못 박는다.
+    now = timezone.now()
+    for i, t in enumerate((yesterday, today, week, none, nxt)):
+        Task.objects.filter(pk=t.pk).update(updated_at=now + timedelta(seconds=i))
 
     def order(**kw):
         return [t.title for g in me_view(member, **kw)["groups"] for t in g["tasks"]]

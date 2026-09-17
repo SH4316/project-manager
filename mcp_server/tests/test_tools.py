@@ -25,6 +25,10 @@ TOOL_NAMES = {
     "add_team_member",
     "remove_team_member",
     "set_project_teams",
+    "list_docs",
+    "get_doc",
+    "create_doc",
+    "update_doc",
     "search",
     "fetch",
 }
@@ -134,17 +138,43 @@ def test_create_task_idempotency_header(fake_core, with_token):
 
 
 def test_search_fetch_shape(fake_core, with_token):
-    first = fn("search")("메뉴")["results"][0]
-    assert {"id", "title", "url"} <= set(first)
+    results = fn("search")("메뉴")["results"]
+    assert {"id", "title", "url"} <= set(results[0])
     doc = fn("fetch")("1")
     assert {"id", "title", "text", "url", "metadata"} <= set(doc)
     assert "진행 메모" in doc["text"]
+
+    # 검색 결과에는 프로젝트 문서도 섞인다. 문서 id는 "doc-"으로 시작한다.
+    doc_hit = next(r for r in results if r["id"].startswith("doc-"))
+    assert "설계 결정" in doc_hit["title"]
+    fetched = fn("fetch")(doc_hit["id"])
+    assert "메뉴 누락을 줄인다" in fetched["text"]
+    assert fetched["metadata"]["project_id"] == 1
+
+
+def test_doc_write_tools(fake_core, with_token):
+    made = fn("create_doc")(project_id=1, title="설계 결정", body_md="# 배경")
+    assert made["title"] == "설계 결정" and made["updated_source"] == "mcp"
+
+    fixed = fn("update_doc")(doc_id=7, version=2, body_md="고친 본문")
+    assert fixed["body_md"] == "고친 본문" and fixed["version"] == 3
+
+    # version이 어긋나면 core가 409를 준다 — 도구는 그 오류를 그대로 올린다
+    with pytest.raises(CoreError):
+        fn("update_doc")(doc_id=7, version=99, body_md="x")
+
+
+def test_doc_tools(fake_core, with_token):
+    items = fn("list_docs")(project_id=1)["items"]
+    assert items[0]["title"] == "설계 결정"
+    assert "body_md" not in items[0]  # 목록에 본문을 싣지 않는다
+    assert fn("get_doc")(7)["body_md"].startswith("# 배경")
 
 
 async def test_tool_names_registered():
     tools = await s.mcp.list_tools()
     assert {t.name for t in tools} == TOOL_NAMES
-    assert len(TOOL_NAMES) == 20
+    assert len(TOOL_NAMES) == 24
 
 
 def test_governance_tool(fake_core, with_token):

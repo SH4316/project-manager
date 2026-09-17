@@ -10,5 +10,5 @@
   <label class="field">기한 미정 사유 (기한이 없을 때만)<input class="input" name="no_due_reason" value="{{ form.no_due_reason.value|default:'' }}"></label>
   {% for e in form.non_field_errors %}<div class="error">{{ e }}</div>{% endfor %}
   {% for f in form %}{% for e in f.errors %}<div class="error">{{ f.label }}: {{ e }}</div>{% endfor %}{% endfor %}
-  <div class="row"><button class="btn primary">추가</button><span class="muted t13">담당자 본인 · 시작 전 · 오늘 목록에 담깁니다</span></div>
+  <div class="row"><button class="btn primary">추가</button><button type="button" class="btn" data-action="toggle" data-target="#quick">취소</button><span class="muted t13">담당자 본인 · 시작 전 · 오늘 목록에 담깁니다</span></div>
 </form>

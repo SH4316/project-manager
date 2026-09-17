@@ -7,6 +7,7 @@ from common.errors import ConflictError, ServiceError
 from .auth import BrowserSessionAuth, TokenAuth
 from .routers import (
     discord,
+    docs,
     github,
     integrations,
     me,
@@ -16,6 +17,7 @@ from .routers import (
     tasks,
     today,
 )
+from .routers.docs import doc_out
 from .serialize import project_out, task_out
 
 
@@ -52,13 +54,21 @@ def _service_error(request, exc):
 @api.exception_handler(ConflictError)
 def _conflict(request, exc):
     latest = exc.latest
-    data = task_out(latest) if hasattr(latest, "assignee") else project_out(latest)
+    if hasattr(latest, "assignee"):
+        data = task_out(latest)
+    elif hasattr(latest, "body_md"):
+        # 프로젝트 문서. project_out을 태우면 없는 필드를 찾다 500이 난다.
+        data = doc_out(latest, body=False)
+    else:
+        data = project_out(latest)
     return api.create_response(request, {"detail": "conflict", "latest": data}, status=409)
 
 
 api.add_router("/", me.router)
 api.add_router("/orgs", orgs.router)
 api.add_router("/projects", projects.router)
+# /api/docs는 Ninja의 Swagger UI가 이미 쓴다. 겹치면 문서 목록이 로그인 화면으로 넘어간다.
+api.add_router("/project-docs", docs.router)
 api.add_router("/tasks", tasks.router)
 api.add_router("/today", today.router)
 api.add_router("/reports", reports.router)

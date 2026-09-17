@@ -2,7 +2,6 @@
 {% block main %}
 {% include "orgs/_tabs.html" %}
 <div class="card">
-  <div class="card-head"><h1 class="t24">{{ org.name }}</h1></div>
   <div class="tiles">
     {% for label, value, url, danger in tiles %}<a class="tile{% if danger and value %} danger{% endif %}" href="{{ url }}"><b>{{ value }}</b><span>{{ label }}</span></a>{% endfor %}
   </div>
