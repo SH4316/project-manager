@@ -1,8 +1,10 @@
 import json
+import re
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from django.conf import settings
 
 from accounts.models import User
 from common.dates import fmt_md, today_kst
@@ -1276,3 +1278,27 @@ def test_project_settings_groups_share_one_card_with_the_save_button(client, pro
     body = client.get(f"/projects/{project.pk}/settings").content.decode()
     rules = body[body.index('<form method="post">') : body.index("설정 저장")]
     assert rules.count('<section class="card') == 1
+
+def test_webmcp_script_only_for_logged_in(logged, org, project):
+    """WebMCP 도구는 로그인한 세션으로 API를 부른다. 로그인 전 화면에는 실리지 않는다."""
+    assert "webmcp.js" in logged.get("/today").content.decode()
+    logged.logout()
+    assert "webmcp.js" not in logged.get("/login").content.decode()
+
+
+def test_webmcp_browser_requirements(logged, org, project, settings):
+    """스펙이 요구하는 두 가지. 오리진 키 클러스터가 아니면 registerTool이 SecurityError로 죽고,
+    오리진 트라이얼 토큰이 없으면 크롬·엣지에서 document.modelContext 자체가 없다."""
+    assert logged.get("/today").headers["Origin-Agent-Cluster"] == "?1"
+    settings.WEBMCP_ORIGIN_TRIAL = "TOKEN123"
+    assert 'http-equiv="origin-trial" content="TOKEN123"' in logged.get("/today").content.decode()
+
+
+def test_webmcp_tool_paths_exist_in_api():
+    """webmcp.js가 부르는 경로가 실제 API에 다 있는지. 엔드포인트가 바뀌면 여기서 깨진다."""
+    from api.api import api as ninja_api
+
+    js = (settings.BASE_DIR / "web" / "static" / "webmcp.js").read_text(encoding="utf-8")
+    paths = set(re.findall(r'path:\s*"([^"]+)"', js))
+    assert len(paths) >= 8
+    assert paths <= set(ninja_api.get_openapi_schema()["paths"])

@@ -59,4 +59,5 @@ def shell(request):
         "page_url": request.get_full_path(),
         "github_enabled": settings.GITHUB_ENABLED,
         "discord_enabled": bool(settings.DISCORD_CLIENT_ID),
+        "webmcp_origin_trial": settings.WEBMCP_ORIGIN_TRIAL,
     }

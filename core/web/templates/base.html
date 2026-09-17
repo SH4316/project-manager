@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}산돌이 태스크{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  {% if webmcp_origin_trial %}<meta http-equiv="origin-trial" content="{{ webmcp_origin_trial }}">{% endif %}
   <link rel="stylesheet" href="{% static 'app.css' %}">
   <script src="{% static 'vendor/htmx.min.js' %}"></script>
 </head>
-<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-page-url="{% block page_url %}{{ page_url }}{% endblock %}"{% if user.is_authenticated and current_org %} data-live="1"{% endif %}>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-page-url="{% block page_url %}{{ page_url }}{% endblock %}" data-org="{{ current_org.pk|default:'' }}"{% if user.is_authenticated and current_org %} data-live="1"{% endif %}>
 <header class="header">
   {% if user.is_authenticated %}
   {# 조직 이름이 곧 전환 손잡이다. 열면 다른 조직과 새 조직 만들기가 나온다. #}
@@ -98,5 +99,7 @@
 <dialog id="dialog"></dialog>
 <script src="{% static 'app.js' %}"></script>
 <script src="{% static 'notes.js' %}"></script>
+{% if user.is_authenticated %}{# WebMCP: 브라우저 안의 AI 에이전트에게 태스크 도구를 넘긴다 #}
+<script src="{% static 'webmcp.js' %}"></script>{% endif %}
 </body>
 </html>

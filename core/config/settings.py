@@ -11,6 +11,9 @@ DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = [h for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o]
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000").rstrip("/")
+# WebMCP는 크롬 149·엣지 150에서 아직 오리진 트라이얼이라 도메인마다 토큰을 받아야 켜진다.
+# 토큰이 있으면 <meta http-equiv="origin-trial">로 실어 보낸다. 없으면 기능만 조용히 빠진다.
+WEBMCP_ORIGIN_TRIAL = os.environ.get("WEBMCP_ORIGIN_TRIAL", "")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -32,6 +35,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "common.middleware.origin_agent_cluster",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
