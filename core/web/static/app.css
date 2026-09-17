@@ -442,6 +442,12 @@ dialog { max-width: 640px; }
 .blk-code pre { margin: 4px 0; padding: 12px 14px; overflow-x: auto; background: var(--bg-fill); border: 1px solid var(--border); border-radius: 6px; }
 .blk-code code { padding: 0; background: none; font-size: 13px; line-height: 20px; }
 .blk-code .lang { position: absolute; top: 12px; right: 14px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
+/* / 메뉴. 편집 중인 줄 바로 아래에 띄우므로 본문이 기준 상자가 된다. */
+#doc-body, .doc-body { position: relative; }
+.slash { position: absolute; z-index: 20; min-width: 236px; max-height: 272px; overflow-y: auto; padding: 4px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(25, 31, 40, 0.14); }
+.slash .opt { display: flex; gap: 12px; align-items: baseline; padding: 6px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+.slash .opt[aria-selected="true"] { background: var(--primary-bg); }
+.slash .opt .hint { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text-secondary); }
 .blk-edit { display: block; width: 100%; padding: 2px 6px; border: 0; border-radius: 4px; background: var(--bg-secondary); outline: none; font: inherit; font-size: 15px; line-height: 24px; resize: none; overflow: hidden; color: var(--text-primary); }
 
 /* ---- API 문서 (V2-06) ---- */

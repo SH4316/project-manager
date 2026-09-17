@@ -82,6 +82,35 @@
     return a;
   }
 
+  // ---------- / 메뉴 ----------
+  // 마크다운을 외우지 않아도 되게 하는 지름길이다. 넣는 결과는 전부 위 렌더가 이미 아는
+  // 문법이라, 직접 쳐 넣던 방식과 결과가 똑같다 — 대체가 아니라 보조다.
+  // keys는 찾기용 별칭이다(한글·영문 둘 다 친다).
+  var MENU = [
+    { label: "제목 1", hint: "#", keys: "제목1 heading h1 title", ins: "# " },
+    { label: "제목 2", hint: "##", keys: "제목2 heading h2", ins: "## " },
+    { label: "제목 3", hint: "###", keys: "제목3 heading h3", ins: "### " },
+    { label: "글머리 목록", hint: "-", keys: "글머리 불릿 목록 bullet list", ins: "- " },
+    { label: "번호 목록", hint: "1.", keys: "번호 순서 목록 number ordered list", ins: "1. " },
+    { label: "할 일", hint: "- [ ]", keys: "할일 체크 todo task checkbox", ins: "- [ ] " },
+    { label: "인용", hint: ">", keys: "인용 인용문 quote blockquote", ins: "> " },
+    { label: "구분선", hint: "---", keys: "구분선 구분 divider rule hr", ins: "---", done: true },
+    { label: "코드 블록", hint: "```", keys: "코드 코드블록 code snippet", block: ["```", "", "```"], caret: 4 },
+    { label: "이미지", hint: "![](…)", keys: "이미지 그림 사진 image img picture", ins: "![]()", caret: 4 },
+    { label: "영상", hint: "![](…)", keys: "영상 동영상 비디오 유튜브 video youtube vimeo", ins: "![]()", caret: 4 },
+    { label: "링크", hint: "[](…)", keys: "링크 주소 link url", ins: "[]()", caret: 1 },
+  ];
+
+  function menuMatches(q) {
+    if (!q) return MENU.slice();
+    var t = q.toLowerCase();
+    return MENU.filter(function (it) {
+      return (it.label + " " + it.keys).toLowerCase().indexOf(t) >= 0;
+    });
+  }
+
+  var uidSeq = 0;
+
   function setup(doc) {
     if (doc.dataset.ready === "1") return;
     doc.dataset.ready = "1";
@@ -105,6 +134,9 @@
       dead = false;
     // 읽기 전용(거버넌스 보기 등): 같은 파서로 그리기만 하고 편집·저장은 하지 않는다.
     var readonly = doc.dataset.readonly === "1";
+    // / 메뉴 상태. 한 화면에 문서가 둘일 수 있으므로 id 앞머리를 문서마다 따로 만든다.
+    var uid = "slash" + ++uidSeq;
+    var menu = null, menuItems = [], menuIdx = 0, menuSig = "";
 
     src.hidden = true;
     if (submit) submit.hidden = true;
@@ -259,6 +291,100 @@
       return wrap;
     }
 
+    // ---------- / 메뉴 ----------
+    // 여는 조건: 그 줄이 `/`로 시작하고, 뒤에 띄어쓰기가 없고, 커서가 맨 뒤에 있을 때.
+    // 띄어쓰기가 나오면 "/etc 경로를 보세요" 같은 평범한 글이므로 조용히 닫는다.
+    function slashQuery(ta) {
+      var v = ta.value;
+      if (v.charAt(0) !== "/" || v.indexOf("\n") >= 0) return null;
+      if (ta.selectionStart !== v.length) return null;
+      var q = v.slice(1);
+      return /\s/.test(q) ? null : q;
+    }
+
+    function closeMenu(ta) {
+      if (menu && menu.parentNode) menu.parentNode.removeChild(menu);
+      menu = null; menuItems = []; menuIdx = 0; menuSig = "";
+      if (ta) {
+        ta.removeAttribute("aria-activedescendant");
+        ta.setAttribute("aria-expanded", "false");
+      }
+    }
+
+    function highlight(ta) {
+      for (var k = 0; k < menu.children.length; k++) {
+        menu.children[k].setAttribute("aria-selected", k === menuIdx ? "true" : "false");
+      }
+      var cur = menu.children[menuIdx];
+      if (cur) {
+        ta.setAttribute("aria-activedescendant", cur.id);
+        if (cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
+      }
+    }
+
+    function syncMenu(ta, u) {
+      var q = slashQuery(ta);
+      var hits = q == null ? [] : menuMatches(q);
+      if (!hits.length) return closeMenu(ta);
+
+      var sig = hits.map(function (it) { return it.label; }).join("|");
+      menuItems = hits;
+      if (!menu) {
+        menu = document.createElement("div");
+        menu.className = "slash";
+        menu.id = uid;
+        menu.setAttribute("role", "listbox");
+        menu.setAttribute("aria-label", "블록 넣기");
+        bodyEl.appendChild(menu);
+        ta.setAttribute("aria-controls", uid);
+        ta.setAttribute("aria-expanded", "true");
+      }
+      if (sig !== menuSig) {
+        menuSig = sig;
+        menuIdx = 0;
+        while (menu.firstChild) menu.removeChild(menu.firstChild);
+        hits.forEach(function (it, k) {
+          var opt = document.createElement("div");
+          opt.className = "opt";
+          opt.id = uid + "-" + k;
+          opt.setAttribute("role", "option");
+          var name = document.createElement("span");
+          name.textContent = it.label;
+          var hint = document.createElement("span");
+          hint.className = "hint";
+          hint.textContent = it.hint;
+          opt.appendChild(name);
+          opt.appendChild(hint);
+          // mousedown으로 잡아야 textarea가 포커스를 잃기 전에 고를 수 있다.
+          opt.addEventListener("mousedown", function (e) {
+            e.preventDefault(); e.stopPropagation(); choose(it, u, ta);
+          });
+          menu.appendChild(opt);
+        });
+      }
+      menu.style.top = ta.offsetTop + ta.offsetHeight + 4 + "px";
+      menu.style.left = ta.offsetLeft + 6 + "px";
+      highlight(ta);
+    }
+
+    function choose(it, u, ta) {
+      var i = u.start;
+      closeMenu(ta);
+      if (it.block) {
+        Array.prototype.splice.apply(lines, [i, 1].concat(it.block));
+        editing = i;
+      } else if (it.done) {
+        // 구분선처럼 더 쓸 것이 없는 블록은 바로 다음 줄로 내려 준다.
+        lines.splice(i, 1, it.ins, "");
+        editing = i + 1;
+      } else {
+        lines[i] = it.ins;
+        editing = i;
+      }
+      caret = it.done ? 0 : it.caret == null ? it.ins.length : it.caret;
+      changed();
+    }
+
     function editor(u) {
       var ta = document.createElement("textarea");
       ta.className = "blk-edit";
@@ -272,13 +398,17 @@
         u.end = u.start + parts.length - 1;
         editing = u.start;
         autosize(ta);
+        if (!u.code) syncMenu(ta, u);
         save();
       });
+      ta.addEventListener("blur", function () { closeMenu(ta); });
       ta.addEventListener("keydown", function (e) { keys(e, ta, u); });
       return ta;
     }
 
     function render() {
+      // 메뉴는 bodyEl의 자식이다. 먼저 떼지 않으면 상태 변수만 남고 노드는 지워진다.
+      closeMenu();
       while (bodyEl.firstChild) bodyEl.removeChild(bodyEl.firstChild);
       var us = units();
       for (var k = 0; k < us.length; k++) {
@@ -315,6 +445,27 @@
 
     function keys(e, ta, u) {
       var at = ta.selectionStart, i = u.start;
+      // / 메뉴가 떠 있으면 방향키·Enter·Tab·Escape를 메뉴가 먼저 가져간다.
+      // 글자 키는 그냥 흘려 보낸다 — input이 뒤따라 돌며 목록을 좁힌다.
+      if (menu) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          menuIdx = (menuIdx + (e.key === "ArrowDown" ? 1 : -1) + menuItems.length) % menuItems.length;
+          highlight(ta);
+          return;
+        }
+        if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          choose(menuItems[menuIdx], u, ta);
+          return;
+        }
+        if (e.key === "Escape") {
+          // 메뉴만 닫는다. 편집까지 빠져나가지 않는다.
+          e.preventDefault();
+          closeMenu(ta);
+          return;
+        }
+      }
       // 코드 블록 안에서는 Enter가 줄바꿈이고 Backspace가 글자 지우기다. 블록을 쪼개지 않는다.
       if (u.code) {
         if (e.key === "Escape") { e.preventDefault(); editing = -1; render(); }
