@@ -433,6 +433,15 @@ dialog { max-width: 640px; }
 .blk-todo .txt.done { text-decoration: line-through; color: var(--text-secondary); }
 .blk code { background: var(--bg-fill); border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .blk hr { width: 100%; border: 0; border-top: 1px solid var(--border); }
+.blk a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.blk img, .blk video { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+.blk iframe { display: block; width: 100%; max-width: 720px; aspect-ratio: 16 / 9; border: 0; border-radius: 6px; }
+.blk-embed { display: block; }
+/* 코드 블록은 ``` 여는 줄부터 닫는 줄까지가 한 덩어리다 — flex가 아니라 통짜로 깐다. */
+.blk-code { display: block; position: relative; padding: 2px 6px; }
+.blk-code pre { margin: 4px 0; padding: 12px 14px; overflow-x: auto; background: var(--bg-fill); border: 1px solid var(--border); border-radius: 6px; }
+.blk-code code { padding: 0; background: none; font-size: 13px; line-height: 20px; }
+.blk-code .lang { position: absolute; top: 12px; right: 14px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
 .blk-edit { display: block; width: 100%; padding: 2px 6px; border: 0; border-radius: 4px; background: var(--bg-secondary); outline: none; font: inherit; font-size: 15px; line-height: 24px; resize: none; overflow: hidden; color: var(--text-primary); }
 
 /* ---- API 문서 (V2-06) ---- */

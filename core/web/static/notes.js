@@ -1,5 +1,6 @@
 // 마크다운 인라인 편집기. 서버는 마크다운을 텍스트로만 다루고, 문서를 그리는 것은 여기뿐이다.
-// innerHTML을 쓰지 않는다 — 이것이 XSS를 막는 유일한 장치다.
+// innerHTML을 쓰지 않는다 — 이것이 XSS를 막는 유일한 장치다. 링크·임베드 주소는 safeUrl을
+// 반드시 지나간다(javascript:·data: 따위를 여기서 버린다).
 //
 // 편집 창이 곧 뷰어다. 줄을 누르면 그 줄만 입력창이 되고, 나머지는 렌더된 상태로 남는다.
 // 따로 미리보기 칸을 두지 않는다.
@@ -8,6 +9,79 @@
 // 그래서 (1) HTMX로 나중에 끼워 넣은 본문도 편집기가 되고 — 전에는 원문 textarea가 그대로
 // 보였다 —, (2) 한 화면에 문서가 둘인 거버넌스 화면도 둘 다 살아난다.
 (function () {
+  // ---------- 주소 ----------
+  // 링크·이미지·영상이 모두 여기를 지난다. 통과하지 못하면 그냥 글자로 남는다.
+  function safeUrl(u) {
+    u = (u || "").trim();
+    if (/^(https?:\/\/|mailto:)/i.test(u)) return u;
+    if (/^\/[^/]/.test(u)) return u; // 같은 사이트 경로. //evil.com은 걸러진다
+    return null;
+  }
+
+  var YT = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{6,20})/;
+  var VIMEO = /vimeo\.com\/(?:video\/)?(\d{6,12})/;
+  var IMG_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp)([?#]|$)/i;
+  var VID_EXT = /\.(mp4|webm|ogv|ogg|mov|m4v)([?#]|$)/i;
+
+  function frame(src, title) {
+    var f = document.createElement("iframe");
+    f.src = src;
+    f.title = title || "임베드";
+    f.loading = "lazy";
+    f.setAttribute("allowfullscreen", "");
+    // no-referrer로 두면 YouTube가 오류 153으로 재생을 거부한다. 오리진만 보내고 경로는 감춘다.
+    f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    // 임베드가 이쪽 페이지를 건드리지 못하게 막는다. 영상 재생에 필요한 것만 연다.
+    f.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+    return f;
+  }
+
+  // 주소 하나를 무엇으로 볼지 정한다. 아무것도 아니면 null — 부르는 쪽이 글자로 되돌린다.
+  // force는 `![]()` 문법으로 쓴 경우다. 확장자가 없어도 그림으로 본다.
+  function media(url, alt, force) {
+    var safe = safeUrl(url);
+    if (!safe) return null;
+    var m;
+    if ((m = YT.exec(safe))) {
+      return frame("https://www.youtube-nocookie.com/embed/" + m[1], alt || "YouTube");
+    }
+    if ((m = VIMEO.exec(safe))) {
+      return frame("https://player.vimeo.com/video/" + m[1], alt || "Vimeo");
+    }
+    if (VID_EXT.test(safe)) {
+      var v = document.createElement("video");
+      v.src = safe;
+      v.controls = true;
+      v.preload = "metadata";
+      // 재생 단추를 누르는 것이 편집으로 들어가는 것이 되면 안 된다.
+      v.addEventListener("click", function (e) { e.stopPropagation(); });
+      return v;
+    }
+    if (force || IMG_EXT.test(safe)) {
+      var img = document.createElement("img");
+      img.src = safe;
+      img.alt = alt || "";
+      img.loading = "lazy";
+      return img;
+    }
+    return null;
+  }
+
+  function link(url, text) {
+    var safe = safeUrl(url);
+    if (!safe) return null;
+    var a = document.createElement("a");
+    a.href = safe;
+    a.textContent = text;
+    if (/^https?:/i.test(safe)) {
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+    }
+    // 링크를 누르면 링크로 간다. 편집으로 들어가지 않는다.
+    a.addEventListener("click", function (e) { e.stopPropagation(); });
+    return a;
+  }
+
   function setup(doc) {
     if (doc.dataset.ready === "1") return;
     doc.dataset.ready = "1";
@@ -36,43 +110,125 @@
     if (submit) submit.hidden = true;
 
     // ---------- 파싱 ----------
+    var EMBED_IMG = /^!\[([^\]\n]*)\]\(([^)\s]+)\)$/;
+    var EMBED_URL = /^<?(https?:\/\/[^\s<>]+)>?$/;
+
     function parse(raw) {
+      // 들여쓰기는 버리지 않는다 — 중첩 목록이 화면에서 한 단으로 뭉개지던 원인이다.
+      var ind = /^[ \t]*/.exec(raw)[0].replace(/\t/g, "  ").length;
       var t = raw.trim(), m;
-      if ((m = /^(#{1,3})\s+(.*)$/.exec(t))) return { type: "h", level: m[1].length, text: m[2] };
-      if ((m = /^[-*]\s+\[([ xX])\]\s*(.*)$/.exec(t))) return { type: "todo", checked: m[1] !== " ", text: m[2] };
-      if ((m = /^(\d+)\.\s+(.*)$/.exec(t))) return { type: "li", marker: m[1] + ".", text: m[2] };
-      if (/^[-*]\s+/.test(t)) return { type: "li", marker: "•", text: t.replace(/^[-*]\s+/, "") };
-      if (/^>\s?/.test(t)) return { type: "quote", text: t.replace(/^>\s?/, "") };
-      if (/^(---|\*\*\*)$/.test(t)) return { type: "rule", text: "" };
-      return { type: "p", text: t };
+      if ((m = /^(#{1,3})\s+(.*)$/.exec(t))) return { type: "h", level: m[1].length, text: m[2], indent: ind };
+      if ((m = /^[-*]\s+\[([ xX])\]\s*(.*)$/.exec(t))) return { type: "todo", checked: m[1] !== " ", text: m[2], indent: ind };
+      if ((m = /^(\d+)\.\s+(.*)$/.exec(t))) return { type: "li", marker: m[1] + ".", text: m[2], indent: ind };
+      if (/^[-*]\s+/.test(t)) return { type: "li", marker: "•", text: t.replace(/^[-*]\s+/, ""), indent: ind };
+      if (/^>\s?/.test(t)) return { type: "quote", text: t.replace(/^>\s?/, ""), indent: ind };
+      if (/^(---|\*\*\*)$/.test(t)) return { type: "rule", text: "", indent: 0 };
+      // 줄 전체가 그림·영상 하나면 블록으로 키워 그린다. 글 사이에 낀 것은 inline이 맡는다.
+      if ((m = EMBED_IMG.exec(t))) return { type: "embed", alt: m[1], url: m[2], force: true, text: t, indent: ind };
+      if ((m = EMBED_URL.exec(t))) return { type: "embed", alt: "", url: m[1], force: false, text: t, indent: ind };
+      return { type: "p", text: t, indent: ind };
     }
 
-    var INLINE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|~~[^~]+~~)/g;
+    // 이미지 → 링크 → 강조 → 코드 → 맨 URL 순서로 본다.
+    var INLINE = /(!\[[^\]\n]*\]\([^)\s]+\)|\[[^\]\n]*\]\([^)\s]+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|~~[^~]+~~|https?:\/\/[^\s<>()]+)/g;
+    var MD_LINK = /^!?\[([^\]\n]*)\]\(([^)\s]+)\)$/;
+
     function inline(text, parent) {
       var last = 0, m;
       INLINE.lastIndex = 0;
       while ((m = INLINE.exec(text))) {
         if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
-        var tok = m[0], el;
-        if (tok.slice(0, 2) === "**") { el = document.createElement("strong"); el.textContent = tok.slice(2, -2); }
+        var tok = m[0], el = null, mm;
+        if (tok.charAt(0) === "!" && (mm = MD_LINK.exec(tok))) el = media(mm[2], mm[1], true);
+        else if (tok.charAt(0) === "[" && (mm = MD_LINK.exec(tok))) el = link(mm[2], mm[1] || mm[2]);
+        else if (tok.slice(0, 2) === "**") { el = document.createElement("strong"); el.textContent = tok.slice(2, -2); }
         else if (tok.slice(0, 2) === "~~") { el = document.createElement("s"); el.textContent = tok.slice(2, -2); }
         else if (tok.charAt(0) === "`") { el = document.createElement("code"); el.textContent = tok.slice(1, -1); }
+        else if (/^https?:/i.test(tok)) el = link(tok, tok);
         else { el = document.createElement("em"); el.textContent = tok.slice(1, -1); }
-        parent.appendChild(el);
+        // 주소가 막히면(javascript: 등) 만들지 않는다 — 그대로 글자로 남긴다.
+        parent.appendChild(el || document.createTextNode(tok));
         last = m.index + tok.length;
       }
       if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
     }
 
+    // ---------- 묶음 ----------
+    // "줄 하나가 블록 하나"의 유일한 예외가 ``` 코드 블록이다. 여는 줄부터 닫는 줄까지를
+    // 한 묶음으로 그리고, 편집도 그 범위를 통째로 연다.
+    var FENCE_OPEN = /^\s*```(.*)$/;
+    var FENCE_CLOSE = /^\s*```\s*$/;
+
+    function units() {
+      var out = [], i = 0, m, j;
+      while (i < lines.length) {
+        m = FENCE_OPEN.exec(lines[i]);
+        if (m) {
+          j = i + 1;
+          while (j < lines.length && !FENCE_CLOSE.test(lines[j])) j++;
+          if (j >= lines.length) j = lines.length - 1; // 닫히지 않은 펜스는 끝까지
+          out.push({ start: i, end: j, code: true, lang: m[1].trim() });
+          i = j + 1;
+        } else {
+          out.push({ start: i, end: i, code: false });
+          i++;
+        }
+      }
+      return out;
+    }
+
     // ---------- 렌더 ----------
     function autosize(ta) { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; }
+
+    function openAt(i) {
+      return function (e) {
+        if (readonly) return;
+        if (e.target && e.target.type === "checkbox") return;
+        editing = i; caret = null; render();
+      };
+    }
+
+    function codeBlock(u) {
+      var wrap = document.createElement("div");
+      wrap.className = "blk blk-code";
+      var pre = document.createElement("pre");
+      var code = document.createElement("code");
+      if (u.lang) code.className = "lang-" + u.lang.replace(/[^\w.+-]/g, "");
+      // 울타리 줄은 빼고 안쪽만 보여 준다. 닫히지 않았으면 끝까지가 내용이다.
+      var tail = FENCE_CLOSE.test(lines[u.end]) && u.end > u.start ? u.end : u.end + 1;
+      code.textContent = lines.slice(u.start + 1, tail).join("\n");
+      pre.appendChild(code);
+      wrap.appendChild(pre);
+      if (u.lang) {
+        var tag = document.createElement("span");
+        tag.className = "lang";
+        tag.textContent = u.lang;
+        wrap.appendChild(tag);
+      }
+      wrap.addEventListener("click", openAt(u.start));
+      return wrap;
+    }
 
     function block(raw, i) {
       var b = parse(raw);
       var wrap = document.createElement("div");
       wrap.className = "blk blk-" + b.type + (b.type === "h" ? " h" + b.level : "");
+      // 2칸 = 한 단. .blk의 padding-left 6px를 기준으로 민다.
+      if (b.indent) wrap.style.paddingLeft = 6 + b.indent * 10 + "px";
       if (b.type === "rule") {
         wrap.appendChild(document.createElement("hr"));
+      } else if (b.type === "embed") {
+        var el = media(b.url, b.alt, b.force);
+        if (el) {
+          wrap.appendChild(el);
+        } else {
+          // 그림도 영상도 아니면 평범한 문단으로 되돌린다(맨 URL은 inline이 링크로 만든다).
+          wrap.className = "blk blk-p";
+          var fb = document.createElement("div");
+          fb.className = "txt";
+          inline(b.text, fb);
+          wrap.appendChild(fb);
+        }
       } else if (b.type === "todo") {
         var cb = document.createElement("input");
         cb.type = "checkbox";
@@ -91,37 +247,44 @@
           mk.textContent = b.marker;
           wrap.appendChild(mk);
         }
-        var el = document.createElement(
+        var box = document.createElement(
           b.type === "h" ? "h" + b.level : b.type === "quote" ? "blockquote" : "div"
         );
-        el.className = "txt";
-        inline(b.text, el);
-        if (!b.text) el.appendChild(document.createTextNode(" "));
-        wrap.appendChild(el);
+        box.className = "txt";
+        inline(b.text, box);
+        if (!b.text) box.appendChild(document.createTextNode(" "));
+        wrap.appendChild(box);
       }
-      wrap.addEventListener("click", function (e) {
-        if (readonly) return;
-        if (e.target && e.target.type === "checkbox") return;
-        editing = i; caret = null; render();
-      });
+      wrap.addEventListener("click", openAt(i));
       return wrap;
     }
 
-    function editor(raw, i) {
+    function editor(u) {
       var ta = document.createElement("textarea");
       ta.className = "blk-edit";
       ta.rows = 1;
-      ta.value = raw;
+      ta.value = lines.slice(u.start, u.end + 1).join("\n");
       ta.setAttribute("aria-label", "본문 입력");
-      ta.addEventListener("input", function () { lines[i] = ta.value; autosize(ta); save(); });
-      ta.addEventListener("keydown", function (e) { keys(e, ta, i); });
+      ta.addEventListener("input", function () {
+        // 코드 블록은 여러 줄이라 통째로 갈아 끼운다. 한 줄짜리도 같은 길로 간다.
+        var parts = ta.value.split("\n");
+        Array.prototype.splice.apply(lines, [u.start, u.end - u.start + 1].concat(parts));
+        u.end = u.start + parts.length - 1;
+        editing = u.start;
+        autosize(ta);
+        save();
+      });
+      ta.addEventListener("keydown", function (e) { keys(e, ta, u); });
       return ta;
     }
 
     function render() {
       while (bodyEl.firstChild) bodyEl.removeChild(bodyEl.firstChild);
-      for (var i = 0; i < lines.length; i++) {
-        bodyEl.appendChild(!readonly && i === editing ? editor(lines[i], i) : block(lines[i], i));
+      var us = units();
+      for (var k = 0; k < us.length; k++) {
+        var u = us[k];
+        var open = !readonly && editing >= u.start && editing <= u.end;
+        bodyEl.appendChild(open ? editor(u) : u.code ? codeBlock(u) : block(lines[u.start], u.start));
       }
       var ta = bodyEl.querySelector("textarea");
       if (ta) {
@@ -150,8 +313,13 @@
       return m ? m[1] + (parseInt(m[2], 10) + 1) + "." + m[3] : p;
     }
 
-    function keys(e, ta, i) {
-      var at = ta.selectionStart;
+    function keys(e, ta, u) {
+      var at = ta.selectionStart, i = u.start;
+      // 코드 블록 안에서는 Enter가 줄바꿈이고 Backspace가 글자 지우기다. 블록을 쪼개지 않는다.
+      if (u.code) {
+        if (e.key === "Escape") { e.preventDefault(); editing = -1; render(); }
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         var head = ta.value.slice(0, at), tail = ta.value.slice(at);
