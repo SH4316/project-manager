@@ -19,5 +19,4 @@ def test_document_editor_enters_and_returns_focus_to_the_button():
     assert "function beginEditing()" in script
     assert "function exitEditing()" in script
     assert "if (editStart) editStart.focus();" in script
-    assert script.count('if (e.key === "Escape") { e.preventDefault(); exitEditing(); }') == 1
-    assert "e.preventDefault(); exitEditing();" in script
+    assert script.count("e.preventDefault(); exitEditing();") == 2

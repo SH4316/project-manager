@@ -492,7 +492,16 @@
       }
       // 코드 블록 안에서는 Enter가 줄바꿈이고 Backspace가 글자 지우기다. 블록을 쪼개지 않는다.
       if (u.code) {
-        if (e.key === "Escape") { e.preventDefault(); exitEditing(); }
+        // 맨 앞·뒤에서만 이웃 블록으로 건너간다. 코드 안쪽의 화살표는 native 이동을 유지한다.
+        var plainArrow = !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey;
+        var collapsed = ta.selectionStart === ta.selectionEnd;
+        if (plainArrow && collapsed && e.key === "ArrowUp" && at === 0 && u.start > 0) {
+          e.preventDefault(); editing = u.start - 1; caret = null; render();
+        } else if (plainArrow && collapsed && e.key === "ArrowDown" && at === ta.value.length && u.end < lines.length - 1) {
+          e.preventDefault(); editing = u.end + 1; caret = 0; render();
+        } else if (e.key === "Escape") {
+          e.preventDefault(); exitEditing();
+        }
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
