@@ -275,6 +275,9 @@ table.grid th, table.grid td { text-align: left; padding: 10px 8px; border-botto
 table.grid th { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 table.grid .num { text-align: right; }
 table.grid code { overflow-wrap: anywhere; }
+.member-skills-cell { min-width: 300px; }
+.member-skills-form { flex-wrap: nowrap; }
+.member-skills-input { width: 220px; min-width: 200px; max-width: 220px; flex: 0 1 220px; }
 .table-scroll { max-width: 100%; overflow-x: auto; }
 .table-scroll-hint { display: none; }
 .board { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
