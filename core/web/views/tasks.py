@@ -34,7 +34,7 @@ def _git_ctx(request, task) -> dict:
     """패널 GitHub 블록의 context. repo_state()가 상태를, pr_compare_url()이 PR 열기 링크를 준다."""
     rs = repo_state(request.user, task.project)
     link = getattr(task, "git", None)
-    issues = rs["conn"].issues.all()[:50] if rs["state"] == "ok" else []
+    issues = rs["conn"].issues.filter(state="open")[:50] if rs["state"] == "ok" else []
     return {
         "gh": {
             **rs,

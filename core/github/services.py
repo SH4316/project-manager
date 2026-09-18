@@ -139,22 +139,21 @@ def sync_repos(identity) -> list[str]:
         suspended_at__isnull=True, org__in=orgs_of(identity.user)
     )
     for inst in installs:
-        page = 1
-        while True:
-            try:
-                data = client.request(
-                    "GET",
-                    f"/user/installations/{inst.installation_id}/repositories"
-                    f"?per_page=100&page={page}",
+        try:
+            names += [
+                r["full_name"]
+                for r in client.paginate(
+                    f"/user/installations/{inst.installation_id}/repositories",
                     token,
+                    key="repositories",
                 )
-            except GitHubError:
-                break  # 그 설치에 접근 권한이 없다(403·404). 건너뛴다.
-            repos = (data or {}).get("repositories", [])
-            names += [r["full_name"] for r in repos]
-            if len(repos) < 100:
-                break
-            page += 1
+            ]
+        except GitHubError as e:
+            # 403·404는 그 설치에 접근 권한이 없다는 뜻이다 — 건너뛴다. 그 밖의 오류(5xx·429·
+            # 네트워크)는 "볼 수 있는 저장소가 없다"가 아니다. 캐시를 빈 목록으로 덮으면
+            # repo_state가 denied가 되어 GitHub 화면이 통째로 사라지므로 그대로 올린다.
+            if e.status not in (403, 404):
+                raise
     identity.repos = sorted(set(names))
     identity.repos_checked_at = timezone.now()
     identity.save(update_fields=["repos", "repos_checked_at"])
@@ -200,15 +199,14 @@ def installation_repos(org) -> list[dict]:
     이미 다른 프로젝트에 연결됐는지는 여기서 보지 않는다 — 호출부가 판단한다.
     설치가 없거나 GitHub가 오류를 내면 빈 목록을 돌려준다. 화면은 입력창만으로도 그대로
     동작해야 하기 때문이다.
-    # ponytail: 첫 100건, 캐시 없음. 100건 넘는 조직이 생기면 페이지를 돌거나 sync_repos처럼
-    # identity.repos_checked_at 같은 캐시를 둔다.
+    # ponytail: 캐시 없음. 매번 GitHub를 부르는 게 느껴지면 sync_repos처럼 checked_at을 둔다.
     """
     inst = getattr(org, "github", None)
     if inst is None:
         return []
     try:
         token = client.installation_token(inst.installation_id)
-        data = client.request("GET", "/installation/repositories?per_page=100", token)
+        repos = list(client.paginate("/installation/repositories", token, key="repositories"))
     except GitHubError:
         return []
     return [
@@ -217,7 +215,7 @@ def installation_repos(org) -> list[dict]:
             "clone_url": r.get("clone_url", ""),
             "private": bool(r.get("private")),
         }
-        for r in (data or {}).get("repositories", [])
+        for r in repos
     ]
 
 
@@ -745,16 +743,18 @@ def _on_issues(conn, delivery, payload):
 def sync_issues(conn) -> int:
     """열린 이슈를 RepoIssue에 맞춘다. PR은 이슈 API에도 섞여 오므로 뺀다.
 
-    설치 토큰으로 읽는다 — 이 토큰은 읽기에만 쓴다.
-    # ponytail: 첫 100건. 이슈가 그보다 많은 저장소가 생기면 페이지를 돈다.
+    설치 토큰으로 읽는다 — 이 토큰은 읽기에만 쓴다. 이슈가 100건을 넘어도 끝까지 읽는다:
+    한 페이지만 읽으면 나머지가 화면에서 사라질 뿐 아니라 아래 쓸기에 닫힌 것으로 찍힌다.
+
+    라벨 필터(import_label)는 걸지 않는다 — 그건 자동 가져오기 문턱이지 조회 범위가 아니다.
+    여기서 걸면 라벨 없는 이슈가 쓸기에 닫힌 것으로 찍혀 다음 조회부터 사라진다.
     """
     inst = getattr(conn.project.org, "github", None)
     if inst is None:
         raise ServiceError({"github": "조직에 GitHub 앱이 설치되지 않았습니다."})
     token = client.installation_token(inst.installation_id)
-    q = urlencode({"state": "open", "per_page": 100, "labels": conn.import_label or ""})
     seen = set()
-    for item in client.request("GET", f"/repos/{conn.full_name}/issues?{q}", token) or []:
+    for item in client.paginate(f"/repos/{conn.full_name}/issues?state=open", token):
         if "pull_request" in item:
             continue
         seen.add(item["number"])
@@ -826,15 +826,18 @@ def org_issues(org, *, repo_id=None, imported=None, query=""):
     return qs
 
 
-def sync_org_issues(org) -> int:
-    """조직의 모든 연결 저장소를 한 번에 새로 고친다. 실패한 저장소는 건너뛴다."""
-    total = 0
+def sync_org_issues(org) -> tuple[int, int]:
+    """조직의 모든 연결 저장소를 한 번에 새로 고친다. 실패한 저장소는 건너뛴다.
+
+    조회 화면이 "0건"과 "전부 실패"를 구분해서 말할 수 있도록 실패한 저장소 수도 함께 돌려준다.
+    """
+    total = failed = 0
     for conn in RepoConnection.objects.filter(project__org=org).select_related("project"):
         try:
             total += sync_issues(conn)
         except (ServiceError, GitHubError):
-            continue
-    return total
+            failed += 1
+    return total, failed
 
 
 def pr_compare_url(link) -> str:

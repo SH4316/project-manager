@@ -198,7 +198,7 @@ def project_repo(request, project_id):
         ctx["org_repos"] = _pickable_repos(project)
     if state["state"] == "ok":
         conn = state["conn"]
-        ctx["issues"] = conn.issues.all()[:50]
+        ctx["issues"] = conn.issues.filter(state="open")[:50]
         ctx["events"] = conn.events.select_related("task")[:50]
         ctx["repo_teams"] = _repo_teams(conn)
         ctx["open_tasks"] = project.tasks.filter(status__in=Task.OPEN).order_by("-id")[:50]
@@ -323,7 +323,9 @@ def org_issues(request, org_id):
 def org_issues_sync(request, org_id):
     _gh_enabled_or_404()
     org = org_or_404(request.user, org_id)
-    n = gh_services.sync_org_issues(org)
+    n, failed = gh_services.sync_org_issues(org)
+    if failed:
+        messages.error(request, f"저장소 {failed}곳에서 이슈를 가져오지 못했습니다.")
     messages.success(request, f"열린 이슈 {n}건을 확인했습니다.")
     return redirect(f"{reverse('org_issues', args=[org.pk])}?{request.POST.get('back', '')}")
 
@@ -446,7 +448,8 @@ def git_issue(request, task_id):
     if gh_services.repo_state(request.user, task.project)["state"] != "ok":
         raise Http404
     conn = task.project.repo
-    issue = conn.issues.filter(number=request.POST.get("number")).first()
+    number = request.POST.get("number", "")
+    issue = conn.issues.filter(number=number).first() if number.isdecimal() else None
     if issue is not None:
         link, _ = TaskGitLink.objects.get_or_create(task=task, defaults={"connection": conn})
         link.connection = conn

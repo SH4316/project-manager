@@ -447,3 +447,46 @@ def test_installation_token_read_only():
                 if write_re.search(window):
                     violations.append(f"{path}:{i + 1}")
     assert violations == [], violations
+
+
+def test_sync_issues_reads_every_page(gh, conn, admin, org, monkeypatch):
+    """100건을 넘으면 다음 페이지도 읽는다. 한 페이지만 읽으면 나머지가 닫힌 것으로 찍혔다."""
+    GitHubInstallation.objects.create(
+        org=org, installation_id=556, account_login="o", installed_by=admin
+    )
+    monkeypatch.setattr(gh_client, "installation_token", lambda iid: "tok")
+    pages = {
+        "1": [
+            {"number": n, "title": f"이슈 {n}", "labels": [], "assignee": None}
+            for n in range(1, 101)
+        ],
+        "2": [{"number": 101, "title": "101번째", "labels": [], "assignee": None}],
+    }
+
+    def fake(method, path, token, **kw):
+        return pages.get(path.rsplit("page=", 1)[1], [])
+
+    monkeypatch.setattr(gh_client, "request", fake)
+    assert ghs.sync_issues(conn) == 101
+    assert RepoIssue.objects.filter(connection=conn, number=101, state="open").exists()
+
+
+def test_sync_issues_keeps_issues_without_the_import_label(gh, conn, admin, org, monkeypatch):
+    """라벨 필터는 자동 가져오기 문턱일 뿐이다. 웹훅으로 담긴 이슈를 조회에서 지우면 안 된다."""
+    conn.import_label = "task"
+    conn.save(update_fields=["import_label"])
+    GitHubInstallation.objects.create(
+        org=org, installation_id=557, account_login="o", installed_by=admin
+    )
+    RepoIssue.objects.create(connection=conn, number=9, title="라벨 없는 이슈")
+    monkeypatch.setattr(gh_client, "installation_token", lambda iid: "tok")
+    asked = []
+
+    def fake(method, path, token, **kw):
+        asked.append(path)
+        return [{"number": 9, "title": "라벨 없는 이슈", "labels": [], "assignee": None}]
+
+    monkeypatch.setattr(gh_client, "request", fake)
+    ghs.sync_issues(conn)
+    assert not any("labels=" in p for p in asked)
+    assert RepoIssue.objects.get(connection=conn, number=9).state == "open"

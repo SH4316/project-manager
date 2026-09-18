@@ -52,6 +52,25 @@ def request(method: str, path: str, token: str, *, body=None, accept="applicatio
         raise GitHubError(0, str(e.reason)) from None
 
 
+PER_PAGE = 100
+
+
+def paginate(path: str, token: str, *, key=None, per_page: int = PER_PAGE):
+    """목록 API를 끝까지 읽는다. `?`가 이미 있으면 뒤에 붙인다.
+
+    key를 주면 {"repositories": [...]} 같은 감싼 응답에서 그 키를 꺼낸다.
+    """
+    sep = "&" if "?" in path else "?"
+    page = 1
+    while True:
+        data = request("GET", f"{path}{sep}per_page={per_page}&page={page}", token)
+        items = (data or {}).get(key, []) if key else (data or [])
+        yield from items
+        if len(items) < per_page:
+            return
+        page += 1
+
+
 def _b64(raw: bytes) -> bytes:
     return base64.urlsafe_b64encode(raw).rstrip(b"=")
 

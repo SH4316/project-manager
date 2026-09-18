@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from common.errors import ServiceError
 from github import services as ghs
+from github.client import GitHubError
 from github.conftest import signed
 from github.crypto import decrypt, encrypt
 from github.models import GitEvent, GitHubIdentity, GitHubInstallation, RepoConnection
@@ -316,6 +317,43 @@ def test_sync_repos_only_own_orgs(gh, admin, org, monkeypatch, member):
     assert repos == ["mine/repo"]
     assert any("/11/" in p for p in asked)
     assert not any("/22/" in p for p in asked)
+
+
+def test_sync_repos_keeps_cache_when_github_hiccups(gh, admin, org, monkeypatch):
+    """일시적 오류로 목록을 비우지 않는다. 비우면 repo_state가 denied가 되어 화면이 사라진다."""
+    GitHubInstallation.objects.create(
+        org=org, installation_id=11, account_login="mine", installed_by=admin
+    )
+    identity = GitHubIdentity.objects.create(
+        user=admin, github_id=3, login="a", repos=["mine/repo"]
+    )
+    gh_store(identity, "tok", "ref")
+
+    def boom(method, path, token, **kw):
+        raise GitHubError(502, "Bad gateway")
+
+    monkeypatch.setattr("github.client.request", boom)
+    with pytest.raises(GitHubError):
+        ghs.sync_repos(identity)
+    identity.refresh_from_db()
+    assert identity.repos == ["mine/repo"]
+
+
+def test_sync_repos_skips_installs_we_cannot_see(gh, admin, org, monkeypatch):
+    """403·404는 진짜로 권한이 없다는 뜻이다 — 그 설치만 건너뛴다."""
+    GitHubInstallation.objects.create(
+        org=org, installation_id=11, account_login="mine", installed_by=admin
+    )
+    identity = GitHubIdentity.objects.create(
+        user=admin, github_id=3, login="a", repos=["mine/repo"]
+    )
+    gh_store(identity, "tok", "ref")
+
+    def denied(method, path, token, **kw):
+        raise GitHubError(403, "Forbidden")
+
+    monkeypatch.setattr("github.client.request", denied)
+    assert ghs.sync_repos(identity) == []
 
 
 # ---------- actor=None 경계 ----------
