@@ -901,14 +901,35 @@ def test_note_click_shows_selected_body(logged, org, member):
     n2 = create_note(org=org, actor=member, title="둘째 회의록", body_md="둘째 회의 본문")
 
     body = logged.get(f"/orgs/{org.pk}/notes?scope=all&note={n2.pk}").content.decode()
+    assert 'class="notes-columns note-editor-open"' in body
     assert 'class="doc"' in body
     assert 'id="doc-src"' in body
+    assert 'class="card note-editor-card" id="note-editor"' in body
+    assert 'class="btn sm note-back"' in body
+    assert 'class="note-save-status" data-state="saved"' in body
+    assert "저장됨 · v1" in body
+    assert 'aria-current="page"' in body
     assert "둘째 회의 본문" in body
     assert "첫 회의 본문" not in body
 
     body = logged.get(f"/orgs/{org.pk}/notes?scope=all&note={n1.pk}").content.decode()
     assert "첫 회의 본문" in body
     assert "둘째 회의 본문" not in body
+
+
+def test_note_list_mode_is_distinct_from_requested_editor(logged, org, member):
+    from notes.services import create_note
+
+    note = create_note(org=org, actor=member, title="목록과 편집기")
+    body = logged.get(f"/orgs/{org.pk}/notes?scope=all").content.decode()
+    assert 'class="notes-columns">' in body
+    assert 'class="notes-columns note-editor-open"' not in body
+    assert 'class="card list note-list" id="note-list"' in body
+    assert f"note={note.pk}" in body
+
+    selected = logged.get(f"/orgs/{org.pk}/notes?scope=all&note={note.pk}").content.decode()
+    assert 'class="notes-columns note-editor-open"' in selected
+    assert "← 회의록 목록" in selected
 
 
 def test_note_save_bumps_version(logged, org, member):

@@ -555,11 +555,40 @@ dialog { max-width: 640px; }
 .notes-columns { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .notes-columns > .list { flex: 1 1 320px; min-width: 0; }
 .notes-columns > .card:last-child { flex: 9999 1 420px; min-width: 0; }
+.note-editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; min-height: 28px; }
+.note-back { display: none; }
+.note-save-status {
+  display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px; border-radius: 999px;
+  background: var(--success-bg); color: var(--success); font-size: 12px; line-height: 18px; font-weight: 600;
+}
+.note-save-status[data-state="saving"] { background: var(--primary-bg); color: var(--primary); }
+.note-save-status[data-state="pending"] { background: var(--warning-bg); color: var(--warning); }
+.note-save-status[data-state="error"] { background: var(--danger-bg); color: var(--danger); }
+.note-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+.note-meta-field { display: flex; min-width: 0; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.note-meta-field > .input, .note-meta-field > .select { width: 100%; color: var(--text-primary); }
+.note-author-value { min-width: 0; min-height: 44px; display: flex; align-items: center; overflow-wrap: anywhere; color: var(--text-primary); }
+.note-editor-card.note-returning [data-note-field], .note-editor-card.note-returning .doc { opacity: .65; cursor: progress; }
 /* 목록 항목은 링크지만 문장 속 링크가 아니다 — 밑줄·링크색이면 카드가 글처럼 읽힌다 */
 .note-item { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); text-align: left; cursor: pointer; color: var(--text-primary); text-decoration: none; }
 .note-item:hover { background: var(--bg-secondary); }
 .note-item .muted { text-decoration: none; }
 .note-item.sel { box-shadow: inset 3px 0 0 var(--primary); }
+@media (max-width: 850px) {
+  .notes-columns { display: block; }
+  .notes-columns:not(.note-editor-open) > .note-editor-card { display: none; }
+  .notes-columns.note-editor-open > .note-list { display: none; }
+  .note-editor-card { padding: 16px; scroll-margin-top: 112px; }
+  .note-editor-toolbar { justify-content: space-between; }
+  .note-back { display: inline-flex; }
+  .note-meta { grid-template-columns: minmax(0, 1fr) minmax(80px, 40%); }
+  .note-date, .note-tags { grid-column: 1 / -1; }
+  .note-back[aria-disabled="true"] { opacity: .55; pointer-events: none; }
+}
+@media (max-width: 360px) {
+  .note-meta { grid-template-columns: minmax(0, 1fr); }
+  .note-author, .note-date, .note-tags { grid-column: 1; }
+}
 .doc { display: flex; flex-direction: column; min-height: 360px; padding: 8px 0; cursor: text; }
 .blk { padding: 2px 6px; font-size: 15px; line-height: 24px; display: flex; gap: 8px; align-items: baseline; }
 .blk .txt { flex: 1; min-width: 0; }
