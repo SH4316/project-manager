@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
@@ -64,6 +65,7 @@ def tokens(request):
             "tokens": request.user.tokens.filter(revoked_at__isnull=True),
             "revoked_tokens": request.user.tokens.filter(revoked_at__isnull=False),
             "new_token": request.session.pop("new_token", None),
+            "mcp_url": settings.MCP_URL,
         },
     )
 

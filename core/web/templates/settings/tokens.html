@@ -44,14 +44,14 @@
 </section>
 <section class="card">
   <h2>AI 클라이언트 연결</h2>
-  <p class="muted t13">&lt;MCP_URL&gt;은 MCP 서버 주소, &lt;TOKEN&gt;은 위에서 발급한 값입니다.</p>
+  <p class="muted t13">&lt;TOKEN&gt;은 위에서 발급한 값입니다.</p>
   <table class="grid">
     <thead><tr><th>클라이언트</th><th>설정</th></tr></thead>
     <tbody>
-      <tr><td>Claude Code</td><td><code>claude mcp add --transport http sandol &lt;MCP_URL&gt;/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"</code> <button type="button" class="btn sm" data-copy-text='claude mcp add --transport http sandol &lt;MCP_URL&gt;/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"' data-copy-label="명령 복사됨">복사</button></td></tr>
-      <tr><td>Codex CLI</td><td><code>~/.codex/config.toml</code>에 <code>[mcp_servers.sandol]</code> <code>url = "&lt;MCP_URL&gt;/mcp"</code> <code>bearer_token_env_var = "SANDOL_TOKEN"</code> 추가, 환경 변수 <code>SANDOL_TOKEN=&lt;TOKEN&gt;</code></td></tr>
-      <tr><td>Claude 앱 / claude.ai</td><td>설정 → 커넥터 → 커스텀 커넥터 추가 → URL <code>&lt;MCP_URL&gt;/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
-      <tr><td>ChatGPT</td><td>설정 → 커넥터(개발자 모드) → 추가 → URL <code>&lt;MCP_URL&gt;/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
+      <tr><td>Claude Code</td><td><code>claude mcp add --transport http sandol {{ mcp_url }}/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"</code> <button type="button" class="btn sm" data-copy-text='claude mcp add --transport http sandol {{ mcp_url }}/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"' data-copy-label="명령 복사됨">복사</button></td></tr>
+      <tr><td>Codex CLI</td><td><code>~/.codex/config.toml</code>에 <code>[mcp_servers.sandol]</code> <code>url = "{{ mcp_url }}/mcp"</code> <code>bearer_token_env_var = "SANDOL_TOKEN"</code> 추가, 환경 변수 <code>SANDOL_TOKEN=&lt;TOKEN&gt;</code></td></tr>
+      <tr><td>Claude 앱 / claude.ai</td><td>설정 → 커넥터 → 커스텀 커넥터 추가 → URL <code>{{ mcp_url }}/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
+      <tr><td>ChatGPT</td><td>설정 → 커넥터(개발자 모드) → 추가 → URL <code>{{ mcp_url }}/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
     </tbody>
   </table>
   <p class="warning t13">개인 비밀 URL은 비밀번호와 같습니다. 공유하지 말고, 유출되면 이 화면에서 폐기하세요.</p>

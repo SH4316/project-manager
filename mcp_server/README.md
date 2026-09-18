@@ -20,14 +20,14 @@ CORE_URL=http://localhost:8000 uv run python -m mcp_server
 
 ## 클라이언트 연결
 
-`<MCP_URL>`은 `https://mcp.<도메인>`, `<TOKEN>`은 core의 `/settings/tokens`에서 발급한 값.
+운영 서버의 MCP 주소는 `https://mcp.sio2.kr`이다(다른 곳에 올렸다면 그 주소로 바꿔 읽는다). `<TOKEN>`은 core의 `/settings/tokens`에서 발급한 값.
 
 | 클라이언트 | 설정 |
 |---|---|
-| Claude Code | `claude mcp add --transport http sandol <MCP_URL>/mcp --header "Authorization: Bearer <TOKEN>"` |
-| Codex CLI | `~/.codex/config.toml`에 `[mcp_servers.sandol]` `url = "<MCP_URL>/mcp"` `bearer_token_env_var = "SANDOL_TOKEN"` 추가, 환경 변수 `SANDOL_TOKEN=<TOKEN>` |
-| Claude 앱 / claude.ai | 설정 → 커넥터 → 커스텀 커넥터 추가 → URL `<MCP_URL>/u/<TOKEN>/mcp`, 인증 없음 |
-| ChatGPT | 설정 → 커넥터(개발자 모드) → 추가 → URL `<MCP_URL>/u/<TOKEN>/mcp`, 인증 없음 |
+| Claude Code | `claude mcp add --transport http sandol https://mcp.sio2.kr/mcp --header "Authorization: Bearer <TOKEN>"` |
+| Codex CLI | `~/.codex/config.toml`에 `[mcp_servers.sandol]` `url = "https://mcp.sio2.kr/mcp"` `bearer_token_env_var = "SANDOL_TOKEN"` 추가, 환경 변수 `SANDOL_TOKEN=<TOKEN>` |
+| Claude 앱 / claude.ai | 설정 → 커넥터 → 커스텀 커넥터 추가 → URL `https://mcp.sio2.kr/u/<TOKEN>/mcp`, 인증 없음 |
+| ChatGPT | 설정 → 커넥터(개발자 모드) → 추가 → URL `https://mcp.sio2.kr/u/<TOKEN>/mcp`, 인증 없음 |
 
 개인 비밀 URL은 비밀번호와 같다. 공유하지 말고, 유출되면 `/settings/tokens`에서 폐기한다.
 

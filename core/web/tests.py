@@ -314,6 +314,15 @@ def test_token_shown_once(logged):
     assert "pm_" not in logged.get("/settings/tokens").content.decode()
 
 
+def test_token_page_shows_the_real_mcp_url(logged, settings):
+    """연결 예시에 <MCP_URL> 자리표시자를 남기지 않는다 — 절반이 틀린 주소로 붙는다."""
+    settings.MCP_URL = "https://mcp.example.test"
+    body = logged.get("/settings/tokens").content.decode()
+    assert "MCP_URL" not in body
+    assert "https://mcp.example.test/mcp" in body
+    assert "https://mcp.example.test/u/" in body
+
+
 def test_schedule_card_is_scoped_to_org_membership(logged, task, project, member):
     """일정 카드도 조직 범위를 따른다. 조직에서 빠지면 마감이 달력에 남지 않는다."""
     from orgs.models import OrgMembership
