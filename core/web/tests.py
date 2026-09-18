@@ -560,6 +560,18 @@ def test_rail_only_in_project_area(logged, org, project):
     assert 'class="project-picker"' in body
 
 
+def test_project_and_org_sibling_tabs_keep_shell_context(logged, org, project):
+    for url in (f"/projects/{project.pk}/docs", f"/projects/{project.pk}/settings"):
+        body = logged.get(url).content.decode()
+        assert 'href="/projects" aria-current="page"' in body
+        assert 'class="rail"' in body
+        assert f"프로젝트 전환, 현재 {project.name}" in body
+
+    for url in (f"/orgs/{org.pk}/governance", f"/orgs/{org.pk}/settings"):
+        body = logged.get(url).content.decode()
+        assert 'href="/org" aria-current="page"' in body
+
+
 def test_mobile_project_picker_names_current_project(logged, project, task):
     body = logged.get(f"/projects/{project.pk}").content.decode()
     assert f"프로젝트 전환, 현재 {project.name}" in body
