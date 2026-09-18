@@ -353,16 +353,21 @@ dialog { max-height: calc(100vh - 64px); overflow: auto; }
 /* 긴 폼에서 저장 버튼이 스크롤 아래로 사라지지 않게 */
 dialog form.stack > .row:last-child { position: sticky; bottom: -24px; margin: 0 -24px -24px; padding: 16px 24px;
   background: var(--bg-surface); border-top: 1px solid var(--border); }
+.choice-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.choice-fieldset > legend { margin-bottom: 8px; padding: 0; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { display: inline-flex; align-items: center; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
-.chip input { display: none; }
+.chip { position: relative; display: inline-flex; align-items: center; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
+.chip input, .radio-card input {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; opacity: 0;
+}
+.chip:has(input:focus-visible), .radio-card:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
 .chip:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); font-weight: 600; }
 .chip:has(input:checked)::before { content: "✓"; margin-right: 6px; }
 /* 상태 카드가 9개면 세로 한 줄로는 모달이 900px을 넘긴다 — 넓으면 2열로 */
 .radios { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 8px; }
 dialog { max-width: 640px; }
-.radio-card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
-.radio-card input { display: none; }
+.radio-card { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .radio-card:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); }
 .radio-card b { font-size: 15px; line-height: 22px; font-weight: 600; }
 .radio-card span { font-size: 13px; color: var(--text-secondary); }
