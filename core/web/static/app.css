@@ -699,5 +699,98 @@ dialog { max-width: 640px; }
 .git-commits { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .git-commits code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-/* 설정 한 장 안에 묶음이 여럿이다. 두 번째 제목부터 표와 붙지 않게 띄운다. */
-.settings-card h2 ~ h2 { margin-top: 18px; }
+/* ---- 계층형 설정 폼 ---- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.settings-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.settings-heading > div { display: flex; flex-direction: column; gap: 2px; }
+.settings-scope-note { max-width: 960px; }
+.settings-form { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.settings-jump { display: flex; flex-wrap: wrap; gap: 8px; max-width: 960px; }
+.settings-jump .chip { gap: 6px; color: var(--text-primary); }
+.settings-jump .chip span { color: var(--text-secondary); font-size: 12px; }
+.settings-save-bar {
+  position: sticky; top: 80px; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 960px;
+  padding: 8px; border: 1px solid var(--border); border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent); box-shadow: 0 6px 20px rgba(15,50,60,.10);
+  backdrop-filter: blur(12px);
+}
+.settings-save-hint { color: var(--text-secondary); font-size: 13px; line-height: 19px; }
+.personal-settings-group, .settings-section { max-width: 960px; }
+.personal-settings-group { display: flex; flex-direction: column; gap: 8px; }
+.personal-settings-group + .personal-settings-group { margin-top: 4px; }
+.settings-group-title { display: flex; align-items: baseline; gap: 6px; font-size: 15px; line-height: 22px; }
+.settings-section { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); scroll-margin-top: 150px; }
+details.card.settings-section { padding: 0; gap: 0; }
+.settings-section-summary {
+  display: flex; align-items: center; gap: 8px; min-height: 60px; padding: 14px 16px;
+  list-style: none; cursor: pointer; font-size: 16px; line-height: 24px; font-weight: 700;
+}
+.settings-section-summary::-webkit-details-marker { display: none; }
+.settings-section-summary:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; border-radius: 8px; }
+.settings-section-summary > .muted { margin-left: auto; font-weight: 500; }
+.settings-section-summary::after { content: "⌄"; color: var(--text-secondary); transition: transform .12s ease; }
+.settings-section[open] > .settings-section-summary { border-bottom: 1px solid var(--border); }
+.settings-section[open] > .settings-section-summary::after { transform: rotate(180deg); }
+.settings-section-body { padding: 0 16px 16px; }
+.settings-list { display: flex; max-width: 960px; flex-direction: column; border-top: 1px solid var(--border); }
+.settings-section-body > .settings-list { border-top: 0; }
+.setting-row {
+  display: grid; grid-template-columns: minmax(280px, 1fr) minmax(180px, 320px); gap: 16px 24px;
+  align-items: center; min-height: 64px; padding: 10px 8px; border-bottom: 1px solid var(--border);
+}
+.setting-row:last-child { border-bottom: 0; }
+.setting-row-with-override { grid-template-columns: minmax(280px, 1fr) minmax(180px, 280px) minmax(170px, 220px); }
+.setting-name { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; }
+.setting-label { font-size: 14px; line-height: 20px; font-weight: 600; }
+.setting-help { display: block; max-width: 70ch; }
+.setting-lock { margin-top: 4px; white-space: normal; text-decoration: none; }
+.setting-control { min-width: 0; }
+.setting-control .input, .setting-control .select { width: 100%; max-width: 320px; }
+.setting-control .setting-number { width: 84px; }
+.setting-toggle { display: inline-flex; align-items: center; gap: 8px; min-width: 64px; min-height: 44px; border-radius: 7px; cursor: pointer; }
+.setting-toggle input, .setting-option input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.setting-toggle-state::before { content: "끔"; color: var(--text-secondary); font-size: 13px; }
+.setting-toggle input:checked + .setting-toggle-state::before { content: "켬"; color: var(--primary); font-weight: 700; }
+.setting-options { display: flex; flex-direction: column; gap: 0; min-width: 0; margin: 0; padding: 0; border: 0; }
+.setting-option { display: flex; align-items: center; gap: 8px; min-height: 44px; border-radius: 7px; cursor: pointer; font-size: 13px; line-height: 19px; }
+.setting-toggle:hover, .setting-option:hover { background: var(--bg-secondary); }
+.setting-toggle:focus-within, .setting-option:focus-within { outline: 2px solid var(--primary-bg); }
+.setting-option span { min-width: 0; }
+.setting-readonly { display: inline-flex; align-items: center; min-height: 36px; padding: 6px 10px; border-radius: 7px; background: var(--bg-secondary); }
+.setting-override { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.setting-override-label { color: var(--text-secondary); font-size: 12px; line-height: 18px; }
+.setting-fixed { padding-block: 9px; }
+@media (prefers-reduced-motion: reduce) { .settings-section-summary::after { transition: none; } }
+@media (max-width: 850px) {
+  .settings-card { padding: 16px; }
+  .settings-scope-note { font-size: 13px; }
+  .settings-jump { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+  .settings-jump .chip { flex: none; }
+  .settings-save-bar { padding: 6px; }
+  .settings-save-hint { display: none; }
+  .settings-save-bar .btn { width: 100%; }
+  .settings-section-summary { min-height: 56px; padding: 12px 14px; font-size: 15px; line-height: 22px; }
+  .settings-section-body { padding: 0 12px 12px; }
+  .settings-list { gap: 8px; border-top: 0; }
+  .setting-row, .setting-row-with-override {
+    display: flex; min-height: 0; flex-direction: column; align-items: stretch; gap: 10px;
+    padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface);
+  }
+  .setting-row:last-child { border-bottom: 1px solid var(--border); }
+  .setting-control { width: 100%; }
+  .setting-control .input, .setting-control .select { width: 100%; max-width: none; }
+  .setting-control .setting-number { width: 120px; }
+  .setting-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+  .setting-override { width: 100%; padding-top: 8px; border-top: 1px solid var(--border); }
+  .setting-override-label { font-size: 13px; }
+}
+@media (max-width: 700px) {
+  .settings-save-bar { top: 117px; }
+  .settings-section { scroll-margin-top: 180px; }
+}
+@media (max-width: 360px) {
+  .setting-options { grid-template-columns: minmax(0, 1fr); }
+}

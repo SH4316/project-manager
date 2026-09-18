@@ -192,6 +192,24 @@
       requestAnimationFrame(syncAllBoardNavigation);
     } else if (a === "close-dialog") {
       dlg.close(); dlg.innerHTML = "";
+    } else if (a === "open-settings-group") {
+      e.preventDefault();
+      var group = document.querySelector(b.dataset.target);
+      if (!group) return;
+      var settingsForm = group.closest(".settings-form");
+      if (settingsForm) settingsForm.querySelectorAll("details.settings-section").forEach(function (item) {
+        if (item !== group) item.open = false;
+      });
+      group.open = true;
+      var summary = group.querySelector("summary");
+      if (summary) summary.focus({ preventScroll: true });
+      history.replaceState(null, "", b.getAttribute("href"));
+      requestAnimationFrame(function () {
+        group.scrollIntoView({
+          block: "start",
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+        });
+      });
     } else if (a === "toggle") {
       var el = document.querySelector(b.dataset.target);
       el.hidden = !el.hidden;

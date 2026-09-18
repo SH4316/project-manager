@@ -1344,6 +1344,7 @@ def test_org_lock_blocks_project_override(as_admin, org, project):
 
     body = as_admin.get(f"/projects/{project.pk}/settings").content.decode()
     assert "조직에서 잠금" in body
+    assert 'id="setting-task.require_done_when"' not in body
 
     as_admin.post(f"/projects/{project.pk}/settings", {"task.require_done_when": "off"})
     project.refresh_from_db()
@@ -1386,6 +1387,25 @@ def test_preferences_roundtrip(logged, member):
     assert r.status_code == 302
     member.refresh_from_db()
     assert member.settings.get("user.start_page") == "me"
+
+
+def test_settings_controls_have_programmatic_labels(client, member, admin, org, project):
+    client.force_login(member)
+    personal = client.get("/settings/preferences").content.decode()
+    assert 'for="setting-user.notify_dm"' in personal
+    assert 'id="setting-user.notify_kinds-d3"' in personal
+    assert 'aria-describedby="setting-help-user.notify_hour"' in personal
+
+    client.force_login(admin)
+    organization = client.get(f"/orgs/{org.pk}/settings").content.decode()
+    assert 'aria-label="기본 중요도 · 프로젝트 변경 허용"' in organization
+    assert 'class="settings-save-bar"' in organization
+    assert organization.count('class="card settings-section"') == 5
+
+    project_page = client.get(f"/projects/{project.pk}/settings").content.decode()
+    assert "{# 태스크 규칙" not in project_page
+    assert "프로젝트 설정 저장" in project_page
+    assert "거버넌스 저장" in project_page
 
 
 def test_governance_shows_enforced_settings(as_admin, org):
@@ -1433,7 +1453,7 @@ def test_project_settings_groups_share_one_card_with_the_save_button(client, pro
     """태스크 규칙·프로젝트 권한·알림은 한 번에 저장되는 한 벌이다 — 카드도 하나다."""
     client.force_login(admin)
     body = client.get(f"/projects/{project.pk}/settings").content.decode()
-    rules = body[body.index('<form method="post">') : body.index("설정 저장")]
+    rules = body[body.index('<form method="post" class="settings-form project-settings-form">') : body.index("프로젝트 설정 저장")]
     assert rules.count('<section class="card') == 1
 
 
