@@ -40,6 +40,22 @@
   }
   applyRail();
 
+  // 고급 필터는 넓은 화면에서 항상 보이고, 모바일 첫 진입에서만 접힌다.
+  // 적용 중인 조건이 있으면 모바일에서도 열어 두어 현재 상태를 숨기지 않는다.
+  var meFilters = document.querySelector(".me-filter-details");
+  if (meFilters) {
+    var mobileFilters = window.matchMedia("(max-width: 700px)");
+    var mobileFilterOpen = meFilters.dataset.filterActive === "1";
+    function syncMeFilters(query) {
+      meFilters.open = query.matches ? mobileFilterOpen : true;
+    }
+    syncMeFilters(mobileFilters);
+    meFilters.addEventListener("toggle", function () {
+      if (mobileFilters.matches) mobileFilterOpen = meFilters.open;
+    });
+    if (mobileFilters.addEventListener) mobileFilters.addEventListener("change", syncMeFilters);
+  }
+
   // 자동 저장 상태 표시
   body.addEventListener("htmx:beforeRequest", function (e) {
     if (e.detail && e.detail.target && e.detail.target.id === "panel" && !e.detail.target.children.length) {

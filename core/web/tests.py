@@ -240,11 +240,24 @@ def test_me_group_buttons_mark_one(logged, task):
         body = logged.get(url).content.decode()
         assert group_row(body).count(pressed) == 1
         assert 'value="due" aria-pressed="true">기한별' in body
-        assert "<h2>기한 초과 <" in body and "<h2>미완료 <" not in body
+        assert "<h2>미완료 <" not in body
     body = logged.get("/me?member=0&group=none").content.decode()
     assert group_row(body).count(pressed) == 1
     assert 'value="none" aria-pressed="true">없음' in body
     assert "<h2>미완료 <" in body and "<h2>기한 초과 <" not in body
+
+
+def test_me_omits_empty_due_groups_and_marks_advanced_filters(logged, task):
+    body = logged.get("/me").content.decode()
+    assert task.title in body
+    assert "<h2>기한 초과 <" not in body
+    assert "<h2>오늘 마감 <" not in body
+    assert 'data-filter-active="0"' in body
+    assert "기한 · 프로젝트 · 상태 · 중요도" in body
+
+    filtered = logged.get("/me?priority=high").content.decode()
+    assert 'data-filter-active="1"' in filtered
+    assert "조건 적용됨" in filtered
 
 
 def test_me_sort_survives_filters(logged, task):

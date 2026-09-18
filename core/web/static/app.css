@@ -167,6 +167,12 @@ label.check { display: inline-flex; align-items: center; gap: 6px; min-height: 4
 /* 묶음·정렬 같은 버튼 묶음: 라벨을 앞에 달아 옆 필터 셀렉트와 구별한다 */
 .seg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .seg-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-right: 2px; }
+.me-filter { display: flex; flex-direction: column; gap: 12px; }
+.me-primary-controls, .filter-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.me-filter-details > summary { display: none; }
+.filter-summary { color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.filter-chevron { font-size: 16px; transition: transform .12s ease; }
+.me-filter-details[open] .filter-chevron { transform: rotate(180deg); }
 
 /* 안내·경고 배너: 회색 한 줄로 흘리면 왜 이 화면인지 못 읽는다 */
 .notice {
@@ -395,6 +401,14 @@ dialog { max-width: 640px; }
   .panel-mobile-context > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 18px; }
   .panel-bar .status, .panel-bar [data-action="toggle-wide"] { display: none; }
   .panel .meta .select, .panel .meta .pill.sm, .checklist .btn.icon { min-height: 40px; }
+  .me-primary-controls { gap: 10px; }
+  .me-filter-details > summary { display: flex; width: 100%; justify-content: flex-start; list-style: none; }
+  .me-filter-details > summary::-webkit-details-marker { display: none; }
+  .me-filter-details > summary .filter-summary { margin-left: auto; }
+  .me-filter-details:not([open]) > .filter-body { display: none; }
+  .me-filter-details[open] > summary { margin-bottom: 10px; background: var(--primary-bg); border-color: var(--primary-bg); color: var(--primary); }
+  .filter-body { gap: 8px; }
+  .filter-body > .select, .filter-body > .btn { flex: 1 1 100%; width: 100%; }
   .today-columns > .schedule { max-width: none; }
   .card form.row > .input, .card form.row > .select { flex: 1 1 100%; }
 }
