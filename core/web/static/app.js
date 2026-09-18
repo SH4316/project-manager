@@ -2,6 +2,7 @@
 (function () {
   var body = document.body;
   var t1, t2;
+  var panelReturnScroll = 0;
 
   function flash(text, after) {
     var el = document.getElementById("save-status");
@@ -41,6 +42,9 @@
 
   // 자동 저장 상태 표시
   body.addEventListener("htmx:beforeRequest", function (e) {
+    if (e.detail && e.detail.target && e.detail.target.id === "panel" && !e.detail.target.children.length) {
+      panelReturnScroll = window.scrollY;
+    }
     if (e.target.hasAttribute && e.target.hasAttribute("data-autosave")) flash("저장 중…");
   });
   body.addEventListener("saved", function () { flash("자동 저장됨"); });
@@ -104,6 +108,7 @@
       if (w) w.textContent = layout.classList.contains("wide") ? "작게 보기" : "크게 보기";
       var f = e.target.querySelector("[data-focus]");
       if (f) f.focus();
+      else if (open && window.matchMedia("(max-width: 1150px)").matches) window.scrollTo(0, 0);
     }
     if (e.target.id === "dialog" && e.target.children.length) e.target.showModal();
   });
@@ -117,6 +122,7 @@
     if (a === "close-panel") {
       panel.innerHTML = ""; layout.classList.remove("has-panel", "wide");
       history.replaceState(null, "", body.dataset.pageUrl || "/today");
+      requestAnimationFrame(function () { window.scrollTo(0, panelReturnScroll); });
     } else if (a === "toggle-wide") {
       var on = !layout.classList.contains("wide");
       layout.classList.toggle("wide", on); localStorage.setItem("panel-wide", on ? "1" : "0");
@@ -135,6 +141,13 @@
   });
   var dlg = document.getElementById("dialog");
   if (dlg) dlg.addEventListener("click", function (e) { if (e.target === dlg) { dlg.close(); dlg.innerHTML = ""; } });
+  document.addEventListener("keydown", function (e) {
+    var panel = document.getElementById("panel");
+    if (e.key === "Escape" && panel && panel.children.length && !(dlg && dlg.open)) {
+      var close = panel.querySelector("[data-action='close-panel']");
+      if (close) close.click();
+    }
+  });
 
   // #task-N 해시로 진입하면 패널을 연다 (생성 직후 리다이렉트, 공유 링크 호환)
   function openHash() {

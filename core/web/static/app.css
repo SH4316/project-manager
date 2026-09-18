@@ -268,13 +268,15 @@ table.grid code { overflow-wrap: anywhere; }
 /* ---- 상세 패널 ---- */
 .panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .panel-bar { display: flex; align-items: center; gap: 8px; }
+.panel-mobile-context { display: none; }
 .panel-bar .status { flex: 1; font-size: 13px; color: var(--text-secondary); }
 .panel-bar > a:first-child { margin-right: 4px; }
 .panel .number { font-size: 13px; color: var(--text-secondary); }
 .panel .title-input { width: 100%; padding: 0; border: 0; border-bottom: 1px solid transparent; background: none; font-size: 20px; line-height: 28px; font-weight: 600; }
 .panel .title-input:focus { outline: none; border-bottom-color: var(--primary); }
 .panel .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 13px; color: var(--text-secondary); }
-.panel .meta .select { height: 24px; width: auto; padding: 0 6px; font-size: 12px; }
+.panel .meta .select { height: 36px; width: auto; padding: 0 8px; font-size: 12px; }
+.panel .meta .pill.sm { height: 36px; }
 .section { display: flex; flex-direction: column; gap: 8px; }
 .section > .label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 .stop-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; }
@@ -283,7 +285,7 @@ table.grid code { overflow-wrap: anywhere; }
 .checklist li { display: flex; align-items: center; gap: 8px; }
 .checklist li .text { flex: 1; }
 .checklist li.done .text { text-decoration: line-through; color: var(--text-secondary); }
-.checklist .btn.icon { width: 30px; height: 30px; font-size: 13px; }
+.checklist .btn.icon { width: 36px; height: 36px; font-size: 13px; }
 .notes { min-height: 120px; }
 .links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 details > summary { cursor: pointer; font-weight: 600; }
@@ -378,8 +380,21 @@ dialog { max-width: 640px; }
   .tiles, .tiles.five { grid-template-columns: repeat(2, 1fr); }
   .pill, .btn.sm, .btn.icon { height: 40px; }
   /* 배지 글자 수에 따라 줄바꿈이 달라지면 카드 높이가 제멋대로가 된다 */
-  .task-row { flex-direction: column; align-items: stretch; }
-  .task-row .actions { width: 100%; }
+  .task-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px; }
+  /* 데스크톱의 flex-basis:240px가 세로 배치에서 높이로 바뀌면 카드 가운데가 텅 빈다. */
+  .task-row .main { flex: 0 0 auto; width: 100%; }
+  .task-row .actions { width: 100%; justify-content: flex-start; }
+  .panel { padding: 16px; }
+  .panel-bar {
+    position: sticky; top: 104px; z-index: 3; margin: -16px -16px 0; padding: 10px 12px;
+    background: color-mix(in srgb, var(--bg-surface) 94%, transparent); border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+  }
+  .panel-mobile-context { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; }
+  .panel-mobile-context > span { font-size: 11px; line-height: 15px; color: var(--text-secondary); }
+  .panel-mobile-context > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 18px; }
+  .panel-bar .status, .panel-bar [data-action="toggle-wide"] { display: none; }
+  .panel .meta .select, .panel .meta .pill.sm, .checklist .btn.icon { min-height: 40px; }
   .today-columns > .schedule { max-width: none; }
   .card form.row > .input, .card form.row > .select { flex: 1 1 100%; }
 }

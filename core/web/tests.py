@@ -75,7 +75,14 @@ def test_status_change_conflict_shows_message(logged, task):
 
 def test_panel_contains_sections(logged, task):
     body = logged.get(f"/tasks/{task.pk}/panel").content.decode()
-    for needle in ("변경 이력", 'id="checklist"', "진행 메모", "목표일"):
+    for needle in (
+        "변경 이력",
+        'id="checklist"',
+        "진행 메모",
+        "목표일",
+        'class="panel-mobile-context"',
+        'aria-label="태스크 상세 닫기"',
+    ):
         assert needle in body
 
 
