@@ -28,7 +28,8 @@ def test_root_redirects(client, member):
 
 def test_today_page_renders(logged, org, project, task):
     body = logged.get("/today").content.decode()
-    assert "오늘 태스크" in body
+    assert "오늘 목록" in body
+    assert "전체 조직 · 내 담당 태스크" in body
     assert "빠른 추가" in body
 
 
@@ -802,6 +803,59 @@ def test_schedule_has_no_time_view(logged, task):
     assert '<div class="cal">' in body
 
 
+def test_schedule_disclosure_and_date_state_are_accessible(logged, task):
+    body = logged.get("/today?schedule=1").content.decode()
+    assert 'href="/today?schedule=0#today-list"' in body
+    assert 'aria-expanded="true"' in body
+    assert 'aria-controls="today-schedule"' in body
+    assert 'class="card today-list-card" tabindex="-1"' in body
+    assert 'id="today-schedule"' in body
+    assert 'aria-current="date"' in body
+    assert "선택됨" in body
+    assert "일정 닫기" in body
+
+
+def test_schedule_state_survives_htmx_partial_refreshes(logged, task):
+    current = "http://testserver/today?schedule=1&month=2026-08&day=2026-08-12"
+    headers = {**HX, "HX-Current-URL": current}
+
+    body = logged.get("/today?part=list", headers=headers).content.decode()
+    assert 'href="/today?schedule=0#today-list"' in body
+    assert 'aria-expanded="true"' in body
+
+    body = logged.get("/today?part=schedule", headers=headers).content.decode()
+    assert "2026년 8월" in body
+    assert "8월 12일" in body
+    assert (
+        'hx-trigger="task-changed from:body, task-updated from:body, today-changed from:body"'
+        in body
+    )
+
+    body = logged.post(
+        "/today/settings",
+        {"auto_pull_days": 3},
+        headers=headers,
+    ).content.decode()
+    assert 'aria-expanded="true"' in body
+    assert "일정 닫기" in body
+
+
+def test_schedule_state_is_explicit_when_task_panel_owns_current_url(logged, task):
+    state = "schedule=1&month=2026-08&day=2026-08-12"
+    escaped_state = state.replace("&", "&amp;")
+    headers = {**HX, "HX-Current-URL": f"http://testserver/tasks/{task.pk}"}
+
+    body = logged.get(f"/today?part=list&{state}", headers=headers).content.decode()
+    assert f"/today?part=list&amp;{escaped_state}" in body
+    assert f'/tasks/{task.pk}/status?{escaped_state}' in body
+    assert 'aria-expanded="true"' in body
+    assert "일정 닫기" in body
+
+    body = logged.get(f"/today?part=schedule&{state}", headers=headers).content.decode()
+    assert f"/today?part=schedule&amp;{escaped_state}" in body
+    assert "2026년 8월" in body
+
+
 def test_schedule_cells_multiple_of_seven(member, task):
     from datetime import date
 
@@ -813,6 +867,7 @@ def test_schedule_cells_multiple_of_seven(member, task):
     req.user = member
     ctx = _schedule(req, date(2026, 9, 12))
     assert len(ctx["cal_cells"]) in (28, 35, 42)
+    assert ctx["cal_prev"].endswith("#today-schedule")
 
 
 def test_schedule_month_nav(logged, task):

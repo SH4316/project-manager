@@ -318,6 +318,24 @@ details > summary { cursor: pointer; font-weight: 600; }
 .history .who { color: var(--text-secondary); }
 .focus h2 { font-size: 28px; line-height: 38px; }
 .focus .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 13px; color: var(--text-secondary); }
+.today-overview-head { align-items: flex-start; }
+.today-metrics { display: flex; align-items: center; gap: 12px; }
+.today-scope-label { font-size: 12px; line-height: 18px; font-weight: 600; color: var(--text-secondary); }
+.today-list-title { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.today-list-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.today-auto-pull { display: inline-flex; align-items: center; gap: 8px; }
+.today-auto-pull .select { height: 36px; }
+.today-assigned-stats { display: flex; flex-wrap: wrap; gap: 6px; }
+.today-assigned-stats a {
+  display: inline-flex; align-items: baseline; gap: 5px; min-height: 36px; padding: 7px 10px;
+  border-radius: 7px; background: var(--bg-secondary); color: var(--text-primary); text-decoration: none;
+}
+.today-assigned-stats a:hover { background: var(--primary-bg); }
+.today-assigned-stats b { font-size: 15px; line-height: 20px; }
+.today-assigned-stats span { font-size: 12px; line-height: 18px; color: var(--text-secondary); }
+.today-done > summary { min-height: 36px; display: flex; align-items: center; }
+.today-list-card, .today-schedule-card { scroll-margin-top: 80px; }
+.today-list-card:focus-visible, .today-schedule-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .today-columns { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .today-columns > * { flex: 1 1 380px; }
 .today-columns > .schedule { flex: 1 1 280px; max-width: 360px; }
@@ -350,6 +368,10 @@ dialog { max-width: 640px; }
 .cal a.sel { border-color: var(--primary); background: var(--primary-bg); }
 .cal a small { font-size: 10px; color: var(--primary); }
 .cal a.today small { color: var(--on-primary); }
+.cal a.today.sel {
+  border-color: var(--primary); background: var(--primary); color: var(--on-primary);
+  box-shadow: inset 0 0 0 2px var(--bg-surface);
+}
 
 /* ---- 반응형 ---- */
 @media (max-width: 1150px) {
@@ -357,10 +379,20 @@ dialog { max-width: 640px; }
   .layout.has-panel aside#panel { flex: 1 1 auto; max-width: none; }
   .tiles { grid-template-columns: repeat(3, 1fr); }
 }
+@media (max-width: 850px) {
+  .today-columns { flex-direction: column; }
+  .today-columns > *, .today-columns > .schedule { flex: 0 1 auto; width: 100%; max-width: none; }
+}
 @media (max-width: 700px) {
-  .header { flex-wrap: wrap; height: auto; padding: 8px 12px; row-gap: 4px; }
+  .header {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; height: auto;
+    padding: 8px 12px; column-gap: 8px; row-gap: 4px;
+  }
+  .header > .switcher, .header > .switcher > summary.logo, .switcher > summary.logo > span { min-width: 0; }
+  .header > .switcher > summary.logo { max-width: 100%; }
+  .header > .spacer { display: none; }
   /* 탭이 늘어도 줄이 꺾이지 않게 가로 스크롤로 흘린다 */
-  .nav { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .nav { grid-column: 1 / -1; grid-row: 2; order: initial; width: 100%; overflow-x: auto; scrollbar-width: none; }
   .nav::-webkit-scrollbar { display: none; }
   .nav a { flex: none; }
   .tabs a { padding: 0 10px; }
@@ -494,8 +526,38 @@ dialog { max-width: 640px; }
   .me-filter-details[open] > summary { margin-bottom: 10px; background: var(--primary-bg); border-color: var(--primary-bg); color: var(--primary); }
   .filter-body { gap: 8px; }
   .filter-body > .select, .filter-body > .btn { flex: 1 1 100%; width: 100%; }
-  .today-columns > .schedule { max-width: none; }
+  .today-head-card, .today-list-card, .today-schedule-card { padding: 16px; }
+  .today-overview-head { gap: 12px; }
+  .today-metrics { width: 100%; flex-direction: column; align-items: stretch; gap: 6px; }
+  .today-metrics .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .today-metrics .stat {
+    min-width: 0; min-height: 50px; padding: 6px 8px; flex-direction: column; align-items: flex-start;
+    justify-content: center; gap: 0; border-radius: 7px; background: var(--bg-secondary);
+  }
+  .today-metrics .stat b { font-size: 18px; line-height: 22px; }
+  .today-metrics .stat span { max-width: 100%; font-size: 12px; line-height: 17px; white-space: nowrap; }
+  .today-head-card .focus h2 { font-size: 22px; line-height: 30px; }
+  .today-focus-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .today-focus-actions form { grid-column: 1 / -1; }
+  .today-focus-actions form .btn, .today-focus-actions > .btn { width: 100%; min-width: 0; padding-inline: 8px; }
+  .today-list-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .today-schedule-toggle { height: 40px; }
+  .today-auto-pull .select { height: 40px; }
+  .today-assigned-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; gap: 4px; }
+  .today-assigned-stats a { min-width: 0; min-height: 50px; padding: 5px 3px; flex-direction: column; align-items: center; justify-content: center; gap: 0; text-align: center; }
+  .today-assigned-stats span { max-width: 100%; font-size: 11px; line-height: 16px; white-space: nowrap; }
+  .today-list-card .task-row { position: relative; gap: 8px; padding: 12px; }
+  .today-list-card .task-row .actions { gap: 4px; }
+  .today-list-card .task-row .today-btn { padding-inline: 8px; }
+  .today-done > summary { min-height: 44px; }
+  .today-list-card, .today-schedule-card { scroll-margin-top: 117px; }
   .card form.row > .input, .card form.row > .select { flex: 1 1 100%; }
+}
+@media (max-width: 700px) and (pointer: fine) {
+  .today-list-card .task-row [data-copy] { position: absolute; top: 10px; right: 10px; }
+  .today-list-card .task-row:focus-within [data-copy] { opacity: 0; }
+  .today-list-card .task-row:hover [data-copy] { opacity: 1; }
+  .today-list-card .task-row [data-copy]:focus { position: static; opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
