@@ -1312,3 +1312,164 @@ def test_webmcp_tool_paths_exist_in_api():
     paths = set(re.findall(r'path:\s*"([^"]+)"', js))
     assert len(paths) >= 8
     assert paths <= set(ninja_api.get_openapi_schema()["paths"])
+
+
+# ---------- MCP 커넥터 OAuth ----------
+
+
+def _register(client, uris=("https://claude.ai/api/mcp/auth_callback",)):
+    r = client.post(
+        "/oauth/register",
+        json.dumps({"client_name": "Claude", "redirect_uris": list(uris)}),
+        content_type="application/json",
+    )
+    assert r.status_code == 201, r.content
+    return r.json()["client_id"]
+
+
+def _pkce(verifier="v" * 43):
+    from accounts.models import pkce_challenge
+
+    return verifier, pkce_challenge(verifier)
+
+
+def test_oauth_metadata_advertises_pkce_and_registration(client, settings):
+    settings.SITE_URL = "https://project.example.test"
+    m = client.get("/.well-known/oauth-authorization-server").json()
+    assert m["issuer"] == "https://project.example.test"
+    assert m["registration_endpoint"] == "https://project.example.test/oauth/register"
+    assert m["code_challenge_methods_supported"] == ["S256"]
+    assert m["token_endpoint_auth_methods_supported"] == ["none"]
+
+
+def test_register_refuses_plaintext_redirect(client):
+    r = client.post(
+        "/oauth/register",
+        json.dumps({"redirect_uris": ["http://evil.example/cb"]}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+    assert r.json()["error"] == "invalid_redirect_uri"
+
+
+def test_oauth_full_flow_issues_a_working_token(client, logged, member):
+    """등록 → 동의 → 코드 교환. 나오는 것은 평범한 ApiToken이라 /settings/tokens에 보인다."""
+    from accounts.models import ApiToken
+
+    client_id = _register(client)
+    verifier, challenge = _pkce()
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "state": "xyz",
+    }
+    assert "허용" in logged.get("/oauth/authorize", params).content.decode()
+
+    r = logged.post("/oauth/authorize", {**params, "decision": "allow", "scope": "write"})
+    assert r.status_code == 302
+    location = r.headers["Location"]
+    assert location.startswith("https://claude.ai/api/mcp/auth_callback?")
+    assert "state=xyz" in location
+    code = re.search(r"code=([^&]+)", location).group(1)
+
+    r = client.post(
+        "/oauth/token",
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": params["redirect_uri"],
+            "code_verifier": verifier,
+        },
+    )
+    assert r.status_code == 200, r.content
+    body = r.json()
+    assert body["token_type"] == "Bearer" and body["scope"] == "write"
+    token = ApiToken.authenticate(body["access_token"])
+    assert token is not None and token.user == member and token.scope == "write"
+
+    # 같은 코드를 두 번 쓰지 못한다.
+    again = client.post(
+        "/oauth/token",
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": params["redirect_uri"],
+            "code_verifier": verifier,
+        },
+    )
+    assert again.status_code == 400 and again.json()["error"] == "invalid_grant"
+
+
+def test_oauth_token_needs_the_matching_verifier(client, logged):
+    """PKCE가 유일한 방어선이다 — 공개 클라이언트라 비밀이 없다."""
+    client_id = _register(client)
+    _, challenge = _pkce()
+    r = logged.post(
+        "/oauth/authorize",
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "decision": "allow",
+        },
+    )
+    code = re.search(r"code=([^&]+)", r.headers["Location"]).group(1)
+    r = client.post(
+        "/oauth/token",
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_verifier": "틀린값" * 10,
+        },
+    )
+    assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
+
+
+def test_oauth_never_redirects_to_an_unregistered_uri(logged, client):
+    """등록되지 않은 redirect_uri로 되돌려 보내면 이 화면이 오픈 리다이렉터가 된다."""
+    client_id = _register(client)
+    _, challenge = _pkce()
+    r = logged.get(
+        "/oauth/authorize",
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "https://evil.example/steal",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        },
+    )
+    assert r.status_code == 400
+    assert "Location" not in r.headers
+
+
+def test_oauth_authorize_requires_login(client):
+    client_id = _register(client)
+    r = client.get("/oauth/authorize", {"client_id": client_id})
+    assert r.status_code == 302 and r.headers["Location"].startswith("/login")
+
+
+def test_oauth_deny_sends_access_denied(logged, client):
+    client_id = _register(client)
+    _, challenge = _pkce()
+    r = logged.post(
+        "/oauth/authorize",
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "decision": "deny",
+        },
+    )
+    assert "error=access_denied" in r.headers["Location"]

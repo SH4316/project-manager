@@ -7,6 +7,7 @@ from mcp_server.auth import current_token
 from mcp_server.core_client import CoreError
 
 TOOL_NAMES = {
+    "get_guide",
     "list_orgs",
     "list_org_repos",
     "connect_repo",
@@ -178,7 +179,7 @@ def test_doc_tools(fake_core, with_token):
 
 
 async def test_tool_names_registered(fake_core):
-    """도구 27개가 전부 등록돼 있다는 사실 자체는 그대로다.
+    """도구가 전부 등록돼 있다는 사실 자체는 그대로다.
     pm_admin은 admin+write 토큰이라 목록 필터를 통과해도 전부 보인다(필터가 실제로
     무엇을 거르는지는 test_permissions.py에서 검증한다)."""
     tok = current_token.set("pm_admin")
@@ -187,7 +188,7 @@ async def test_tool_names_registered(fake_core):
     finally:
         current_token.reset(tok)
     assert {t.name for t in tools} == TOOL_NAMES
-    assert len(TOOL_NAMES) == 30
+    assert len(TOOL_NAMES) == 31
 
 
 def test_governance_tool(fake_core, with_token):
@@ -219,3 +220,21 @@ def test_connect_repo_relays_the_refusal(fake_core, with_token):
     with pytest.raises(Exception) as e:
         s.connect_repo(2, "https://github.com/teamSANDOL/sandol-api")
     assert "저장소 연결" in str(e.value)
+
+
+def test_get_guide_returns_the_skill_document_without_frontmatter(with_token):
+    """가이드는 스킬 파일 하나에서만 온다. 사본을 두면 한쪽만 고쳐진다."""
+    from mcp_server.server import GUIDE, get_guide
+
+    assert get_guide() == GUIDE
+    assert GUIDE.startswith("# 산돌이 PM 사용법")
+    assert "name: sandol-pm" not in GUIDE  # 머리말은 스킬 형식이라 떼고 낸다
+    assert "get_governance" in GUIDE
+
+
+def test_guide_is_listed_for_a_read_only_token():
+    """읽기 토큰에도 보여야 한다 — 사용법을 못 읽으면 나머지 도구도 못 쓴다."""
+    from mcp_server import permissions
+
+    assert "get_guide" in permissions.NEEDS
+    assert permissions.NEEDS["get_guide"] == "read"

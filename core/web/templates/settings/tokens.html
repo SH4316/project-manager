@@ -44,16 +44,32 @@
 </section>
 <section class="card">
   <h2>AI 클라이언트 연결</h2>
-  <p class="muted t13">&lt;TOKEN&gt;은 위에서 발급한 값입니다.</p>
+  <p class="muted t13">붙이는 방법은 셋입니다. 토큰을 손으로 옮기지 않아도 되는 <b>OAuth</b>가 가장 편합니다.</p>
   <table class="grid">
     <thead><tr><th>클라이언트</th><th>설정</th></tr></thead>
     <tbody>
-      <tr><td>Claude Code</td><td><code>claude mcp add --transport http sandol {{ mcp_url }}/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"</code> <button type="button" class="btn sm" data-copy-text='claude mcp add --transport http sandol {{ mcp_url }}/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"' data-copy-label="명령 복사됨">복사</button></td></tr>
-      <tr><td>Codex CLI</td><td><code>~/.codex/config.toml</code>에 <code>[mcp_servers.sandol]</code> <code>url = "{{ mcp_url }}/mcp"</code> <code>bearer_token_env_var = "SANDOL_TOKEN"</code> 추가, 환경 변수 <code>SANDOL_TOKEN=&lt;TOKEN&gt;</code></td></tr>
-      <tr><td>Claude 앱 / claude.ai</td><td>설정 → 커넥터 → 커스텀 커넥터 추가 → URL <code>{{ mcp_url }}/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
-      <tr><td>ChatGPT</td><td>설정 → 커넥터(개발자 모드) → 추가 → URL <code>{{ mcp_url }}/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td></tr>
+      <tr>
+        <td>Claude 앱 / claude.ai<br><span class="muted t13">OAuth</span></td>
+        <td>설정 → 커넥터 → 커스텀 커넥터 추가 → URL <code>{{ mcp_url }}/mcp</code>
+          <button type="button" class="btn sm" data-copy-text="{{ mcp_url }}/mcp" data-copy-label="주소 복사됨">복사</button><br>
+          <span class="muted t13">'연결'을 누르면 이 사이트의 로그인·허용 화면이 뜹니다. 허용하면 토큰이 자동으로 발급돼 아래 목록에 나타납니다 — 위에서 따로 발급하지 않아도 됩니다.</span></td>
+      </tr>
+      <tr>
+        <td>Claude Code<br><span class="muted t13">헤더</span></td>
+        <td><code>claude mcp add --transport http sandol {{ mcp_url }}/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"</code>
+          <button type="button" class="btn sm" data-copy-text='claude mcp add --transport http sandol {{ mcp_url }}/mcp --header "Authorization: Bearer &lt;TOKEN&gt;"' data-copy-label="명령 복사됨">복사</button></td>
+      </tr>
+      <tr>
+        <td>Codex CLI<br><span class="muted t13">헤더</span></td>
+        <td><code>~/.codex/config.toml</code>에 <code>[mcp_servers.sandol]</code> <code>url = "{{ mcp_url }}/mcp"</code> <code>bearer_token_env_var = "SANDOL_TOKEN"</code> 추가, 환경 변수 <code>SANDOL_TOKEN=&lt;TOKEN&gt;</code></td>
+      </tr>
+      <tr>
+        <td>그 밖의 클라이언트<br><span class="muted t13">개인 비밀 URL</span></td>
+        <td>OAuth도 헤더도 못 넣는 곳이면 URL에 토큰을 넣습니다: <code>{{ mcp_url }}/u/&lt;TOKEN&gt;/mcp</code>, 인증 없음</td>
+      </tr>
     </tbody>
   </table>
-  <p class="warning t13">개인 비밀 URL은 비밀번호와 같습니다. 공유하지 말고, 유출되면 이 화면에서 폐기하세요.</p>
+  <p class="muted t13">&lt;TOKEN&gt;은 위에서 발급한 값입니다.</p>
+  <p class="warning t13">개인 비밀 URL은 비밀번호와 같습니다. 주소창과 프록시 기록에 남으니, 넣을 곳이 있으면 헤더나 OAuth를 쓰세요. 유출되면 이 화면에서 폐기하세요.</p>
 </section>
 {% endblock %}

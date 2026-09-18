@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -7,7 +8,19 @@ from . import permissions
 from .auth import current_token, require_token
 from .core_client import Core, CoreError
 
+
+def _guide() -> str:
+    """도구 사용법(skill/SKILL.md)의 본문. 스킬 파일과 같은 글을 쓴다 — 사본을 따로 두면
+    한쪽만 고쳐져서 둘이 어긋난다. 맨 앞 YAML 머리말은 스킬 형식이라 떼고 낸다."""
+    text = (Path(__file__).parent.parent / "skill" / "SKILL.md").read_text(encoding="utf-8")
+    return text.split("---", 2)[-1].strip() if text.startswith("---") else text.strip()
+
+
+GUIDE = _guide()
+
 INSTRUCTIONS = """산돌이 조직 업무 관리 도구.
+- **이 서버를 처음 쓸 때 get_guide를 한 번 읽는다.** 어떤 상황에 어느 도구를 어떤 순서로
+  부르는지, 무엇을 조심해야 하는지가 거기 있다. 아래는 그중 꼭 지켜야 할 것만 추린 것이다.
 - 조직마다 개발 거버넌스(태스크 쪼개기·기한·중요도·상태·팀 운영 규칙, AI에게 허용한 범위)가 있다.
   태스크를 만들거나 기한·담당·중요도·상태를 바꾸거나 팀을 건드리기 전에 get_governance로 그 조직의
   규칙을 읽고 그대로 따른다. 거버넌스와 아래 기본 규칙이 어긋나면 거버넌스가 우선이다.
@@ -64,6 +77,19 @@ mcp = _ScopedFastMCP(
 
 def _core() -> Core:
     return Core(require_token())
+
+
+@mcp.tool()
+def get_guide() -> str:
+    """이 서버 사용법: 상황별 도구 호출 순서, 이슈 하나를 맡았을 때의 절차, 주의점.
+    산돌이 태스크를 처음 다루기 전에 한 번 읽는다. 조직마다 다른 규칙은 get_governance에 있다."""
+    return GUIDE
+
+
+@mcp.resource("guide://sandol-pm", name="산돌이 PM 사용법", mime_type="text/markdown")
+def guide_resource() -> str:
+    """도구로도 읽을 수 있지만, 자원으로 두면 사람이 대화에 직접 붙일 수 있다."""
+    return GUIDE
 
 
 @mcp.tool()

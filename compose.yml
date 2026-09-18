@@ -61,6 +61,8 @@ services:
     environment:
       CORE_URL: http://web:8000
       PORT: "8080"
+      # core의 공개 주소(= OAuth 인가 서버). 비면 OAuth를 광고하지 않고 토큰만 받는다.
+      AUTH_SERVER_URL: ${SITE_URL:-}
       # 앞단 프록시를 거치면 Host가 그 도메인이라 SDK가 421로 막는다. .env에서 도메인을 넣는다.
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
     depends_on:

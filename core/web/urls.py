@@ -10,6 +10,7 @@ from .views import (
     github,
     me,
     notes,
+    oauth,
     ops,
     orgs,
     projects,
@@ -35,6 +36,15 @@ urlpatterns = [
         name="login",
     ),
     path("logout", auth_views.LogoutView.as_view(), name="logout"),
+    # ---- MCP 커넥터용 OAuth 2.1 (web/views/oauth.py 맨 위 설명) ----
+    path(
+        ".well-known/oauth-authorization-server",
+        oauth.metadata,
+        name="oauth_metadata",
+    ),
+    path("oauth/register", oauth.register, name="oauth_register"),
+    path("oauth/authorize", oauth.authorize, name="oauth_authorize"),
+    path("oauth/token", oauth.token, name="oauth_token"),
     path("signup", auth.signup, name="signup"),
     path("join/<str:token>", auth.join, name="join"),
     path("today", today.today, name="today"),

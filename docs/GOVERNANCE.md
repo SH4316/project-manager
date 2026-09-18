@@ -11,7 +11,7 @@
 | 화면 | 조직 → 거버넌스. 멤버는 읽기, 관리자는 편집 | `/orgs/<id>/governance` |
 | API | `GET·PUT /api/orgs/<id>/governance` | `core/api/routers/orgs.py` |
 | AI | `get_governance(org_id)`. 서버 INSTRUCTIONS가 "쓰기 전에 먼저 읽어라"고 지시 | `mcp_server/.../server.py` |
-| 사용법 | 도구 호출 순서·주의점. 규칙과 분리 | `skills/sandol-pm/SKILL.md` |
+| 사용법 | 도구 호출 순서·주의점. 규칙과 분리 | `mcp_server/skill/SKILL.md` (MCP의 `get_guide`가 같은 글을 낸다) |
 
 **왜 검증하지 않는가.** 기계가 막아야 하는 최소 규칙은 이미 `Task` 모델의 제약 조건에 있다
 (기한 없는 `doing` 금지, `blocked` 사유 필수, 중요도 1~10, 완료 시각 필수). 그 위의 합의는

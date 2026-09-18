@@ -1,5 +1,7 @@
+import base64
 import hashlib
 import secrets
+from datetime import timedelta
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
@@ -110,3 +112,80 @@ class IdempotencyKey(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["user", "key"], name="idem_user_key"),
         ]
+
+
+class OAuthClient(models.Model):
+    """MCP 커넥터가 RFC 7591로 스스로 등록한 클라이언트.
+
+    사전 등록이 불가능한 것이 MCP의 전제다 — 사람이 Claude 앱에 주소만 넣으면 앱이 알아서
+    등록하고 인가를 시작한다. 그래서 비밀이 없는 공개 클라이언트만 받고, 코드는 PKCE(S256)가
+    지킨다.
+    """
+
+    client_id = models.CharField(max_length=64, unique=True)
+    name = models.CharField(max_length=100, blank=True)
+    redirect_uris = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name or self.client_id
+
+    @classmethod
+    def register(cls, name: str, redirect_uris: list[str]):
+        return cls.objects.create(
+            client_id=secrets.token_urlsafe(32),
+            name=(name or "")[:100],
+            redirect_uris=redirect_uris,
+        )
+
+
+class OAuthCode(models.Model):
+    """인가 코드. 1회용, 10분.
+
+    교환하면 나오는 것은 평범한 ApiToken이다 — 새 토큰 종류를 만들지 않는다. 그래야 발급된
+    커넥터가 /settings/tokens 목록에 그대로 보이고, 폐기도 늘 쓰던 그 버튼으로 끝난다.
+    """
+
+    TTL = timedelta(minutes=10)
+
+    code_hash = models.CharField(max_length=64, unique=True)
+    client = models.ForeignKey(OAuthClient, on_delete=models.CASCADE, related_name="codes")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="oauth_codes")
+    redirect_uri = models.CharField(max_length=500)
+    code_challenge = models.CharField(max_length=128)
+    scope = models.CharField(max_length=5, choices=ApiToken.SCOPES, default="read")
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    @classmethod
+    def issue(cls, **fields):
+        """코드를 만들고 (객체, 원문)을 돌려준다. 원문은 리다이렉트로만 나간다."""
+        raw = secrets.token_urlsafe(32)
+        return cls.objects.create(code_hash=ApiToken._hash(raw), **fields), raw
+
+    @classmethod
+    def claim(cls, raw: str, client_id: str, redirect_uri: str, verifier: str):
+        """전부 맞으면 코드를 소진하고 돌려준다. 하나라도 어긋나면 None."""
+        if not raw:
+            return None
+        code = (
+            cls.objects.select_related("client", "user")
+            .filter(code_hash=ApiToken._hash(raw))
+            .first()
+        )
+        if code is None or code.created_at + cls.TTL <= timezone.now():
+            return None
+        if code.client.client_id != client_id or code.redirect_uri != redirect_uri:
+            return None
+        if not secrets.compare_digest(pkce_challenge(verifier), code.code_challenge):
+            return None
+        # 소진은 DB에서 한 번에 한다. 읽고 나서 저장하면 동시에 두 번 온 교환이 둘 다 통과한다.
+        if cls.objects.filter(pk=code.pk, used_at__isnull=True).update(used_at=timezone.now()) != 1:
+            return None
+        return code
+
+
+def pkce_challenge(verifier: str) -> str:
+    """RFC 7636 S256. verifier가 비어 있어도 절대 맞지 않는 값을 돌려준다."""
+    digest = hashlib.sha256((verifier or "").encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()

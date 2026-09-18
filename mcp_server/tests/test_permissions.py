@@ -28,6 +28,7 @@ READ_TOOLS = {n for n, need in perm.NEEDS.items() if need == "read"}
 
 def test_needs_table_covers_every_tool():
     assert set(perm.NEEDS) == {
+        "get_guide",
         "list_orgs",
         "list_org_repos",
         "connect_repo",

@@ -7,6 +7,7 @@ from .core_client import Core
 
 # 도구 이름 -> 필요한 최소 단계. read(기본) < write < admin(조직 관리자).
 NEEDS: dict[str, str] = {
+    "get_guide": "read",
     "list_orgs": "read",
     "list_projects": "read",
     "get_project": "read",
