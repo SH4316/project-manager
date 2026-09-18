@@ -40,6 +40,25 @@
   }
   applyRail();
 
+  // 조직 탭은 모바일에서 한 줄로 스크롤된다. 현재 탭이 뒤쪽이어도 첫 렌더부터 보이게 맞춘다.
+  var orgTabs = document.querySelector(".org-tabs");
+  if (orgTabs) {
+    var mobileOrgTabs = window.matchMedia("(max-width: 700px)");
+    function revealCurrentOrgTab(query) {
+      if (!query.matches) { orgTabs.scrollLeft = 0; return; }
+      var current = orgTabs.querySelector('[aria-current="page"]');
+      if (!current) return;
+      requestAnimationFrame(function () {
+        var tabsRect = orgTabs.getBoundingClientRect();
+        var currentRect = current.getBoundingClientRect();
+        orgTabs.scrollLeft += currentRect.left - tabsRect.left - (tabsRect.width - currentRect.width) / 2;
+      });
+    }
+    revealCurrentOrgTab(mobileOrgTabs);
+    if (mobileOrgTabs.addEventListener) mobileOrgTabs.addEventListener("change", revealCurrentOrgTab);
+    window.addEventListener("resize", function () { revealCurrentOrgTab(mobileOrgTabs); });
+  }
+
   function syncBoardNavigation(board) {
     if (!board) return;
     var track = board.querySelector(".board-track");

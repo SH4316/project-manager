@@ -194,7 +194,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; min-height: 4
 .stat span { font-size: 13px; color: var(--text-secondary); }
 .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
 .tiles.five { grid-template-columns: repeat(5, 1fr); }
-.project-kpis:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 10px; }
+.project-kpis:focus-visible, .org-kpis:focus-visible, .table-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 10px; }
 .tile {
   display: flex; flex-direction: column; gap: 4px; padding: 16px; background: var(--bg-surface);
   border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); text-decoration: none; text-align: left;
@@ -269,6 +269,8 @@ table.grid th, table.grid td { text-align: left; padding: 10px 8px; border-botto
 table.grid th { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 table.grid .num { text-align: right; }
 table.grid code { overflow-wrap: anywhere; }
+.table-scroll { max-width: 100%; overflow-x: auto; }
+.table-scroll-hint { display: none; }
 .board { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .board-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .board-guide { font-size: 12px; line-height: 18px; color: var(--text-secondary); }
@@ -362,6 +364,9 @@ dialog { max-width: 640px; }
   .nav::-webkit-scrollbar { display: none; }
   .nav a { flex: none; }
   .tabs a { padding: 0 10px; }
+  .org-tabs { flex-wrap: nowrap; overflow-x: auto; scroll-padding-inline: 12px; scrollbar-width: none; }
+  .org-tabs::-webkit-scrollbar { display: none; }
+  .org-tabs a { flex: none; }
   /* 조직 전환 패널: 떠 있는 작은 상자 대신 헤더 폭을 채우는 판 */
   .switcher > .menu-list { left: 0; right: 0; min-width: 0; }
   /* 표는 카드 안에서 가로로 스크롤한다. 없으면 페이지 전체가 가로로 흔들린다.
@@ -374,6 +379,29 @@ dialog { max-width: 640px; }
       radial-gradient(farthest-side at 0 50%, rgba(15,50,60,.30), transparent) left / 16px 100% no-repeat scroll,
       radial-gradient(farthest-side at 100% 50%, rgba(15,50,60,.30), transparent) right / 16px 100% no-repeat scroll;
   }
+  .table-scroll-hint { display: block; margin: -4px 0 0; font-size: 12px; line-height: 18px; color: var(--text-secondary); }
+  .table-scroll {
+    background:
+      linear-gradient(to right, var(--bg-surface) 40%, transparent) left / 28px 100% no-repeat local,
+      linear-gradient(to left, var(--bg-surface) 40%, transparent) right / 28px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(15,50,60,.30), transparent) left / 16px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(15,50,60,.30), transparent) right / 16px 100% no-repeat scroll;
+  }
+  .table-scroll table.grid { display: table; min-width: 760px; overflow: visible; background: none; }
+  .table-scroll table.project-table { width: 760px; table-layout: fixed; }
+  .table-scroll table.assignee-table { width: 560px; min-width: 560px; table-layout: fixed; }
+  .project-table th:first-child, .project-table td:first-child,
+  .assignee-table th:first-child, .assignee-table td:first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--bg-surface); box-shadow: 1px 0 0 var(--border);
+    overflow-wrap: anywhere;
+  }
+  .project-table th:first-child, .project-table td:first-child {
+    width: clamp(164px, 55vw, 210px); min-width: clamp(164px, 55vw, 210px); max-width: clamp(164px, 55vw, 210px);
+  }
+  .assignee-table th:first-child, .assignee-table td:first-child {
+    width: clamp(112px, 36vw, 132px); min-width: clamp(112px, 36vw, 132px); max-width: clamp(112px, 36vw, 132px);
+  }
+  .project-table td, .assignee-table td { overflow-wrap: anywhere; }
   /* 모바일에서는 현재 위치가 먼저 보이는 한 개의 선택기로 프로젝트를 바꾼다. */
   .rail { display: none; }
   .project-picker { position: relative; display: block; width: 100%; padding: 8px 12px; border-bottom: 1px solid var(--border); }
@@ -428,6 +456,15 @@ dialog { max-width: 640px; }
   .project-kpis .tile b { font-size: 21px; line-height: 27px; }
   .project-kpis .tile span { font-size: 12px; white-space: nowrap; }
   .project-task-surface { padding: 16px; }
+  .org-summary-card, .org-projects-card, .org-roadmap-card { padding: 16px; }
+  .org-kpis {
+    grid-template-columns: none !important; grid-auto-flow: column; grid-auto-columns: 94px;
+    gap: 8px; overflow-x: auto; overscroll-behavior-inline: contain; padding: 0 0 6px;
+    scroll-snap-type: inline proximity; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent;
+  }
+  .org-kpis .tile { min-height: 76px; padding: 10px 12px; border-radius: 10px; scroll-snap-align: start; }
+  .org-kpis .tile b { font-size: 21px; line-height: 27px; }
+  .org-kpis .tile span { font-size: 12px; white-space: nowrap; }
   .board-toolbar { align-items: flex-start; }
   .board-guide { max-width: 21ch; }
   .board-track { grid-auto-columns: calc(100% - 28px); scroll-snap-type: inline mandatory; }
@@ -472,9 +509,17 @@ dialog { max-width: 640px; }
 .grow { flex: 1; min-width: 0; }
 .badge.danger { border-color: var(--danger); color: var(--danger); font-weight: 700; }
 .badge.ok { border-color: var(--success); color: var(--success); font-weight: 700; }
-.load-row { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; }
-.load-row .name { flex: 0 0 140px; font-size: 16px; font-weight: 600; color: var(--text-primary); text-decoration: none; }
-.load-row .grow { flex: 1 1 220px; min-width: 0; }
+.load-row {
+  display: grid; grid-template-columns: 140px minmax(140px, 1fr) 180px 50px;
+  grid-template-areas: "name meter tags verdict"; gap: 12px 16px; align-items: center;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px;
+}
+.load-row .name { grid-area: name; overflow-wrap: anywhere; font-size: 16px; font-weight: 600; color: var(--text-primary); text-decoration: none; }
+.load-row .grow { min-width: 0; }
+.load-meter { grid-area: meter; }
+.load-tags { grid-area: tags; justify-content: flex-end; }
+.load-tags .tag { max-width: 100%; overflow-wrap: anywhere; }
+.load-verdict { grid-area: verdict; justify-self: end; }
 .bar { height: 8px; border-radius: 999px; background: var(--bg-fill); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--primary); }
 .tag { padding: 0 8px; border-radius: 999px; background: var(--bg-fill); font-size: 12px; line-height: 22px; }
@@ -487,7 +532,24 @@ dialog { max-width: 640px; }
 .tl-bar { position: absolute; top: 4px; height: 20px; border-radius: 6px; background: var(--primary-bg); overflow: hidden; }
 .tl-bar.planned { background: var(--bg-fill); border: 1px dashed var(--text-disabled); }
 .tl-bar i { display: block; height: 100%; background: var(--primary); }
-@media (max-width: 700px) { .tl-name { flex-basis: 120px; } }
+@media (max-width: 700px) {
+  .load-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name verdict" "meter meter" "tags tags";
+    gap: 10px 12px;
+  }
+  .load-tags { justify-content: flex-start; }
+  .tl-head { display: block; padding: 4px 0 10px; }
+  .tl-head .tl-name { display: none; }
+  .tl-head .tl-track { width: 100%; }
+  .tl-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name action" "track track"; gap: 8px 12px; padding: 12px 0;
+  }
+  .tl-row .tl-name { grid-area: name; width: auto; }
+  .tl-row .tl-track { grid-area: track; width: 100%; height: 32px; }
+  .tl-actions { grid-area: action; }
+}
 
 /* ---- 회의록 (V2-05) ---- */
 .notes-columns { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }

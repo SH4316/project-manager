@@ -674,6 +674,38 @@ def test_org_overview_tiles(logged, org, project, task):
     assert f"<b>{st['counts']['open']}</b>" in body
 
 
+def test_org_overview_marks_mobile_scroll_regions(as_admin, org, project, task):
+    body = as_admin.get(f"/orgs/{org.pk}").content.decode()
+    assert 'class="tabs org-tabs"' in body
+    assert 'class="tiles org-kpis" tabindex="0" role="region"' in body
+    assert 'aria-label="조직 태스크 요약, 좌우로 스크롤 가능"' in body
+    assert 'class="table-scroll" tabindex="0" role="region"' in body
+    assert 'class="grid project-table"' in body
+    assert 'class="grid assignee-table"' in body
+
+
+def test_capacity_uses_aligned_load_grid_and_focusable_summary(as_admin, org, project, task):
+    body = as_admin.get(f"/orgs/{org.pk}/capacity").content.decode()
+    assert 'class="tiles five org-kpis" tabindex="0" role="region"' in body
+    assert 'class="grow stack load-meter"' in body
+    assert 'class="chips load-tags"' in body
+    assert 'class="badge load-verdict' in body
+
+
+def test_roadmap_marks_responsive_timeline_regions(as_admin, org, project, admin):
+    from projects.services import create_milestone
+
+    create_milestone(
+        project=project,
+        name="모바일 마일스톤",
+        target_date=today_kst() + timedelta(days=7),
+        actor=admin,
+    )
+    body = as_admin.get(f"/orgs/{org.pk}/roadmap").content.decode()
+    assert 'class="card org-roadmap-card"' in body
+    assert 'class="row tl-actions"' in body
+
+
 # ---------- V2-03: 칸반 드래그 ----------
 
 
