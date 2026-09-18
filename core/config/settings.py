@@ -13,7 +13,9 @@ CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").sp
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000").rstrip("/")
 # MCP 서버의 공개 주소. /settings/tokens의 연결 예시가 이 값으로 그려진다 — 사람이
 # <MCP_URL>을 손으로 바꿔 넣게 두면 절반이 틀린 주소로 붙는다.
-MCP_URL = os.environ.get("MCP_URL", "https://mcp.sio2.kr").rstrip("/")
+# 운영은 core와 같은 도메인을 쓰고 앞단이 경로로 나눈다(mcp_server/README.md). 도메인을
+# 따로 둔다면 그 주소를 넣는다.
+MCP_URL = os.environ.get("MCP_URL", SITE_URL).rstrip("/")
 # WebMCP는 크롬 149·엣지 150에서 아직 오리진 트라이얼이라 도메인마다 토큰을 받아야 켜진다.
 # 토큰이 있으면 <meta http-equiv="origin-trial">로 실어 보낸다. 없으면 기능만 조용히 빠진다.
 WEBMCP_ORIGIN_TRIAL = os.environ.get("WEBMCP_ORIGIN_TRIAL", "")

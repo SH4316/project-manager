@@ -30,42 +30,41 @@ core 코드를 import하지 않는다. core의 HTTP API만 호출하는 얇은 �
 CORE_URL=http://localhost:8000 uv run python -m mcp_server
 ```
 
-## 한 도메인에 붙이기 (선택)
+## 한 도메인, 경로로 나누기 (운영 구성)
 
-`mcp.sio2.kr`처럼 도메인을 따로 두지 않고, 앞단 게이트웨이가 **경로만 보고** 나눠도 된다.
-서버 코드는 그대로다 — 공개 주소를 Host 헤더에서 끌어내므로 어느 쪽이든 맞는 값이 나온다.
+MCP는 core와 **같은 도메인**에 있다. 앞단 게이트웨이가 경로만 보고 나눈다. 도메인도 인증서도
+하나고, OAuth의 인가 서버와 자원 서버가 같은 출처가 된다. 서버 코드는 어느 쪽이든 그대로다 —
+공개 주소를 Host 헤더에서 끌어내기 때문이다.
 
-NginxProxyManager의 `project.sio2.kr` 호스트에 Custom location 세 개를 더한다.
+NginxProxyManager의 `project.sio2.kr` 호스트에 Custom location 세 개를 둔다.
 
 | location | 보낼 곳 |
 |---|---|
-| `/mcp` | `mcp:8080` |
-| `/u/` | `mcp:8080` (개인 비밀 URL) |
-| `/.well-known/oauth-protected-resource` | `mcp:8080` |
+| `^~ /mcp` | `172.30.1.30:8081` |
+| `^~ /u/` | `172.30.1.30:8081` (개인 비밀 URL) |
+| `^~ /.well-known/oauth-protected-resource` | `172.30.1.30:8081` |
 
-나머지(`/`, `/oauth/…`, `/.well-known/oauth-authorization-server`)는 원래대로 `web:8000`이다.
-core에는 `/mcp`도 `/u/`도 없으니 부딪히지 않는다. Host는 원래 도메인 그대로 넘겨야 한다
-(NPM 기본값이 그렇다). 그리고 `.env`를 셋 다 같은 도메인으로 맞춘다.
+나머지(`/`, `/oauth/…`, `/.well-known/oauth-authorization-server`)는 core로 간다.
+core에는 `/mcp`도 `/u/`도 없으니 부딪히지 않는다. `location /mcp`는 `/mcpxxx`까지 걸리므로
+`^~`로 못 박는다. Host는 원래 도메인 그대로 넘겨야 한다(NPM 기본값이 그렇다).
+
+`.env`는 두 줄이면 된다. `MCP_URL`은 비워 두면 `SITE_URL`을 그대로 쓴다.
 
 ```
 SITE_URL=https://project.sio2.kr
-MCP_URL=https://project.sio2.kr
 MCP_ALLOWED_HOSTS=project.sio2.kr
 ```
 
-장점은 도메인 하나, 인증서 하나, 그리고 OAuth의 인가 서버와 자원 서버가 같은 출처가 되는 것이다.
-`location /mcp`는 `/mcpxxx`도 걸리니 `^~ /mcp`로 못 박는 편이 낫다.
-
 ## 클라이언트 연결
 
-운영 서버의 MCP 주소는 `https://mcp.sio2.kr`이다(다른 곳에 올렸다면 그 주소로 바꿔 읽는다). `<TOKEN>`은 core의 `/settings/tokens`에서 발급한 값.
+운영 서버의 MCP 주소는 `https://project.sio2.kr/mcp`이다(다른 곳에 올렸다면 그 주소로 바꿔 읽는다). `<TOKEN>`은 core의 `/settings/tokens`에서 발급한 값.
 
 | 클라이언트 | 방식 | 설정 |
 |---|---|---|
-| Claude 앱 / claude.ai | OAuth | 설정 → 커넥터 → 커스텀 커넥터 추가 → URL `https://mcp.sio2.kr/mcp`. '연결'을 누르면 로그인·허용 화면이 뜬다 |
-| Claude Code | 헤더 | `claude mcp add --transport http sandol https://mcp.sio2.kr/mcp --header "Authorization: Bearer <TOKEN>"` |
-| Codex CLI | 헤더 | `~/.codex/config.toml`에 `[mcp_servers.sandol]` `url = "https://mcp.sio2.kr/mcp"` `bearer_token_env_var = "SANDOL_TOKEN"` 추가, 환경 변수 `SANDOL_TOKEN=<TOKEN>` |
-| 그 밖 | 개인 비밀 URL | URL `https://mcp.sio2.kr/u/<TOKEN>/mcp`, 인증 없음 |
+| Claude 앱 / claude.ai | OAuth | 설정 → 커넥터 → 커스텀 커넥터 추가 → URL `https://project.sio2.kr/mcp`. '연결'을 누르면 로그인·허용 화면이 뜬다 |
+| Claude Code | 헤더 | `claude mcp add --transport http sandol https://project.sio2.kr/mcp --header "Authorization: Bearer <TOKEN>"` |
+| Codex CLI | 헤더 | `~/.codex/config.toml`에 `[mcp_servers.sandol]` `url = "https://project.sio2.kr/mcp"` `bearer_token_env_var = "SANDOL_TOKEN"` 추가, 환경 변수 `SANDOL_TOKEN=<TOKEN>` |
+| 그 밖 | 개인 비밀 URL | URL `https://project.sio2.kr/u/<TOKEN>/mcp`, 인증 없음 |
 
 개인 비밀 URL은 비밀번호와 같다. 공유하지 말고, 유출되면 `/settings/tokens`에서 폐기한다.
 
