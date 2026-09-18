@@ -84,6 +84,7 @@ p { margin: 0; }
 .menu-list .menu-new { margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; padding-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .switcher .caret { transition: none; } }
 .frame { display: flex; align-items: flex-start; }
+.project-picker { display: none; }
 .rail { position: sticky; top: 64px; flex: none; width: 200px; padding: 16px 8px; display: flex; flex-direction: column; gap: 2px; }
 .rail-head { display: flex; align-items: center; gap: 8px; padding: 0 6px 6px; }
 .rail-head .grow { flex: 1; min-width: 0; }
@@ -193,6 +194,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; min-height: 4
 .stat span { font-size: 13px; color: var(--text-secondary); }
 .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
 .tiles.five { grid-template-columns: repeat(5, 1fr); }
+.project-kpis:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 10px; }
 .tile {
   display: flex; flex-direction: column; gap: 4px; padding: 16px; background: var(--bg-surface);
   border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); text-decoration: none; text-align: left;
@@ -267,7 +269,17 @@ table.grid th, table.grid td { text-align: left; padding: 10px 8px; border-botto
 table.grid th { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 table.grid .num { text-align: right; }
 table.grid code { overflow-wrap: anywhere; }
-.board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; overflow-x: auto; }
+.board { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.board-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.board-guide { font-size: 12px; line-height: 18px; color: var(--text-secondary); }
+.board-nav { display: flex; gap: 6px; flex: none; }
+.board-nav .btn:disabled { opacity: .38; cursor: default; background: var(--bg-surface); }
+.board-track {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px;
+  min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; padding: 2px 2px 10px;
+  scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent;
+}
+.board-track:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 8px; }
 .board .col { display: flex; flex-direction: column; gap: 8px; }
 .board .col h3 { font-size: 15px; line-height: 22px; }
 
@@ -362,14 +374,33 @@ dialog { max-width: 640px; }
       radial-gradient(farthest-side at 0 50%, rgba(15,50,60,.30), transparent) left / 16px 100% no-repeat scroll,
       radial-gradient(farthest-side at 100% 50%, rgba(15,50,60,.30), transparent) right / 16px 100% no-repeat scroll;
   }
-  /* 세로 레일을 가로 한 줄로 눕힌다. 세로용 머리말(개수·접기)은 가로에선 뜻이 없다 */
-  .rail { flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible; }
-  .rail-head { display: none; }
-  /* 줄 전체가 함께 스크롤해야 "새 프로젝트"가 오른쪽 밖으로 잘려 나가지 않는다 */
-  .rail-list { flex-direction: row; flex-wrap: wrap; align-items: center; flex: none; max-height: none; overflow: visible; padding: 0; }
-  .rail-list > a { flex: none; height: 40px; }
-  .rail a .label { overflow: visible; max-width: none; }
-  .rail-new { flex: none; }
+  /* 모바일에서는 현재 위치가 먼저 보이는 한 개의 선택기로 프로젝트를 바꾼다. */
+  .rail { display: none; }
+  .project-picker { position: relative; display: block; width: 100%; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .project-picker > summary {
+    display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 12px;
+    list-style: none; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface);
+  }
+  .project-picker > summary::-webkit-details-marker { display: none; }
+  .project-picker-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; }
+  .project-picker-label { font-size: 11px; line-height: 15px; color: var(--text-secondary); font-weight: 500; }
+  .project-picker-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; line-height: 20px; }
+  .project-picker-total { min-width: 24px; height: 24px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--bg-fill); color: var(--text-secondary); font-size: 12px; }
+  .project-picker .caret { flex: none; transition: transform .12s ease; }
+  .project-picker[open] .caret { transform: rotate(180deg); }
+  .project-picker-list {
+    position: absolute; z-index: 9; top: calc(100% - 4px); left: 12px; right: 12px;
+    display: flex; flex-direction: column; gap: 4px; max-height: min(56vh, 420px); overflow-y: auto;
+    padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface);
+    box-shadow: 0 12px 32px rgba(15,50,60,.2);
+  }
+  .project-picker-list a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border-radius: 7px; color: var(--text-primary); text-decoration: none; }
+  .project-picker-list a[aria-current="page"] { background: var(--primary-bg); color: var(--primary); font-weight: 700; }
+  .project-picker-list .initial { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; background: var(--bg-fill); font-size: 12px; font-weight: 700; }
+  .project-picker-list .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-picker-list .count { flex: none; }
+  .project-picker-empty { padding: 10px; }
+  .project-picker-new { min-height: 44px; padding: 0 10px; justify-content: flex-start; border-top: 1px solid var(--border); border-radius: 0; }
   /* 상세 패널을 화면 전체로 덮으면 헤더가 사라져 돌아갈 길이 없어진다 — 흐름 안에 둔다 */
   .layout.wide aside#panel { position: static; padding: 0; background: none; }
   .layout.wide aside#panel .panel { min-height: 0; }
@@ -378,12 +409,29 @@ dialog { max-width: 640px; }
   .layout.wide aside#panel .panel { max-width: none; margin: 0; padding: 16px; border-radius: 0; min-height: 100%; }
   /* align-items:flex-start가 남아 있으면 자식이 뷰포트가 아니라 내용 폭으로 부푼다 → 페이지가 가로로 흔들린다 */
   .frame { flex-direction: column; align-items: stretch; }
-  .rail { position: static; width: 100%; max-height: none; flex-direction: row; overflow-x: auto; padding: 8px 12px; gap: 4px; }
-  .rail a { flex: none; }
   .layout { padding: 12px; }
   /* 화면 전체를 덮으면 헤더가 가려져 돌아갈 길이 없다 — 좁은 화면에서는 흐름 안에 둔다 */
   .layout.has-panel aside#panel { position: static; max-height: none; overflow: visible; }
   .tiles, .tiles.five { grid-template-columns: repeat(2, 1fr); }
+  .project-summary { gap: 12px; padding: 16px; }
+  .project-summary-head { align-items: stretch; }
+  .project-summary-copy { width: 100%; gap: 6px; }
+  .project-summary .project-meta { gap: 6px 10px; }
+  .project-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 8px; }
+  .project-actions .btn { width: 100%; padding: 0 10px; }
+  .project-kpis {
+    grid-template-columns: none !important; grid-auto-flow: column; grid-auto-columns: 94px;
+    gap: 8px; overflow-x: auto; overscroll-behavior-inline: contain; padding: 0 0 6px;
+    scroll-snap-type: inline proximity; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent;
+  }
+  .project-kpis .tile { min-height: 76px; padding: 10px 12px; border-radius: 10px; scroll-snap-align: start; }
+  .project-kpis .tile b { font-size: 21px; line-height: 27px; }
+  .project-kpis .tile span { font-size: 12px; white-space: nowrap; }
+  .project-task-surface { padding: 16px; }
+  .board-toolbar { align-items: flex-start; }
+  .board-guide { max-width: 21ch; }
+  .board-track { grid-auto-columns: calc(100% - 28px); scroll-snap-type: inline mandatory; }
+  .board-track .col { scroll-snap-align: start; }
   .pill, .btn.sm, .btn.icon { height: 40px; }
   /* 배지 글자 수에 따라 줄바꿈이 달라지면 카드 높이가 제멋대로가 된다 */
   .task-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px; }

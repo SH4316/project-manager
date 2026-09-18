@@ -552,8 +552,20 @@ def test_project_index_empty_screen(logged, org):
 
 def test_rail_only_in_project_area(logged, org, project):
     assert 'class="rail"' not in logged.get("/today").content.decode()
+    assert 'class="project-picker"' not in logged.get("/today").content.decode()
     assert 'class="rail"' not in logged.get(f"/orgs/{org.pk}").content.decode()
-    assert 'class="rail"' in logged.get(f"/projects/{project.pk}").content.decode()
+    body = logged.get(f"/projects/{project.pk}").content.decode()
+    assert 'class="rail"' in body
+    assert 'class="project-picker"' in body
+
+
+def test_mobile_project_picker_names_current_project(logged, project, task):
+    body = logged.get(f"/projects/{project.pk}").content.decode()
+    assert f"프로젝트 전환, 현재 {project.name}" in body
+    assert f'<strong>{project.name}</strong>' in body
+    assert f'href="/projects/{project.pk}" aria-current="page"' in body
+    assert 'class="tiles five project-kpis" tabindex="0" role="region"' in body
+    assert "프로젝트 태스크 요약, 좌우로 스크롤 가능" in body
 
 
 def test_rail_shows_open_counts(logged, project, task):
@@ -680,6 +692,14 @@ def test_board_part_renders_only_board(logged, project, task):
     r = logged.get(f"/projects/{project.pk}?view=board&part=board")
     body = r.content.decode().strip()
     assert body.startswith('<div id="board"')
+
+
+def test_board_has_explicit_scroll_navigation(logged, project, task):
+    body = logged.get(f"/projects/{project.pk}?view=board").content.decode()
+    assert 'class="board-track" tabindex="0" role="region"' in body
+    assert body.count('data-action="scroll-board"') == 2
+    assert 'aria-label="이전 상태 열"' in body
+    assert 'aria-label="다음 상태 열"' in body
 
 
 def test_drop_changes_status_and_returns_board(logged, task):

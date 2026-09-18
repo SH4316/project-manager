@@ -40,6 +40,29 @@
   }
   applyRail();
 
+  function syncBoardNavigation(board) {
+    if (!board) return;
+    var track = board.querySelector(".board-track");
+    // 모바일 태스크 패널처럼 main이 잠시 display:none이면 폭이 0이다.
+    // 그 순간 양쪽 버튼을 모두 비활성화하지 말고, 다시 보일 때 재계산한다.
+    if (!track || !track.clientWidth) return;
+    var max = Math.max(0, track.scrollWidth - track.clientWidth);
+    Array.prototype.forEach.call(board.querySelectorAll('[data-action="scroll-board"]'), function (button) {
+      var back = Number(button.dataset.direction) < 0;
+      button.disabled = back ? track.scrollLeft <= 2 : track.scrollLeft >= max - 2;
+    });
+  }
+  function syncAllBoardNavigation() {
+    Array.prototype.forEach.call(document.querySelectorAll("#board"), syncBoardNavigation);
+  }
+  body.addEventListener("scroll", function (e) {
+    if (e.target.classList && e.target.classList.contains("board-track")) {
+      syncBoardNavigation(e.target.closest("#board"));
+    }
+  }, { passive: true, capture: true });
+  window.addEventListener("resize", syncAllBoardNavigation);
+  requestAnimationFrame(syncAllBoardNavigation);
+
   // 고급 필터는 넓은 화면에서 항상 보이고, 모바일 첫 진입에서만 접힌다.
   // 적용 중인 조건이 있으면 모바일에서도 열어 두어 현재 상태를 숨기지 않는다.
   var meFilters = document.querySelector(".me-filter-details");
@@ -127,6 +150,7 @@
       else if (open && window.matchMedia("(max-width: 1150px)").matches) window.scrollTo(0, 0);
     }
     if (e.target.id === "dialog" && e.target.children.length) e.target.showModal();
+    requestAnimationFrame(syncAllBoardNavigation);
   });
 
   // data-action 버튼
@@ -138,11 +162,15 @@
     if (a === "close-panel") {
       panel.innerHTML = ""; layout.classList.remove("has-panel", "wide");
       history.replaceState(null, "", body.dataset.pageUrl || "/today");
-      requestAnimationFrame(function () { window.scrollTo(0, panelReturnScroll); });
+      requestAnimationFrame(function () {
+        window.scrollTo(0, panelReturnScroll);
+        syncAllBoardNavigation();
+      });
     } else if (a === "toggle-wide") {
       var on = !layout.classList.contains("wide");
       layout.classList.toggle("wide", on); localStorage.setItem("panel-wide", on ? "1" : "0");
       b.textContent = on ? "작게 보기" : "크게 보기";
+      requestAnimationFrame(syncAllBoardNavigation);
     } else if (a === "close-dialog") {
       dlg.close(); dlg.innerHTML = "";
     } else if (a === "toggle") {
@@ -153,6 +181,16 @@
     } else if (a === "toggle-rail") {
       setRailClosed(!getRailClosed());
       applyRail();
+      requestAnimationFrame(syncAllBoardNavigation);
+    } else if (a === "scroll-board") {
+      var board = b.closest("#board");
+      var track = board && board.querySelector(".board-track");
+      if (!track) return;
+      var col = track.querySelector(".col");
+      var gap = parseFloat(getComputedStyle(track).columnGap) || 12;
+      var distance = col ? col.getBoundingClientRect().width + gap : track.clientWidth * .8;
+      var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      track.scrollBy({ left: (Number(b.dataset.direction) || 1) * distance, behavior: reduce ? "auto" : "smooth" });
     }
   });
   var dlg = document.getElementById("dialog");
