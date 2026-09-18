@@ -120,6 +120,8 @@
     var src = doc.querySelector("#doc-src, .doc-src");
     if (!bodyEl || !src) return;
     var scope = doc.closest(".card") || document;
+    var editorForm = doc.closest("form");
+    var editStart = editorForm && editorForm.querySelector(".doc-edit-start");
     var submit = scope.querySelector("#doc-submit, .doc-submit");
     var statusEl = scope.querySelector("#note-status, .note-status");
     var conflictEl = scope.querySelector("#note-conflict, .note-conflict");
@@ -431,6 +433,22 @@
       }
     }
 
+    function beginEditing() {
+      if (readonly) return;
+      editing = 0;
+      caret = null;
+      render();
+    }
+
+    function exitEditing() {
+      editing = -1;
+      caret = null;
+      render();
+      if (editStart) editStart.focus();
+    }
+
+    if (editStart) editStart.addEventListener("click", beginEditing);
+
     function changed() { render(); save(); }
 
     function toggle(i) {
@@ -474,7 +492,7 @@
       }
       // 코드 블록 안에서는 Enter가 줄바꿈이고 Backspace가 글자 지우기다. 블록을 쪼개지 않는다.
       if (u.code) {
-        if (e.key === "Escape") { e.preventDefault(); editing = -1; render(); }
+        if (e.key === "Escape") { e.preventDefault(); exitEditing(); }
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
@@ -497,7 +515,7 @@
       } else if (e.key === "ArrowDown" && at === ta.value.length && i < lines.length - 1) {
         e.preventDefault(); editing = i + 1; caret = 0; render();
       } else if (e.key === "Escape") {
-        e.preventDefault(); editing = -1; render();
+        e.preventDefault(); exitEditing();
       }
     }
 
