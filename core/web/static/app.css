@@ -513,6 +513,12 @@ dialog { max-width: 640px; }
   /* 데스크톱의 flex-basis:240px가 세로 배치에서 높이로 바뀌면 카드 가운데가 텅 빈다. */
   .task-row .main { flex: 0 0 auto; width: 100%; }
   .task-row .actions { width: 100%; justify-content: flex-start; }
+  /* 복사 하나만 다음 줄을 차지하지 않게 카드 보조 행동으로 고정한다. 본문 여백이 겹침을 막는다. */
+  .task-row:not(.today-task-row) { position: relative; }
+  .task-row:not(.today-task-row) .main { padding-right: 48px; }
+  .task-row:not(.today-task-row) [data-copy] {
+    position: absolute; top: 12px; right: 12px; width: 40px;
+  }
   .panel { padding: 16px; }
   .panel-bar {
     position: sticky; top: 104px; z-index: 3; margin: -16px -16px 0; padding: 10px 12px;

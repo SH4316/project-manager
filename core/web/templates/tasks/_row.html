@@ -1,5 +1,5 @@
 {% load rows %}<li id="task-{{ task.pk }}"
-    class="task-row{% if task.is_closed %} closed{% endif %}{% if selected %} selected{% endif %}"
+    class="task-row{% if in_today_page %} today-task-row{% endif %}{% if task.is_closed %} closed{% endif %}{% if selected %} selected{% endif %}"
     role="button" tabindex="0" aria-label="{{ task.title }} 상세 보기"
     data-id="{{ task.pk }}" data-panel="{% url 'task_panel' task.pk %}"
     {% if in_board %}draggable="true" data-version="{{ task.version }}" data-status="{{ task.status }}"{% endif %}
