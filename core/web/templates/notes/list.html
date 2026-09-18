@@ -5,13 +5,12 @@
   <section class="card list note-list" id="note-list">
     <div class="card-head">
       <h1 class="t24">회의록</h1>
-      <label class="btn sm">.md 올리기
-        <form method="post" action="{% url 'note_upload' org.pk %}" enctype="multipart/form-data" style="display:none">
+      <form class="file-upload" method="post" action="{% url 'note_upload' org.pk %}" enctype="multipart/form-data">
           {% csrf_token %}
           <input type="hidden" name="project" value="{% if scope != 'all' and scope != 'team' %}{{ scope }}{% endif %}">
-          <input type="file" name="file" accept=".md,.markdown" onchange="this.form.requestSubmit()">
-        </form>
-      </label>
+          <input id="note-upload-file" class="file-upload-input" type="file" name="file" accept=".md,.markdown" onchange="this.form.requestSubmit()">
+          <label class="btn sm file-upload-button" for="note-upload-file">.md 올리기</label>
+      </form>
       <form method="post" action="{% url 'note_new' org.pk %}">{% csrf_token %}<button class="btn sm primary">새 회의록</button></form>
     </div>
     {# 범위는 프로젝트 수만큼 늘어난다. 칩을 늘어놓으면 줄이 끝없이 길어지므로 목록에서 고른다. #}

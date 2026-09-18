@@ -1217,6 +1217,22 @@ def test_docs_tab_is_always_there(logged, project, settings):
     assert f"/projects/{project.pk}/repo" not in body  # GitHub 탭만 사라진다
 
 
+def test_file_upload_controls_are_keyboard_focusable(logged, org, project):
+    pages = (
+        (f"/projects/{project.pk}/docs", "doc-upload-file"),
+        (f"/projects/{project.pk}/api", "api-upload-file"),
+        (f"/orgs/{org.pk}/notes?scope=all", "note-upload-file"),
+    )
+    for url, control_id in pages:
+        body = logged.get(url).content.decode()
+        control = re.search(rf'<input[^>]*id="{re.escape(control_id)}"[^>]*>', body)
+        assert control is not None
+        assert 'class="file-upload-input"' in control.group()
+        assert " hidden" not in control.group()
+        assert f'for="{control_id}"' in body
+    assert 'style="display:none"' not in logged.get(f"/projects/{project.pk}/docs").content.decode()
+
+
 def test_doc_new_then_edit_through_the_screen(logged, project, member):
     r = logged.post(f"/projects/{project.pk}/docs/new")
     assert r.status_code == 302 and "?doc=" in r.headers["Location"]

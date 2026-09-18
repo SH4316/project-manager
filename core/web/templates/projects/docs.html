@@ -6,12 +6,11 @@
     <div class="card-head">
       <h2>문서 <span class="muted">{{ docs|length }}</span></h2>
       <div class="row">
-        <label class="btn sm">.md 올리기
-          <form method="post" action="{% url 'doc_upload' project.pk %}" enctype="multipart/form-data" style="display:none">
-            {% csrf_token %}
-            <input type="file" name="file" accept=".md,.markdown" onchange="this.form.requestSubmit()">
-          </form>
-        </label>
+        <form class="file-upload" method="post" action="{% url 'doc_upload' project.pk %}" enctype="multipart/form-data">
+          {% csrf_token %}
+          <input id="doc-upload-file" class="file-upload-input" type="file" name="file" accept=".md,.markdown" onchange="this.form.requestSubmit()">
+          <label class="btn sm file-upload-button" for="doc-upload-file">.md 올리기</label>
+        </form>
         <form method="post" action="{% url 'doc_new' project.pk %}">{% csrf_token %}<button class="btn sm primary">새 문서</button></form>
       </div>
     </div>
