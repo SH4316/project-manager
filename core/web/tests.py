@@ -575,7 +575,7 @@ def test_project_and_org_sibling_tabs_keep_shell_context(logged, org, project):
 def test_mobile_project_picker_names_current_project(logged, project, task):
     body = logged.get(f"/projects/{project.pk}").content.decode()
     assert f"프로젝트 전환, 현재 {project.name}" in body
-    assert f'<strong>{project.name}</strong>' in body
+    assert f"<strong>{project.name}</strong>" in body
     assert f'href="/projects/{project.pk}" aria-current="page"' in body
     assert 'class="tiles five project-kpis" tabindex="0" role="region"' in body
     assert "프로젝트 태스크 요약, 좌우로 스크롤 가능" in body
@@ -859,7 +859,7 @@ def test_schedule_state_is_explicit_when_task_panel_owns_current_url(logged, tas
 
     body = logged.get(f"/today?part=list&{state}", headers=headers).content.decode()
     assert f"/today?part=list&amp;{escaped_state}" in body
-    assert f'/tasks/{task.pk}/status?{escaped_state}' in body
+    assert f"/tasks/{task.pk}/status?{escaped_state}" in body
     assert 'aria-expanded="true"' in body
     assert "일정 닫기" in body
 
@@ -1481,7 +1481,11 @@ def test_project_settings_groups_share_one_card_with_the_save_button(client, pro
     """태스크 규칙·프로젝트 권한·알림은 한 번에 저장되는 한 벌이다 — 카드도 하나다."""
     client.force_login(admin)
     body = client.get(f"/projects/{project.pk}/settings").content.decode()
-    rules = body[body.index('<form method="post" class="settings-form project-settings-form">') : body.index("프로젝트 설정 저장")]
+    rules = body[
+        body.index('<form method="post" class="settings-form project-settings-form">') : body.index(
+            "프로젝트 설정 저장"
+        )
+    ]
     assert rules.count('<section class="card') == 1
 
 
